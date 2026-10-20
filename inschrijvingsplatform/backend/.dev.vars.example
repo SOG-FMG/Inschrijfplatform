@@ -1,0 +1,10 @@
+# Kopieer naar .dev.vars voor `npm run dev` (staat in .gitignore)
+# Lokale testsleutel – NOOIT in productie gebruiken. Productie: `openssl rand -hex 32` + `wrangler secret put`.
+ENCRYPTION_KEY=000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+ALLOWED_ORIGINS=http://localhost:5173
+PUBLIC_APP_URL=http://localhost:5173
+MAIL_PROVIDER=log
+# Zonder Cloudflare Access lokaal: meld aan als deze medewerker (moet in de tabel gebruikers staan)
+ACCESS_AUD=
+ACCESS_TEAM_DOMAIN=
+DEV_BEHEER_EMAIL=voornaam.naam@onderwijs.gent.be

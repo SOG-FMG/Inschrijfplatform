@@ -1,0 +1,28 @@
+### Evenement ophalen (REST Client / Thunder Client)
+GET http://localhost:8787/api/evenementen/fmg-infodagen-2027
+
+### Inschrijven
+POST http://localhost:8787/api/evenementen/fmg-infodagen-2027/registraties
+Content-Type: application/json
+
+{
+  "deelnemer": {
+    "naam": "Peeters", "voornaam": "Lotte", "email": "ouder@example.org",
+    "contactVoornaam": "An", "leerjaar": "6de leerjaar",
+    "doelgroepId": "aebd48e9-2a44-5670-9df5-c6d02da806fc", "privacyAkkoord": true
+  },
+  "dagdelen": ["d4b57878-556e-542c-bd58-bb3b6e103609"],
+  "sessies": ["2f3bba0e-d871-57c5-88ff-602e6ae19c57"]
+}
+
+### Probleem of idee melden
+POST http://localhost:8787/api/meldingen
+Content-Type: application/json
+
+{ "type": "probleem", "omschrijving": "Test", "pagina": "http://localhost:5173/", "appVersie": "dev", "browser": "REST Client" }
+
+### Beheer (lokaal: DEV_BEHEER_EMAIL in .dev.vars, en die gebruiker moet in de tabel gebruikers staan)
+GET http://localhost:8787/api/beheer/evenementen/13a78c0d-b051-5f88-907f-af60b218cdc3/deelnemers.csv
+
+### Meldingen lezen (enkel platformbeheerder)
+GET http://localhost:8787/api/beheer/meldingen

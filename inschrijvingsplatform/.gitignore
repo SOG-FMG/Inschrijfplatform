@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+.env
+.env.local
+# Nooit persoonsgegevens in de repository
+*.xlsx
+*.csv

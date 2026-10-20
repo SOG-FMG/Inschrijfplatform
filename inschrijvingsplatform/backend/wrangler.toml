@@ -1,0 +1,59 @@
+# Cloudflare Worker: API van het inschrijvingsplatform.
+# Invullen bij de eerste livegang: zie Stappenplan_Livegang.md (stap 4, 9 en 12).
+# Deze naam moet gelijk zijn aan de naam van de Worker in het dashboard (Workers Builds).
+name = "inschrijvingsplatform-api"
+main = "src/index.ts"
+compatibility_date = "2026-09-30"
+
+# Bereikbaar op https://inschrijvingsplatform-api.<account>.workers.dev
+workers_dev = true
+# Geen publieke preview-URL's per versie (die zouden nieuwe code met echte data blootstellen).
+preview_urls = false
+
+# Eigen domein (nodig voor Cloudflare Access op /api/beheer/* en voor WAF-regels).
+# Het domein moet als zone in dit Cloudflare-account staan. Zie stap 12.
+# routes = [
+#   { pattern = "api.inschrijven.<domein>", custom_domain = true },
+# ]
+
+# D1 met jurisdictie 'eu': data wordt enkel binnen de EU opgeslagen en verwerkt.
+# (Een location hint zoals 'weur' is géén garantie; de jurisdictie wel.)
+#   npx wrangler d1 create inschrijvingen-db --jurisdiction eu
+# Vul daarna het database_id hieronder in.
+[[d1_databases]]
+binding = "DB"
+database_name = "inschrijvingen-db"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+# R2 met jurisdictie 'eu': schermafbeeldingen van meldingen ("Probleem of idee melden").
+#   npx wrangler r2 bucket create inschrijvingen-bestanden --jurisdiction eu
+[[r2_buckets]]
+binding = "STORAGE"
+bucket_name = "inschrijvingen-bestanden"
+jurisdiction = "eu"
+
+# Dagelijks: anonimisering na de bewaartermijn en opruimen van oude meldingen. Tijd in UTC.
+[triggers]
+crons = ["15 3 * * *"]
+
+[observability]
+enabled = true
+
+# Niet-geheime instellingen. Secrets (NOOIT hier invullen) via `npx wrangler secret put <NAAM>`:
+#   ENCRYPTION_KEY        64 hex-tekens; eerst in de kluis bewaren (stap 5)
+#   TURNSTILE_SECRET      stap 10
+#   GRAPH_CLIENT_SECRET   stap 14
+[vars]
+# URL van de frontend (Cloudflare Pages), zonder slash op het einde. Meerdere origins: komma-gescheiden.
+ALLOWED_ORIGINS = "https://inschrijvingsplatform.pages.dev"
+PUBLIC_APP_URL = "https://inschrijvingsplatform.pages.dev"
+# Cloudflare Access (stap 13). Zolang dit niet ingevuld is, blijven alle /api/beheer/*-routes dicht (401).
+ACCESS_TEAM_DOMAIN = "https://<team>.cloudflareaccess.com"
+ACCESS_AUD = "<application-audience-tag>"
+# 'log' = geen mails versturen (enkel loggen). Op 'graph' zetten in stap 14.
+MAIL_PROVIDER = "log"
+# GRAPH_TENANT_ID = "<tenant-id>"
+# GRAPH_CLIENT_ID = "<app-registratie-client-id>"
+# GRAPH_SENDER = "infodag@<school>.be"
+# MELDINGEN_MAIL = "<team>@onderwijs.gent.be"   # seintje bij een nieuwe melding

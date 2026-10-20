@@ -1,0 +1,22 @@
+{
+  "name": "inschrijvingsplatform-backend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:lokaal": "wrangler d1 migrations apply DB --local && wrangler d1 execute DB --local --file seed/seed.sql && wrangler d1 execute DB --local --file seed/seed_scholen.sql"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260930.2",
+    "typescript": "5.7.3",
+    "vitest": "5.0.3",
+    "wrangler": "4.145.0"
+  },
+  "allowScripts": {
+    "workerd@1.20260930.2": true,
+    "esbuild@0.28.1": true
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "recommendations": [
+    "cloudflare.cloudflare-workers-bindings-extension",
+    "humao.rest-client",
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode"
+  ]
+}

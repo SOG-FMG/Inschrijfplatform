@@ -1,0 +1,7 @@
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "files.exclude": { "**/node_modules": true, "**/dist": true },
+  "search.exclude": { "backend/seed/seed_scholen.sql": true, "frontend/src/demo/scholen.json": true },
+  "[sql]": { "editor.formatOnSave": false }
+}

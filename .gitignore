@@ -1,0 +1,6 @@
+# Bronbestanden bevatten persoonsgegevens van leerlingen en ouders: nooit in de repository
+Bronnen instructie/
+*.xlsx
+*.xls
+*.csv
+*.docx
