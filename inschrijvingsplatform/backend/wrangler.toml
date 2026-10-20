@@ -23,7 +23,7 @@ preview_urls = false
 [[d1_databases]]
 binding = "DB"
 database_name = "inschrijvingen-db"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "969a47be-e8d6-4705-807a-c34b205f90cd"
 migrations_dir = "migrations"
 
 # R2 met jurisdictie 'eu': schermafbeeldingen van meldingen ("Probleem of idee melden").
@@ -46,8 +46,8 @@ enabled = true
 #   GRAPH_CLIENT_SECRET   stap 14
 [vars]
 # URL van de frontend (Cloudflare Pages), zonder slash op het einde. Meerdere origins: komma-gescheiden.
-ALLOWED_ORIGINS = "https://inschrijvingsplatform.pages.dev"
-PUBLIC_APP_URL = "https://inschrijvingsplatform.pages.dev"
+ALLOWED_ORIGINS = "https://fmg-inschrijfplatform.freinetmiddenschool-automatisatie.workers.dev"
+PUBLIC_APP_URL = "https://fmg-inschrijfplatform.freinetmiddenschool-automatisatie.workers.dev"
 # Cloudflare Access (stap 13). Zolang dit niet ingevuld is, blijven alle /api/beheer/*-routes dicht (401).
 ACCESS_TEAM_DOMAIN = "https://<team>.cloudflareaccess.com"
 ACCESS_AUD = "<application-audience-tag>"
