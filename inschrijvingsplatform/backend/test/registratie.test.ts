@@ -45,6 +45,8 @@ beforeAll(async () => {
     ACCESS_AUD: '',
     ACCESS_TEAM_DOMAIN: '',
     TURNSTILE_SECRET: undefined,
+    RL_REGISTRATIE: undefined, // de rate limiter van de proxy zou de massa-registraties in deze tests afkappen
+    RL_MELDING: undefined,
     DEV_BEHEER_EMAIL: undefined,
   };
 }, 120_000);
@@ -315,5 +317,187 @@ describe('logging', () => {
   test('X-Request-Id en geen tokens in logregels', async () => {
     const r = await api('GET', `/api/registraties/${'y'.repeat(43)}`);
     expect(r.headers.get('X-Request-Id')).toBeTruthy();
+  });
+});
+
+describe('aanmelden (authenticator en passkey)', () => {
+  const HOOFD = 'hoofd@onderwijs.gent.be';
+  const SETUP = 'ABCDEFGHIJKLMNOP';
+  const ORIGIN = 'http://localhost:5173';
+  let cookie = '';
+  let geheim = '';
+
+  const post = async (pad: string, body?: unknown, c = '', origin: string | null = ORIGIN, methode = 'POST') => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (origin) headers.Origin = origin;
+    if (c) headers.Cookie = c;
+    const res = await worker.fetch(new Request(`http://localhost${pad}`, { method: methode, headers, body: body === undefined ? undefined : JSON.stringify(body) }), env, ctx);
+    return { status: res.status, data: (await res.json()) as any, cookie: (res.headers.get('Set-Cookie') ?? '').split(';')[0] };
+  };
+  const ik = (c: string) => post('/api/beheer/ik', undefined, c, null, 'GET');
+
+  beforeAll(() => {
+    env.DEV_BEHEER_EMAIL = undefined;
+    env.HOOFDADMIN_EMAIL = HOOFD;
+    env.HOOFDADMIN_SETUP_CODE = SETUP;
+  });
+
+  test('hoofdadmin activeert met de setupcode; verkeerde code of ander domein wordt geweigerd', async () => {
+    expect((await post('/api/auth/activeren/start', { email: HOOFD, code: 'AAAA-AAAA-AAAA-AAAA' })).data.fout).toBe('ONGELDIGE_UITNODIGING');
+    expect((await post('/api/auth/activeren/start', { email: 'iemand@example.org', code: SETUP })).data.fout).toBe('ONGELDIGE_UITNODIGING');
+    expect(await een(`select 1 from gebruikers where email = ?`, HOOFD)).toBeNull();
+
+    const start = await post('/api/auth/activeren/start', { email: HOOFD, code: 'abcd-efgh-ijkl-mnop' });
+    expect(start.status).toBe(200);
+    expect(start.data.otpauth).toContain('secret=');
+    const rij = await een(`select secret_enc from gebruiker_totp`);
+    expect(rij.secret_enc).toMatch(/^v1\./); // versleuteld bewaard
+
+    const { totpCode, huidigeStap } = await import('../src/auth/totp');
+    const fout = await post('/api/auth/activeren/bevestig', { email: HOOFD, code: SETUP, totp: '000000' });
+    expect(fout.data.fout).toBe('AANMELDEN_MISLUKT');
+    geheim = start.data.geheim;
+    const ok = await post('/api/auth/activeren/bevestig', { email: HOOFD, code: SETUP, totp: await totpCode(geheim, huidigeStap()) });
+    expect(ok.status).toBe(200);
+    expect(ok.cookie).toMatch(/^(__Host-)?beheer=/);
+    cookie = ok.cookie;
+
+    const profiel = await ik(cookie);
+    expect(profiel.data).toMatchObject({ email: HOOFD, rol: 'platformbeheerder' });
+    // Na activeren kan de setupcode niet opnieuw gebruikt worden.
+    expect((await post('/api/auth/activeren/start', { email: HOOFD, code: SETUP })).data.fout).toBe('ONGELDIGE_UITNODIGING');
+  });
+
+  test('sessiecookie: zonder cookie 401, zonder of met vreemde Origin op wijzigende aanvragen 403', async () => {
+    expect((await ik('')).status).toBe(401);
+    expect((await ik('beheer=' + 'x'.repeat(43))).status).toBe(401);
+    expect((await post('/api/beheer/gebruikers', {}, cookie, null)).status).toBe(403);
+    expect((await post('/api/beheer/gebruikers', {}, cookie, 'https://kwaadaardig.example')).status).toBe(403);
+  });
+
+  test('aanmelden met code: een gebruikte code werkt niet opnieuw, de volgende wel', async () => {
+    const { totpCode, huidigeStap } = await import('../src/auth/totp');
+    const stap = huidigeStap();
+    // De activeercode (huidige stap) is al gebruikt.
+    expect((await post('/api/auth/aanmelden', { email: HOOFD, code: await totpCode(geheim, stap) })).status).toBe(401);
+    const volgende = await post('/api/auth/aanmelden', { email: HOOFD, code: await totpCode(geheim, stap + 1) });
+    expect(volgende.status).toBe(200);
+    // Zelfde code opnieuw: geweigerd.
+    expect((await post('/api/auth/aanmelden', { email: HOOFD, code: await totpCode(geheim, stap + 1) })).status).toBe(401);
+    // Onbekend adres geeft dezelfde melding als een foute code.
+    expect((await post('/api/auth/aanmelden', { email: 'niemand@onderwijs.gent.be', code: '123456' })).data.fout).toBe('AANMELDEN_MISLUKT');
+  });
+
+  test('hoofdadmin voegt een gebruiker toe; die activeert met de uitnodigingscode; enkel platformbeheer beheert gebruikers', async () => {
+    const nieuw = await post('/api/beheer/gebruikers', { voornaam: 'An', naam: 'Janssens', email: 'An.Janssens@onderwijs.gent.be', rol: 'onthaal' }, cookie);
+    expect(nieuw.status).toBe(201);
+    expect(nieuw.data.uitnodigingscode).toMatch(/^[A-Z2-7]{4}(-[A-Z2-7]{4}){3}$/);
+    expect((await post('/api/beheer/gebruikers', { voornaam: 'X', naam: 'Y', email: 'x@gmail.com', rol: 'onthaal' }, cookie)).data.fout).toBe('ONGELDIGE_GEGEVENS');
+    expect((await post('/api/beheer/gebruikers', { voornaam: 'An', naam: 'J', email: 'an.janssens@onderwijs.gent.be', rol: 'onthaal' }, cookie)).data.fout).toBe('GEBRUIKER_BESTAAT');
+    const hash = await een(`select uitnodiging_hash from gebruikers where email = 'an.janssens@onderwijs.gent.be'`);
+    expect(hash.uitnodiging_hash).not.toContain(nieuw.data.uitnodigingscode.replace(/-/g, ''));
+
+    const start = await post('/api/auth/activeren/start', { email: 'an.janssens@onderwijs.gent.be', code: nieuw.data.uitnodigingscode });
+    expect(start.status).toBe(200);
+    const { totpCode, huidigeStap } = await import('../src/auth/totp');
+    const klaar = await post('/api/auth/activeren/bevestig', {
+      email: 'an.janssens@onderwijs.gent.be',
+      code: nieuw.data.uitnodigingscode,
+      totp: await totpCode(start.data.geheim, huidigeStap()),
+    });
+    expect(klaar.status).toBe(200);
+    expect((await ik(klaar.cookie)).data.rol).toBe('onthaal');
+    expect((await post('/api/beheer/gebruikers', undefined, klaar.cookie, null, 'GET')).status).toBe(403);
+    // Uitnodiging is verbruikt.
+    expect((await post('/api/auth/activeren/start', { email: 'an.janssens@onderwijs.gent.be', code: nieuw.data.uitnodigingscode })).data.fout).toBe('ONGELDIGE_UITNODIGING');
+
+    // Resetten sluit de oude sessie af; deactiveren ook.
+    const lijst = await post('/api/beheer/gebruikers', undefined, cookie, null, 'GET');
+    const an = lijst.data.find((g: any) => g.email === 'an.janssens@onderwijs.gent.be');
+    expect(an).toMatchObject({ heeftAuthenticator: 1, rol: 'onthaal' });
+    expect((await post(`/api/beheer/gebruikers/${an.id}/reset`, undefined, cookie)).data.uitnodigingscode).toBeTruthy();
+    expect((await ik(klaar.cookie)).status).toBe(401);
+    expect((await post(`/api/beheer/gebruikers/${an.id}`, { actief: false }, cookie, ORIGIN, 'PATCH')).status).toBe(200);
+    const ikId = lijst.data.find((g: any) => g.email === HOOFD).id;
+    expect((await post(`/api/beheer/gebruikers/${ikId}`, { actief: false }, cookie, ORIGIN, 'PATCH')).status).toBe(403); // niet jezelf
+  });
+
+  test('passkey: registreren en aanmelden met een ES256-sleutel, uitdaging eenmalig', async () => {
+    const { naarB64u, vanB64u } = await import('../src/auth/webauthn');
+    const enc = new TextEncoder();
+    const sha = async (d: Uint8Array) => new Uint8Array(await crypto.subtle.digest('SHA-256', d));
+    const rpHash = await sha(enc.encode('localhost'));
+    const sleutel = (await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])) as CryptoKeyPair;
+    const spki = new Uint8Array(await crypto.subtle.exportKey('spki', sleutel.publicKey));
+    const credId = crypto.getRandomValues(new Uint8Array(32));
+    const id = naarB64u(credId);
+    const clientData = (type: string, challenge: string, origin = ORIGIN) => enc.encode(JSON.stringify({ type, challenge, origin, crossOrigin: false }));
+    const concat = (...delen: Uint8Array[]) => Uint8Array.from(delen.flatMap((d) => [...d]));
+
+    // Registreren
+    const opties = (await post('/api/beheer/passkeys/opties', undefined, cookie)).data;
+    expect(opties.authenticatorSelection.userVerification).toBe('required');
+    const attData = concat(rpHash, Uint8Array.of(0x45), new Uint8Array(4), new Uint8Array(16), Uint8Array.of(0, 32), credId, Uint8Array.of(0xa0));
+    const reg = { id, clientDataJSON: '', authenticatorData: naarB64u(attData), publicKey: naarB64u(spki), algoritme: -7, naam: 'Laptop' };
+    // Verkeerde origin: geweigerd (en de uitdaging is daarmee verbruikt).
+    const verkeerd = { ...reg, clientDataJSON: naarB64u(clientData('webauthn.create', opties.challenge, 'https://nep.example')) };
+    expect((await post('/api/beheer/passkeys', verkeerd, cookie)).status).toBe(401);
+    const opties2 = (await post('/api/beheer/passkeys/opties', undefined, cookie)).data;
+    const reg2 = { ...reg, clientDataJSON: naarB64u(clientData('webauthn.create', opties2.challenge)) };
+    expect((await post('/api/beheer/passkeys', reg2, cookie)).status).toBe(201);
+    expect((await ik(cookie)).data.passkeys).toEqual([expect.objectContaining({ id, naam: 'Laptop' })]);
+
+    // Aanmelden: DER-handtekening zoals een echte authenticator die levert
+    const rawNaarDer = (raw: Uint8Array) => {
+      const int = (x: Uint8Array) => {
+        let b = [...x];
+        while (b.length > 1 && b[0] === 0) b.shift();
+        if (b[0] & 0x80) b = [0, ...b];
+        return [0x02, b.length, ...b];
+      };
+      const inhoud = [...int(raw.slice(0, 32)), ...int(raw.slice(32))];
+      return Uint8Array.from([0x30, inhoud.length, ...inhoud]);
+    };
+    const aanmeldBody = async (challenge: string, teller: number, uv = true) => {
+      const auth = concat(rpHash, Uint8Array.of(uv ? 0x05 : 0x01), Uint8Array.of(0, 0, 0, teller));
+      const cd = clientData('webauthn.get', challenge);
+      const sig = new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, sleutel.privateKey, concat(auth, await sha(cd))));
+      return { id, clientDataJSON: naarB64u(cd), authenticatorData: naarB64u(auth), handtekening: naarB64u(rawNaarDer(sig)) };
+    };
+    const lo = (await post('/api/auth/passkey/opties')).data;
+    expect(lo.rpId).toBe('localhost');
+    const ok = await post('/api/auth/passkey/aanmelden', await aanmeldBody(lo.challenge, 1));
+    expect(ok.status).toBe(200);
+    expect((await ik(ok.cookie)).data.email).toBe(HOOFD);
+    // Dezelfde uitdaging nog eens (replay): geweigerd.
+    expect((await post('/api/auth/passkey/aanmelden', await aanmeldBody(lo.challenge, 2))).status).toBe(401);
+    // Een teller die niet stijgt: geweigerd.
+    const lo2 = (await post('/api/auth/passkey/opties')).data;
+    expect((await post('/api/auth/passkey/aanmelden', await aanmeldBody(lo2.challenge, 1))).status).toBe(401);
+    // Zonder gebruikersverificatie (geen pincode/vingerafdruk): geweigerd.
+    const lo3 = (await post('/api/auth/passkey/opties')).data;
+    expect((await post('/api/auth/passkey/aanmelden', await aanmeldBody(lo3.challenge, 3, false))).status).toBe(401);
+    // Een gewijzigde handtekening: geweigerd.
+    const lo4 = (await post('/api/auth/passkey/opties')).data;
+    const slecht = await aanmeldBody(lo4.challenge, 3);
+    const sigBytes = vanB64u(slecht.handtekening);
+    sigBytes[sigBytes.length - 1] ^= 1;
+    expect((await post('/api/auth/passkey/aanmelden', { ...slecht, handtekening: naarB64u(sigBytes) })).status).toBe(401);
+    const lo5 = (await post('/api/auth/passkey/opties')).data;
+    expect((await post('/api/auth/passkey/aanmelden', await aanmeldBody(lo5.challenge, 3))).status).toBe(200);
+  });
+
+  test('te veel foute pogingen blokkeren het e-mailadres', async () => {
+    await sql(`delete from aanmeld_pogingen`);
+    for (let i = 0; i < 5; i++) expect((await post('/api/auth/aanmelden', { email: HOOFD, code: '000000' })).data.fout).toBe('AANMELDEN_MISLUKT');
+    const zesde = await post('/api/auth/aanmelden', { email: HOOFD, code: '000000' });
+    expect(zesde.status).toBe(429);
+    await sql(`delete from aanmeld_pogingen`);
+  });
+
+  test('afmelden wist de sessie', async () => {
+    const af = await post('/api/auth/afmelden', undefined, cookie);
+    expect(af.status).toBe(200);
+    expect((await ik(cookie)).status).toBe(401);
   });
 });

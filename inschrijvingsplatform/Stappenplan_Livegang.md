@@ -2,8 +2,8 @@
 
 De livegang verloopt in twee fasen.
 
-- **Fase 1 (stap 1–11): technisch online.** Het formulier draait op `*.pages.dev` en de API op `*.workers.dev`. Je kan alles testen, maar ouders nog niet uitnodigen: er gaan nog geen mails uit en het beheer (export) is nog dicht.
-- **Fase 2 (stap 12–17): klaar voor ouders.** Eigen domein, aanmelden voor medewerkers, mail, rate limiting, back-up en de afspraken met de DPO.
+- **Fase 1 (stap 1–11): technisch online.** Het formulier en de API draaien op `*.workers.dev`. Je kan alles testen, maar ouders nog niet uitnodigen: het beheer (export) is nog dicht.
+- **Fase 2 (stap 12–17): klaar voor ouders.** Aanmelden voor medewerkers, mails, rate limiting, back-up en de afspraken met de DPO. Een eigen domein is **niet nodig** (stap 12).
 
 Commando's werken in de terminal van VS Code (PowerShell of Git Bash).
 
@@ -21,16 +21,16 @@ VSC_Inschrijfformulier/                 ← root van de repository
 └── inschrijvingsplatform/
     ├── backend/    ──────────────►  Cloudflare Worker  "inschrijvingsplatform-api"
     │   └── wrangler.toml                (alle Worker-instellingen)
-    ├── frontend/   ──────────────►  Cloudflare Pages   "inschrijvingsplatform"
+    ├── frontend/   ──────────────►  Cloudflare Worker  "fmg-inschrijfplatform" (statische bestanden + doorsturen van /api/*)
     └── tools/                           (niet gekoppeld)
 ```
 
 | Cloudflare-project | Koppelen aan map (root directory) | Instellingen staan in |
 | --- | --- | --- |
 | Worker `inschrijvingsplatform-api` | `inschrijvingsplatform/backend` | `backend/wrangler.toml` + secrets |
-| Pages `inschrijvingsplatform` | `inschrijvingsplatform/frontend` | dashboard (omgevingsvariabelen) |
+| Worker `fmg-inschrijfplatform` | `inschrijvingsplatform/frontend` | `frontend/wrangler.jsonc` + build-variabelen in het dashboard |
 
-Pages heeft geen `wrangler.toml` nodig. `public/_redirects` en `public/_headers` worden automatisch meegenomen.
+De frontend-Worker stuurt `/api/*` via een *service binding* door naar `inschrijvingsplatform-api`. Zo staan formulier en API onder één hostnaam (nodig voor veilige sessiecookies en passkeys), zonder eigen domein. `public/_headers` wordt automatisch meegenomen; de SPA-fallback staat in `wrangler.jsonc`.
 
 ---
 
@@ -94,7 +94,9 @@ database_id = "<het id uit de uitvoer>"
 3. Zet hem daarna als secret op de Worker (plakken wanneer erom gevraagd wordt):
 
    ```bash
+   cd inschrijvingsplatform\backend
    npx wrangler secret put ENCRYPTION_KEY
+
    ```
 
    Bestaat de Worker nog niet, dan maakt Wrangler hem aan.
@@ -121,7 +123,7 @@ Het voorbeeldevenement staat meteen op *gepubliceerd*. Dat is handig om te teste
 npx wrangler deploy
 ```
 
-De uitvoer toont de URL, bv. `https://inschrijvingsplatform-api.<account>.workers.dev`. Test die in de browser:
+De uitvoer toont de URL, bv. `https://inschrijvingsplatform-api.freinetmiddenschool-automatisatie>.workers.dev`. Test die in de browser:
 
 - `…/api/evenementen/fmg-infodagen-2027` → JSON met het evenement
 - `…/api/scholen` → lijst met scholen
@@ -144,40 +146,39 @@ Vanaf nu deployt elke push naar `main` die de backend wijzigt automatisch.
 
 **Databasemigraties gebeuren bewust niet automatisch.** Voer ze manueel uit met `npx wrangler d1 migrations apply DB --remote`, en noteer vooraf het tijdstip voor Time Travel (zie `Todo_SetupBackupSystem.md`).
 
-## 9. Frontend koppelen aan Cloudflare Pages
+## 9. Frontend koppelen aan Cloudflare (Worker met statische bestanden)
 
-Ga naar *Workers & Pages → Create → Pages → Connect to Git* en vul in:
+Ga naar *Workers & Pages → Create → Import a repository* en vul in:
 
 | Instelling | Waarde |
 | --- | --- |
-| Project name | `inschrijvingsplatform` (bepaalt de URL `inschrijvingsplatform.pages.dev`) |
+| Project/Worker name | `fmg-inschrijfplatform` (moet gelijk zijn aan `name` in `frontend/wrangler.jsonc`) |
 | Production branch | `main` |
-| Framework preset | `None` |
 | Root directory | `inschrijvingsplatform/frontend` |
-| Build command | `npm run build` |
-| Build output directory | `dist` |
+| Build command | `npm ci && npm run build` |
+| Deploy command | `npx wrangler deploy` |
 | Build watch paths (include) | `inschrijvingsplatform/frontend/*` |
 
-Stel bij *Environment variables* (Production) deze variabelen in:
+Stel bij *Build → Variables and secrets* deze **build-variabelen** in:
 
 | Variabele | Waarde |
 | --- | --- |
-| `VITE_API_URL` | de Worker-URL uit stap 7, zonder `/` op het einde |
+| `VITE_API_URL` | `/` (de frontend stuurt `/api/*` zelf door naar de API-Worker) |
 | `VITE_STANDAARD_EVENEMENT` | `fmg-infodagen-2027` (of de slug van je evenement) |
 | `VITE_TURNSTILE_SITEKEY` | leeg laten, invullen in stap 10 |
 | `NODE_VERSION` | `22` |
 
-`VITE_*`-waarden worden bij het bouwen ingebakken. Na een wijziging moet je opnieuw deployen (*Deployments → Retry deployment*).
+`VITE_*`-waarden worden bij het bouwen ingebakken. Na een wijziging moet je opnieuw bouwen (*Deployments → Retry*). De API-Worker (stap 7) moet bestaan vóór de eerste deploy van de frontend.
 
-Was de naam `inschrijvingsplatform` al bezet, noteer dan de echte `*.pages.dev`-URL voor stap 11.
+De frontend staat op `https://fmg-inschrijfplatform.<account>.workers.dev`. Noteer die URL voor stap 10 en 11.
 
 ## 10. Botcontrole (Turnstile)
 
 1. Maak een widget aan via *Turnstile → Add widget*:
-   - Hostname: `inschrijvingsplatform.pages.dev`, later ook het eigen domein
+   - Hostname: `fmg-inschrijfplatform.<account>.workers.dev` (de **frontend**, niet de API)
    - Mode: *Managed*
-2. Zet de **sitekey** in Pages als `VITE_TURNSTILE_SITEKEY` en deploy de frontend opnieuw.
-3. Zet het **secret** op de Worker:
+2. Zet de **sitekey** (publiek) als build-variabele `VITE_TURNSTILE_SITEKEY` van de frontend en bouw opnieuw.
+3. Zet het **secret** (geheim, nooit in een bestand of in Git) op de API-Worker:
 
    ```bash
    npx wrangler secret put TURNSTILE_SECRET
@@ -185,18 +186,20 @@ Was de naam `inschrijvingsplatform` al bezet, noteer dan de echte `*.pages.dev`-
 
 ## 11. Worker laten weten waar de frontend staat
 
-1. Pas in `backend/wrangler.toml` deze waarden aan naar de echte Pages-URL:
+1. Pas in `backend/wrangler.toml` deze waarden aan naar de echte URL van de frontend (stap 9):
 
    ```toml
-   ALLOWED_ORIGINS = "https://inschrijvingsplatform.pages.dev"
-   PUBLIC_APP_URL  = "https://inschrijvingsplatform.pages.dev"
+   ALLOWED_ORIGINS = "https://fmg-inschrijfplatform.<account>.workers.dev"
+   PUBLIC_APP_URL  = "https://fmg-inschrijfplatform.<account>.workers.dev"
    ```
+
+   `PUBLIC_APP_URL` bepaalt ook de `rpId` en de toegelaten origin van passkeys. Wijzigt de hostnaam later, dan moeten medewerkers hun passkeys opnieuw registreren.
 
 2. Commit en push. De Worker deployt vanzelf (stap 8).
 
 ### Test fase 1
 
-- [ ] Het formulier opent op `https://inschrijvingsplatform.pages.dev` **zonder** de gele demo-melding.
+- [ ] Het formulier opent op `https://fmg-inschrijfplatform.<account>.workers.dev` **zonder** de gele demo-melding.
 - [ ] Een volledige testinschrijving lukt en je krijgt een referentie.
 - [ ] De beheerlink op de bevestigingspagina werkt, en annuleren ook.
 - [ ] Een volzet lesje kan je niet kiezen. Zet de capaciteit desnoods tijdelijk op 1 met `wrangler d1 execute`.
@@ -208,42 +211,43 @@ Was de naam `inschrijvingsplatform` al bezet, noteer dan de echte `*.pages.dev`-
 
 # Fase 2 – klaar voor ouders
 
-## 12. Eigen domein
+## 12. Eigen domein (niet nodig)
 
-Nodig om twee redenen:
-
-- Cloudflare Access kan enkel `/api/beheer/*` afschermen op een eigen domein.
-- WAF-regels (rate limiting) werken niet op `workers.dev` of `pages.dev`.
-
-Het domein moet als zone in dit Cloudflare-account staan. Bekijk met **District09** of dat een subdomein van een bestaand Gents domein wordt (delegatie) of een apart domein.
-
-1. **Frontend:** *Pages → inschrijvingsplatform → Custom domains*, bv. `inschrijven.<domein>`.
-2. **API:** zet in `wrangler.toml`:
-
-   ```toml
-   routes = [ { pattern = "api.inschrijven.<domein>", custom_domain = true } ]
-   ```
-
-3. Werk deze waarden bij naar de nieuwe domeinen:
-   - `ALLOWED_ORIGINS` en `PUBLIC_APP_URL` in `wrangler.toml`
-   - `VITE_API_URL` in Pages
-   - de hostname in de Turnstile-widget
+Een eigen domein is niet vereist. Het aanmelden van medewerkers (stap 13) en de rate limiting (stap 15) werken volledig op `workers.dev`. Krijg je later toch een domein, dan koppel je het aan de frontend-Worker (*Settings → Domains & Routes*) en pas je `ALLOWED_ORIGINS`, `PUBLIC_APP_URL` en de Turnstile-hostname aan. Passkeys moeten dan opnieuw geregistreerd worden (de authenticator-app blijft werken).
 
 ## 13. Beheer afschermen: enkel @onderwijs.gent.be
 
-1. **Entra ID koppelen.** Ga naar *Zero Trust → Integrations → Identity providers → Add → Microsoft Entra ID*. Daarvoor is een app-registratie in Entra ID nodig, aan te vragen bij de tenantbeheerder of District09.
-2. **Access-applicatie aanmaken.** Ga naar *Zero Trust → Access controls → Applications → Add → Self-hosted*:
-   - Domain: `api.inschrijven.<domein>`, path `api/beheer`
-   - Policy: *Allow*, include *Emails ending in* `@onderwijs.gent.be`
-   - Login methods: enkel Entra ID
-3. Vul in `wrangler.toml` `ACCESS_TEAM_DOMAIN` (*Zero Trust → Settings → Team domain*) en `ACCESS_AUD` (*Application Audience Tag* bij de applicatie) in. Push.
-4. **Eerste beheerder** toevoegen:
+Medewerkers melden aan met hun `@onderwijs.gent.be`-adres **plus** een authenticator-app (6-cijferige code) of een **passkey** (pincode, vingerafdruk of gezichtsherkenning van de laptop, bv. Windows Hello). Er is geen wachtwoord en geen mail nodig. Enkel adressen in de tabel `gebruikers` komen binnen, en de hoofdadmin staat in de configuratie.
 
-   ```bash
-   npx wrangler d1 execute DB --remote --command "insert into gebruikers (naam, voornaam, email, rol_id) select '<Naam>', '<Voornaam>', '<voornaam.naam>@onderwijs.gent.be', rol_id from rollen where code = 'platformbeheerder'"
+1. **Hoofdadmin vastleggen.** Zet in `backend/wrangler.toml`:
+
+   ```toml
+   HOOFDADMIN_EMAIL = "voornaam.naam@onderwijs.gent.be"
    ```
 
-5. **Test.** Open `https://api.inschrijven.<domein>/api/beheer/meldingen`. Je komt eerst bij de Microsoft-aanmelding en daarna zie je de JSON. Een niet-Gents account komt er niet door.
+2. **Eenmalige setupcode** (16 tekens uit `A–Z` en `2–7`) als secret zetten. Bewaar hem in de wachtwoordkluis:
+
+   ```bash
+   node -e "const a='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';console.log([...require('crypto').randomBytes(16)].map(b=>a[b%32]).join(''))"
+   npx wrangler secret put HOOFDADMIN_SETUP_CODE
+   ```
+
+3. Commit en push (stap 8 deployt), en voer de nieuwe migratie uit:
+
+   ```bash
+   npx wrangler d1 migrations apply DB --remote
+   ```
+
+4. **Hoofdadmin activeert zich.** Ga naar `https://fmg-inschrijfplatform.<account>.workers.dev/medewerkers/activeren`, vul het adres en de setupcode in, scan de QR-code met een authenticator-app en geef de code in. Je bent nu aangemeld.
+5. **Passkey toevoegen** (aanbevolen): klik op *Passkey toevoegen op dit toestel*. Daarna kan je aanmelden met de pincode of vingerafdruk van dit toestel. Houd liefst twee methodes (passkey en app), zodat je niet buitengesloten raakt.
+6. **Andere medewerkers toevoegen** onder *Gebruikers*: naam, adres, rol en (voor organisator en onthaal) de evenementen. Je krijgt een **uitnodigingscode** die je persoonlijk doorgeeft. De medewerker activeert zich zoals in punt 4. De code is 7 dagen geldig en werkt één keer.
+7. **Verloren toestel?** Kies bij de gebruiker *Resetten*: authenticator, passkeys en sessies worden gewist en je krijgt een nieuwe code. Is het de hoofdadmin zelf, wis dan zijn gegevens en gebruik de setupcode opnieuw:
+
+   ```bash
+   npx wrangler d1 execute DB --remote --command "delete from gebruiker_totp where gebruiker_id = (select gebruiker_id from gebruikers where email = '<hoofdadmin>'); delete from passkeys where gebruiker_id = (select gebruiker_id from gebruikers where email = '<hoofdadmin>');"
+   ```
+
+Beveiliging in het kort: sessiecookie `HttpOnly` + `Secure` + `SameSite=Strict` (8 uur, 2 uur inactiviteit), elke code kan maar één keer gebruikt worden, na 5 foute pogingen per adres of 20 per IP-adres volgt 15 minuten blokkade, passkeys vereisen altijd gebruikersverificatie, en alle aanmeldingen komen in het auditlogboek.
 
 ## 14. Bevestigingsmails via Microsoft 365
 
@@ -260,12 +264,16 @@ Zonder deze stap krijgen ouders **geen** mail met hun beheerlink.
 
 5. Test met een eigen inschrijving: komt de mail aan en werkt de link?
 
+> **Zonder Graph (geen Entra-app mogelijk):** laat `MAIL_PROVIDER = "log"`. Er gaan dan geen mails uit. Exporteer de deelnemerslijst (stap 17) en verstuur de bevestigingen zelf via afdruk samenvoegen in Word. Let op: de persoonlijke beheerlink (annuleren) staat niet in de export, want die wordt enkel als hash bewaard. Ouders zien de link wel op het scherm direct na het inschrijven.
+
 ## 15. Rate limiting
 
-Maak via *Security → WAF → Rate limiting rules* (op de zone van het eigen domein) twee regels:
+Staat al in `backend/wrangler.toml` (`[[ratelimits]]`) en werkt per IP-adres, zonder eigen domein:
 
-- `POST` op `/api/evenementen/*/registraties`: bv. 10 per minuut per IP
-- `POST` op `/api/meldingen`: bv. 5 per minuut per IP
+- registreren: 10 per minuut (`RL_REGISTRATIE`)
+- meldingen: 5 per minuut (`RL_MELDING`)
+
+Pas `limit` aan als een school met één gedeeld IP-adres (bv. een klas die tegelijk inschrijft) hierdoor geblokkeerd wordt. `period` kan enkel 10 of 60 seconden zijn.
 
 ## 16. Back-up
 
@@ -288,7 +296,7 @@ Werk `Todo_SetupBackupSystem.md` af: minstens laag 1 (Workers Paid, Time Travel)
   ```
 
   Inschrijvingen en mailberichten verdwijnen mee via de cascade.
-- [ ] Je weet hoe je een export maakt: `GET https://api.inschrijven.<domein>/api/beheer/evenementen/<evenement_id>/deelnemers.csv`.
+- [ ] Je weet hoe je een export maakt: aangemeld op `/medewerkers` bij *Evenementen* → *Deelnemerslijst downloaden* (CSV met puntkomma, opent in Excel).
 - [ ] De link naar het formulier wordt verspreid.
 
 ---
@@ -299,11 +307,11 @@ Werk `Todo_SetupBackupSystem.md` af: minstens laag 1 (Workers Paid, Time Travel)
 | --- | --- | --- |
 | `database_id` | `backend/wrangler.toml` | 4 |
 | `ENCRYPTION_KEY` | Worker-secret + wachtwoordkluis | 5 |
-| `VITE_API_URL`, `VITE_STANDAARD_EVENEMENT`, `NODE_VERSION` | Pages → Settings → Environment variables | 9 |
-| `VITE_TURNSTILE_SITEKEY` / `TURNSTILE_SECRET` | Pages / Worker-secret | 10 |
-| `ALLOWED_ORIGINS`, `PUBLIC_APP_URL` | `backend/wrangler.toml` | 11, 12 |
-| `routes` (eigen domein) | `backend/wrangler.toml` | 12 |
-| `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD` | `backend/wrangler.toml` | 13 |
+| `VITE_API_URL` (= `/`), `VITE_STANDAARD_EVENEMENT`, `NODE_VERSION` | Frontend-Worker → Settings → Build → Variables | 9 |
+| `VITE_TURNSTILE_SITEKEY` / `TURNSTILE_SECRET` | Frontend-build-variabele / Worker-secret | 10 |
+| `ALLOWED_ORIGINS`, `PUBLIC_APP_URL` | `backend/wrangler.toml` | 11 |
+| `HOOFDADMIN_EMAIL` / `HOOFDADMIN_SETUP_CODE` | `backend/wrangler.toml` / Worker-secret | 13 |
+| `[[ratelimits]]` | `backend/wrangler.toml` | 15 |
 | `MAIL_PROVIDER`, `GRAPH_*`, `MELDINGEN_MAIL` | `backend/wrangler.toml` | 14 |
 | `GRAPH_CLIENT_SECRET` | Worker-secret | 14 |
 

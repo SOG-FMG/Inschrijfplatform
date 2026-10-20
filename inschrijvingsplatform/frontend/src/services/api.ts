@@ -19,10 +19,13 @@ export interface Api {
   meld(melding: Melding): Promise<{ referentie: string }>;
 }
 
-const BASIS = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '');
+const RUW = import.meta.env.VITE_API_URL as string | undefined;
 
 /** Zonder VITE_API_URL draait het formulier volledig in de browser met voorbeelddata. */
-export const isDemo = !BASIS;
+export const isDemo = !RUW;
+
+/** '/' (productie: de frontend-Worker stuurt /api/* door) geeft een leeg voorvoegsel; anders de volledige URL van de API. */
+export const BASIS = (RUW ?? '').replace(/\/$/, '');
 
 async function call<T>(pad: string, init?: RequestInit): Promise<T> {
   const methode = init?.method ?? 'GET';

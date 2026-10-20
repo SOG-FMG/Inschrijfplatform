@@ -10,11 +10,8 @@ workers_dev = true
 # Geen publieke preview-URL's per versie (die zouden nieuwe code met echte data blootstellen).
 preview_urls = false
 
-# Eigen domein (nodig voor Cloudflare Access op /api/beheer/* en voor WAF-regels).
-# Het domein moet als zone in dit Cloudflare-account staan. Zie stap 12.
-# routes = [
-#   { pattern = "api.inschrijven.<domein>", custom_domain = true },
-# ]
+# Een eigen domein is niet nodig: de frontend (Worker 'fmg-inschrijfplatform') stuurt /api/* via een service binding
+# door naar deze Worker, zodat alles onder één hostnaam draait (cookies, passkeys). Zie frontend/worker/index.ts.
 
 # D1 met jurisdictie 'eu': data wordt enkel binnen de EU opgeslagen en verwerkt.
 # (Een location hint zoals 'weur' is géén garantie; de jurisdictie wel.)
@@ -33,6 +30,17 @@ binding = "STORAGE"
 bucket_name = "inschrijvingen-bestanden"
 jurisdiction = "eu"
 
+# Rate limiting per IP-adres (zonder eigen domein/WAF). 'period' is 10 of 60 seconden; namespace_id is vrij te kiezen en uniek in het account.
+[[ratelimits]]
+name = "RL_REGISTRATIE"
+namespace_id = "1001"
+simple = { limit = 10, period = 60 }
+
+[[ratelimits]]
+name = "RL_MELDING"
+namespace_id = "1002"
+simple = { limit = 5, period = 60 }
+
 # Dagelijks: anonimisering na de bewaartermijn en opruimen van oude meldingen. Tijd in UTC.
 [triggers]
 crons = ["15 3 * * *"]
@@ -43,14 +51,15 @@ enabled = true
 # Niet-geheime instellingen. Secrets (NOOIT hier invullen) via `npx wrangler secret put <NAAM>`:
 #   ENCRYPTION_KEY        64 hex-tekens; eerst in de kluis bewaren (stap 5)
 #   TURNSTILE_SECRET      stap 10
+#   HOOFDADMIN_SETUP_CODE 16 tekens (A-Z, 2-7); stap 13
 #   GRAPH_CLIENT_SECRET   stap 14
 [vars]
 # URL van de frontend (Cloudflare Pages), zonder slash op het einde. Meerdere origins: komma-gescheiden.
 ALLOWED_ORIGINS = "https://fmg-inschrijfplatform.freinetmiddenschool-automatisatie.workers.dev"
 PUBLIC_APP_URL = "https://fmg-inschrijfplatform.freinetmiddenschool-automatisatie.workers.dev"
-# Cloudflare Access (stap 13). Zolang dit niet ingevuld is, blijven alle /api/beheer/*-routes dicht (401).
-ACCESS_TEAM_DOMAIN = "https://<team>.cloudflareaccess.com"
-ACCESS_AUD = "<application-audience-tag>"
+# Hoofdadmin (stap 13): de enige die zich de eerste keer kan activeren, met het secret HOOFDADMIN_SETUP_CODE.
+# Daarna voegt die de andere medewerkers toe in het beheerscherm. Enkel adressen @onderwijs.gent.be.
+HOOFDADMIN_EMAIL = ""
 # 'log' = geen mails versturen (enkel loggen). Op 'graph' zetten in stap 14.
 MAIL_PROVIDER = "log"
 # GRAPH_TENANT_ID = "<tenant-id>"

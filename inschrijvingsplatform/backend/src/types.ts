@@ -1,5 +1,8 @@
 export interface Env {
   DB: D1Database;
+  /** Workers Rate Limiting (wrangler.toml [[ratelimits]]); ontbreekt lokaal en in tests = geen beperking. */
+  RL_REGISTRATIE?: RateLimit;
+  RL_MELDING?: RateLimit;
   /** R2 (jurisdictie EU): schermafbeeldingen bij meldingen. */
   STORAGE: R2Bucket;
   /** Optioneel: mailbox die een seintje krijgt bij een nieuwe melding (enkel @onderwijs.gent.be). */
@@ -12,11 +15,11 @@ export interface Env {
   PUBLIC_APP_URL: string;
   /** Cloudflare Turnstile (optioneel lokaal, verplicht in productie). */
   TURNSTILE_SECRET?: string;
-  /** Cloudflare Access: bv. https://<team>.cloudflareaccess.com */
-  ACCESS_TEAM_DOMAIN?: string;
-  /** Cloudflare Access: Application Audience (AUD) tag van de beheer-applicatie. */
-  ACCESS_AUD?: string;
-  /** Enkel lokaal (localhost, zonder ACCESS_AUD): meld aan als deze medewerker. */
+  /** De hoofdadmin: de enige die zich de eerste keer kan activeren met HOOFDADMIN_SETUP_CODE. Moet @onderwijs.gent.be zijn. */
+  HOOFDADMIN_EMAIL?: string;
+  /** Secret – eenmalige code waarmee de hoofdadmin zijn authenticator/passkey koppelt (`wrangler secret put`). */
+  HOOFDADMIN_SETUP_CODE?: string;
+  /** Enkel lokaal (localhost): meld aan als deze medewerker, zonder authenticator. */
   DEV_BEHEER_EMAIL?: string;
   /** 'graph' (Microsoft 365 via de eigen tenant) of 'log' (enkel loggen, voor ontwikkeling). */
   MAIL_PROVIDER?: 'graph' | 'log';

@@ -1,3 +1,5 @@
+import { authRoute, aanmeldBeheerRoute } from './auth/routes';
+import { ruimAanmeldingOp } from './auth/sessie';
 import { sha256 } from './crypto/versleuteling';
 import { anonimiseerEvenement, anonimiseerVerlopenEvenementen, audit, deelnemerslijst, kenSessieToe, verplaatsDagdeel } from './db/beheer';
 import { publiekEvenement, scholen } from './db/evenement';
@@ -28,7 +30,11 @@ const MELDINGEN: Record<string, [number, string]> = {
   SESSIE_VOLZET: [409, 'Een gekozen onderdeel is intussen volzet. Kies een ander onderdeel.'],
   REGISTRATIE_NIET_GEVONDEN: [404, 'Deze inschrijving werd niet gevonden of is al geannuleerd.'],
   NIET_MEER_ANNULEERBAAR: [409, 'Deze inschrijving kan niet meer geannuleerd worden.'],
-  NIET_AANGEMELD: [401, 'Meld je aan met je @onderwijs.gent.be-account.'],
+  NIET_AANGEMELD: [401, 'Meld je aan om verder te gaan.'],
+  AANMELDEN_MISLUKT: [401, 'Aanmelden mislukt. Controleer je gegevens en probeer opnieuw.'],
+  ONGELDIGE_UITNODIGING: [400, 'Deze uitnodiging is ongeldig of verlopen.'],
+  TE_VEEL_POGINGEN: [429, 'Te veel pogingen. Probeer het over 15 minuten opnieuw.'],
+  GEBRUIKER_BESTAAT: [409, 'Er bestaat al een gebruiker met dit e-mailadres.'],
   GEEN_TOEGANG: [403, 'Je hebt geen toegang tot deze gegevens.'],
   INSCHRIJVING_NIET_GEVONDEN: [404, 'Deze deelnemer is niet ingeschreven voor dat moment.'],
   EERST_DAGDEEL_VERPLAATSEN: [409, 'Verplaats de deelnemer eerst naar het dagdeel van deze sessie.'],
@@ -40,6 +46,7 @@ function cors(request: Request, env: Env): Record<string, string> {
   return toegelaten.includes(origin)
     ? {
         'Access-Control-Allow-Origin': origin,
+        'Access-Control-Allow-Credentials': 'true',
         'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization',
         'Access-Control-Expose-Headers': 'X-Request-Id',
@@ -82,7 +89,17 @@ async function leesJson(request: Request, maxBytes: number): Promise<unknown> {
   return JSON.parse(tekst);
 }
 
+/** Beperkt het aantal aanvragen per IP-adres (Workers Rate Limiting). Zonder binding (lokaal, tests) gebeurt er niets. */
+async function teSnel(limiet: RateLimit | undefined, request: Request): Promise<boolean> {
+  if (!limiet) return false;
+  const { success } = await limiet.limit({ key: request.headers.get('CF-Connecting-IP') ?? 'onbekend' });
+  return !success;
+}
+
+const teVeelAanvragen = () => json({ fout: 'TE_VEEL_AANVRAGEN', melding: 'Te veel aanvragen na elkaar. Wacht even en probeer opnieuw.' }, 429);
+
 async function registreerRoute(request: Request, env: Env, ctx: ExecutionContext, slug: string): Promise<Response> {
+  if (await teSnel(env.RL_REGISTRATIE, request)) return teVeelAanvragen();
   const invoer = valideerRegistratie(await leesJson(request, 64 * 1024));
   // Honeypot ingevuld → doen alsof het lukte, maar niets bewaren
   if (invoer.website) return json({ referentie: 'OK' }, 201);
@@ -108,6 +125,7 @@ async function registreerRoute(request: Request, env: Env, ctx: ExecutionContext
 }
 
 async function meldingRoute(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  if (await teSnel(env.RL_MELDING, request)) return teVeelAanvragen();
   const body = (await leesJson(request, 5 * 1024 * 1024)) as any;
   if (typeof body?.website === 'string' && body.website) return json({ referentie: 'OK' }, 201);
   if (!(await controleerTurnstile(env, body?.turnstileToken, request.headers.get('CF-Connecting-IP')))) return botcontroleMislukt();
@@ -139,6 +157,9 @@ async function beheerRoute(request: Request, env: Env, pad: string, m: string): 
   const g = await huidigeGebruiker(request, env);
   const ip = request.headers.get('CF-Connecting-IP');
   let p: RegExpMatchArray | null;
+
+  const aanmelden = await aanmeldBeheerRoute(request, env, g, pad);
+  if (aanmelden) return aanmelden;
 
   if (m === 'GET' && (p = pad.match(/^\/evenementen\/([0-9a-f-]{36})\/deelnemers\.csv$/)) && isUuid(p[1])) {
     const rijen = await deelnemerslijst(env, g, p[1], ip);
@@ -208,6 +229,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     if (m === 'DELETE') return json(await annuleerViaToken(env, hash));
   }
   if (m === 'POST' && pathname === '/api/meldingen') return meldingRoute(request, env, ctx);
+  if (pathname.startsWith('/api/auth/')) return authRoute(request, env, pathname.slice('/api/auth'.length));
   if (pathname.startsWith('/api/beheer/')) return beheerRoute(request, env, pathname.slice('/api/beheer'.length), m);
   return json({ fout: 'NIET_GEVONDEN', melding: 'Niet gevonden.' }, 404);
 }
@@ -261,7 +283,7 @@ export default {
 
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(
-      Promise.all([anonimiseerVerlopenEvenementen(env), ruimMeldingenOp(env)]).then(([deelnemers, meldingen]) =>
+      Promise.all([anonimiseerVerlopenEvenementen(env), ruimMeldingenOp(env), ruimAanmeldingOp(env)]).then(([deelnemers, meldingen]) =>
         console.log(JSON.stringify({ taak: 'opruimen', geanonimiseerd: deelnemers, meldingenVerwijderd: meldingen })),
       ),
     );

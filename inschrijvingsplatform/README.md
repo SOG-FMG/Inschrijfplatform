@@ -8,14 +8,14 @@ Alles draait op Cloudflare, met data in de EU:
   - `migrations/` – D1-schema (SQLite)
   - `seed/` – voorbeeldevenement en scholenlijst (gegenereerd)
   - `test/` – integratietests tegen een lokale D1
-- **frontend/** – inschrijfformulier, zelfbeheerpagina en meldknop (React + Vite, Cloudflare Pages)
+- **frontend/** – inschrijfformulier, zelfbeheerpagina en meldknop (React + Vite, Cloudflare Worker met statische bestanden)
 - **tools/genereer_seed.py** – maakt seed- en demodata aan
 
 | Onderdeel | Cloudflare | EU |
 | --- | --- | --- |
 | Database | D1 | jurisdictie `eu` (afgedwongen, niet enkel een location hint) |
 | Schermafbeeldingen bij meldingen | R2 | jurisdictie `eu` |
-| Aanmelden medewerkers | Access (Zero Trust) met Entra ID | enkel `@onderwijs.gent.be` |
+| Aanmelden medewerkers | Authenticator-app (TOTP) of passkey, hoofdadmin in `wrangler.toml` | enkel `@onderwijs.gent.be` |
 | Persoonsgegevens | AES-256-GCM in de Worker (`*_enc`-kolommen) | sleutel als Worker-secret |
 | Logs | Workers Observability | zonder persoonsgegevens |
 | Anonimiseren en opruimen | Cron Trigger (dagelijks 03:15 UTC) | |
@@ -81,13 +81,13 @@ npm run dev
 
 Endpoints testen kan met [backend/api.http](backend/api.http) (REST Client).
 
-Om lokaal de beheerroutes te testen zonder Cloudflare Access, zet je `DEV_BEHEER_EMAIL` in `.dev.vars` en voeg je die gebruiker toe:
+Om lokaal de beheerroutes te testen zonder aanmelden, zet je `DEV_BEHEER_EMAIL` in `.dev.vars` en voeg je die gebruiker toe:
 
 ```bash
 npx wrangler d1 execute DB --local --command "insert into gebruikers (naam, voornaam, email, rol_id) select 'Naam', 'Voornaam', 'voornaam.naam@onderwijs.gent.be', rol_id from rollen where code = 'platformbeheerder'"
 ```
 
-`DEV_BEHEER_EMAIL` werkt enkel op `localhost` en enkel als `ACCESS_AUD` leeg is.
+`DEV_BEHEER_EMAIL` werkt enkel op `localhost`.
 
 ### Tests
 
@@ -124,11 +124,11 @@ Enkel het tabblad *Scholen* wordt gelezen. De structuur van de infodag (lesjes, 
 
 ## Productie
 
-De eerste livegang staat stap voor stap in [Stappenplan_Livegang.md](Stappenplan_Livegang.md): welke map aan welke Worker of Pages-site gekoppeld wordt, en welke instelling waar staat. De back-up staat in [Todo_SetupBackupSystem.md](Todo_SetupBackupSystem.md).
+De eerste livegang staat stap voor stap in [Stappenplan_Livegang.md](Stappenplan_Livegang.md): welke map aan welke Worker gekoppeld wordt, en welke instelling waar staat. De back-up staat in [Todo_SetupBackupSystem.md](Todo_SetupBackupSystem.md).
 
 **Domeinbeperking.** Enkel `@onderwijs.gent.be` krijgt toegang tot beheer en gegevens. Dat geldt op drie plaatsen:
 
-- de Access-policy
+- de aanmeldregels (hoofdadmin, uitnodigingscodes, sessieduur)
 - de Worker, die het JWT zelf controleert en elk ander domein weigert, ook bij een te ruime policy of via `workers.dev`
 - een CHECK-constraint op `gebruikers.email`
 
@@ -144,7 +144,7 @@ Deze punten zijn niet technisch op te lossen. Stem ze af met **District09 en de 
 
 ## Beheer (voorlopig zonder dashboard)
 
-Alle beheerroutes vragen een aanmelding via Access en controleren de rechten per evenement:
+Alle beheerroutes vragen een aanmelding (authenticator of passkey) en controleren de rechten per evenement:
 
 - `platformbeheerder`: alles
 - `schoolbeheerder`: evenementen van de eigen school
