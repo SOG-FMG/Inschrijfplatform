@@ -1,4 +1,5 @@
 # Inschrijvingsplatform
+Kleine aanpaasin
 
 Generiek activiteiten- en inschrijvingsplatform voor Stedelijk Onderwijs Gent. De eerste toepassing zijn de infodagen van de Freinetmiddenschool Gent.
 

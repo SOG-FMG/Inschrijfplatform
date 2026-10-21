@@ -1,0 +1,46 @@
+2026-10-20T21:58:59.755Z	Initializing build environment...
+2026-10-20T21:59:05.850Z	Success: Finished initializing build environment
+2026-10-20T21:59:06.765Z	Cloning repository...
+2026-10-20T21:59:08.210Z	Detected the following tools from environment: npm@10.9.2, nodejs@24.21.0
+2026-10-20T21:59:08.212Z	Installing project dependencies: npm clean-install --progress=false
+2026-10-20T21:59:13.435Z	
+2026-10-20T21:59:13.435Z	added 72 packages in 5s
+2026-10-20T21:59:13.436Z	
+2026-10-20T21:59:13.436Z	19 packages are looking for funding
+2026-10-20T21:59:13.436Z	  run `npm fund` for details
+2026-10-20T21:59:13.764Z	Executing user build command: npm ci
+2026-10-20T21:59:16.915Z	
+2026-10-20T21:59:16.915Z	added 72 packages in 3s
+2026-10-20T21:59:16.916Z	
+2026-10-20T21:59:16.916Z	19 packages are looking for funding
+2026-10-20T21:59:16.916Z	  run `npm fund` for details
+2026-10-20T21:59:16.952Z	Success: Build command completed
+2026-10-20T21:59:17.213Z	Executing user deploy command: npx wrangler deploy
+2026-10-20T21:59:18.754Z	
+2026-10-20T21:59:18.755Z	 ⛅️ wrangler 4.145.0
+2026-10-20T21:59:18.755Z	────────────────────
+2026-10-20T21:59:20.068Z	Total Upload: 59.08 KiB / gzip: 16.11 KiB
+2026-10-20T21:59:20.875Z	Your Worker has access to the following bindings:
+2026-10-20T21:59:20.875Z	Binding                                                                 Resource                  
+2026-10-20T21:59:20.875Z	env.DB (inschrijvingen-db)                                              D1 Database               
+2026-10-20T21:59:20.875Z	env.STORAGE (inschrijvingen-bestanden (eu))                             R2 Bucket                 
+2026-10-20T21:59:20.875Z	env.ALLOWED_ORIGINS ("https://inschrijvingsplatform.pages.dev")         Environment Variable      
+2026-10-20T21:59:20.875Z	env.PUBLIC_APP_URL ("https://inschrijvingsplatform.pages.dev")          Environment Variable      
+2026-10-20T21:59:20.876Z	env.ACCESS_TEAM_DOMAIN ("https://<team>.cloudflareaccess.com")          Environment Variable      
+2026-10-20T21:59:20.876Z	env.ACCESS_AUD ("<application-audience-tag>")                           Environment Variable      
+2026-10-20T21:59:20.876Z	env.MAIL_PROVIDER ("log")                                               Environment Variable      
+2026-10-20T21:59:20.876Z	
+2026-10-20T21:59:20.880Z	
+2026-10-20T21:59:20.880Z	Cloudflare collects anonymous telemetry about your usage of Wrangler. Learn more at https://github.com/cloudflare/workers-sdk/tree/main/packages/wrangler/telemetry.md
+2026-10-20T21:59:20.881Z	
+2026-10-20T21:59:20.944Z	✘ [ERROR] A request to the Cloudflare API (/accounts/37edd9648f066ef4038438145c592c0a/workers/scripts/inschrijvingsplatform-api/versions) failed.
+2026-10-20T21:59:20.945Z	
+2026-10-20T21:59:20.945Z	  D1 binding 'DB' references database '00000000-0000-0000-0000-000000000000' which was not found. Verify the database exists in your account and that the database_id in your configuration is correct. [code: 10181]
+2026-10-20T21:59:20.945Z	  To learn more about this error, visit: https://developers.cloudflare.com/d1/get-started/
+2026-10-20T21:59:20.945Z	
+2026-10-20T21:59:20.945Z	  
+2026-10-20T21:59:20.945Z	  If you think this is a bug, please open an issue at: https://github.com/cloudflare/workers-sdk/issues/new/choose
+2026-10-20T21:59:20.945Z	
+2026-10-20T21:59:20.945Z	
+2026-10-20T21:59:20.954Z	🪵  Logs were written to "/opt/buildhome/.config/.wrangler/logs/wrangler-2026-10-20_21-59-18_361.log"
+2026-10-20T21:59:21.008Z	Failed: error occurred while running deploy command

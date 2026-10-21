@@ -59,7 +59,7 @@ ALLOWED_ORIGINS = "https://fmg-inschrijfplatform.freinetmiddenschool-automatisat
 PUBLIC_APP_URL = "https://fmg-inschrijfplatform.freinetmiddenschool-automatisatie.workers.dev"
 # Hoofdadmin (stap 13): de enige die zich de eerste keer kan activeren, met het secret HOOFDADMIN_SETUP_CODE.
 # Daarna voegt die de andere medewerkers toe in het beheerscherm. Enkel adressen @onderwijs.gent.be.
-HOOFDADMIN_EMAIL = ""
+HOOFDADMIN_EMAIL = "freinetmiddenschool.automatisatie@onderwijs.gent.be"
 # 'log' = geen mails versturen (enkel loggen). Op 'graph' zetten in stap 14.
 MAIL_PROVIDER = "log"
 # GRAPH_TENANT_ID = "<tenant-id>"

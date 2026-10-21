@@ -228,7 +228,8 @@ Medewerkers melden aan met hun `@onderwijs.gent.be`-adres **plus** een authentic
 2. **Eenmalige setupcode** (16 tekens uit `A–Z` en `2–7`) als secret zetten. Bewaar hem in de wachtwoordkluis:
 
    ```bash
-   node -e "const a='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';console.log([...require('crypto').randomBytes(16)].map(b=>a[b%32]).join(''))"
+   cd inschrijvingsplatform\backend
+   node -e "const a='ZGRZE84H65YJU8I74V6E95ZR8H48VS8Z';console.log([...require('crypto').randomBytes(16)].map(b=>a[b%32]).join(''))"
    npx wrangler secret put HOOFDADMIN_SETUP_CODE
    ```
 

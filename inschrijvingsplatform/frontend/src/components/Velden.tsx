@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from 'react';
+import { useId, type InputHTMLAttributes, type ReactNode } from 'react';
 
 interface TekstveldProps {
   label: string;
@@ -11,10 +11,13 @@ interface TekstveldProps {
   hulp?: ReactNode;
   id?: string;
   meerregelig?: boolean;
-  lijst?: string;
+  /** Extra attributen en handlers voor het invoerveld (bv. combobox-aria). */
+  invoerProps?: InputHTMLAttributes<HTMLInputElement>;
+  /** Wordt naast het invoerveld geplaatst, binnen dezelfde (relatief gepositioneerde) wrapper. */
+  onderInvoer?: ReactNode;
 }
 
-export function Tekstveld({ label, waarde, onWijzig, fout, verplicht, type = 'text', autoComplete, hulp, id, meerregelig, lijst }: TekstveldProps) {
+export function Tekstveld({ label, waarde, onWijzig, fout, verplicht, type = 'text', autoComplete, hulp, id, meerregelig, invoerProps, onderInvoer }: TekstveldProps) {
   const auto = useId();
   const veldId = id ?? auto;
   const hulpId = `${veldId}-hulp`;
@@ -37,8 +40,13 @@ export function Tekstveld({ label, waarde, onWijzig, fout, verplicht, type = 'te
       {hulp && <p className="hulp" id={hulpId}>{hulp}</p>}
       {meerregelig ? (
         <textarea {...gemeen} rows={3} maxLength={1000} onChange={(e) => onWijzig(e.target.value)} />
+      ) : onderInvoer ? (
+        <div className="combobox">
+          <input {...gemeen} {...invoerProps} type={type} maxLength={type === 'email' ? 254 : 200} onChange={(e) => onWijzig(e.target.value)} />
+          {onderInvoer}
+        </div>
       ) : (
-        <input {...gemeen} type={type} list={lijst} maxLength={type === 'email' ? 254 : 200} onChange={(e) => onWijzig(e.target.value)} />
+        <input {...gemeen} {...invoerProps} type={type} maxLength={type === 'email' ? 254 : 200} onChange={(e) => onWijzig(e.target.value)} />
       )}
       {fout && <p className="foutmelding" id={foutId}>{fout}</p>}
     </div>
