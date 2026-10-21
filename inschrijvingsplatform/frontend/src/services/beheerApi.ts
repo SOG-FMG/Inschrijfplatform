@@ -65,3 +65,26 @@ export const beheerApi = {
   zetActief: (id: string, actief: boolean) => call<{ ok: true }>(`/api/beheer/gebruikers/${id}`, { method: 'PATCH', body: { actief } }),
   csvUrl: (evenementId: string) => `${BASIS}/api/beheer/evenementen/${evenementId}/deelnemers.csv`,
 };
+
+export type InstellingSoort = 'evenement' | 'doelgroep' | 'dag' | 'dagdeel' | 'tijdsblok' | 'sessie';
+
+export interface InstellingVeld {
+  naam: string;
+  label: string;
+  type: 'tekst' | 'lang' | 'datum' | 'uur' | 'datumtijd' | 'getal' | 'jaNee' | 'keuze' | 'slug' | 'email' | 'lijst' | 'ref';
+  verplicht?: boolean;
+  opties?: { waarde: string; label: string }[];
+  ref?: 'doelgroep' | 'soort' | 'locatie';
+  hulp?: string;
+  standaard?: unknown;
+}
+
+export const instellingenApi = {
+  lees: (evenementId: string) => call<any>(`/api/beheer/evenementen/${encodeURIComponent(evenementId)}/instellingen`),
+  wijzig: (soort: InstellingSoort, id: string, waarden: Record<string, unknown>) =>
+    call<{ ok: true }>(`/api/beheer/instellingen/${soort}/${encodeURIComponent(id)}`, { method: 'PATCH', body: { waarden } }),
+  maak: (soort: InstellingSoort, ouderId: string | null, waarden: Record<string, unknown>) =>
+    call<{ id: string }>(`/api/beheer/instellingen/${soort}`, { method: 'POST', body: { ouderId, waarden } }),
+  verwijder: (soort: InstellingSoort, id: string) =>
+    call<{ ok: true }>(`/api/beheer/instellingen/${soort}/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+};

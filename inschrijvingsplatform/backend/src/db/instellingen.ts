@@ -1,0 +1,421 @@
+import { controleerToegang, type Gebruiker } from '../middleware/toegang';
+import type { Env } from '../types';
+import { ValidatieFout } from '../validatie';
+import { audit } from './beheer';
+import { DbFout } from './fouten';
+
+/**
+ * Instellingen van een evenement: algemeen, doelgroepen, dagen, dagdelen, tijdsblokken en sessies (lesjes).
+ *
+ * Eén schema per soort beschrijft welke kolommen aanpasbaar zijn, hoe ze gevalideerd worden en
+ * welk label het scherm toont. De frontend bouwt zijn formulieren uit hetzelfde schema, zodat een
+ * nieuwe kolom maar op één plaats toegevoegd moet worden. Kolommen die hier niet staan (id's,
+ * ouder-id's, created_*), kunnen via deze routes nooit gewijzigd worden.
+ */
+
+export type Soort = 'evenement' | 'doelgroep' | 'dag' | 'dagdeel' | 'tijdsblok' | 'sessie';
+type VeldType = 'tekst' | 'lang' | 'datum' | 'uur' | 'datumtijd' | 'getal' | 'jaNee' | 'keuze' | 'slug' | 'email' | 'lijst' | 'ref';
+
+export interface Veld {
+  naam: string;
+  label: string;
+  type: VeldType;
+  verplicht?: boolean;
+  opties?: { waarde: string; label: string }[];
+  ref?: 'doelgroep' | 'soort' | 'locatie';
+  min?: number;
+  hulp?: string;
+  /** Waarde voor een nieuw record. */
+  standaard?: unknown;
+}
+
+interface Definitie {
+  tabel: string;
+  id: string;
+  ouder?: { kolom: string; soort: Soort };
+  /** Kolom die getoond wordt als naam van het record. */
+  titel: string;
+  gewijzigd?: boolean; // heeft modified_by/modified_at en created_by
+  velden: Veld[];
+}
+
+const opties = (...w: [string, string][]) => w.map(([waarde, label]) => ({ waarde, label }));
+const STATUS_ACTIEF = opties(['actief', 'Actief'], ['geannuleerd', 'Geannuleerd']);
+const volgorde: Veld = { naam: 'volgorde', label: 'Volgorde', type: 'getal', min: 0, verplicht: true, standaard: 1 };
+
+export const SCHEMA: Record<Soort, Definitie> = {
+  evenement: {
+    tabel: 'evenementen',
+    id: 'evenement_id',
+    titel: 'titel',
+    gewijzigd: true,
+    velden: [
+      { naam: 'titel', label: 'Titel', type: 'tekst', verplicht: true },
+      { naam: 'slug', label: 'Adres (slug)', type: 'slug', verplicht: true, hulp: 'Deel van de link naar het formulier: kleine letters, cijfers en streepjes.' },
+      { naam: 'status', label: 'Status', type: 'keuze', verplicht: true, standaard: 'concept',
+        opties: opties(['concept', 'Concept (niet zichtbaar)'], ['gepubliceerd', 'Gepubliceerd'], ['gesloten', 'Gesloten'], ['gearchiveerd', 'Gearchiveerd']) },
+      { naam: 'type_evenement', label: 'Soort evenement', type: 'tekst', verplicht: true, standaard: 'Infodag', hulp: 'Bv. Infodag, Opendeur, Studiedag' },
+      { naam: 'organisator', label: 'Organisator', type: 'tekst' },
+      { naam: 'omschrijving', label: 'Omschrijving', type: 'lang' },
+      { naam: 'start_datum', label: 'Eerste dag', type: 'datum', verplicht: true },
+      { naam: 'eind_datum', label: 'Laatste dag', type: 'datum', verplicht: true },
+      { naam: 'inschrijving_vanaf', label: 'Inschrijven vanaf', type: 'datumtijd', hulp: 'Leeg = meteen' },
+      { naam: 'inschrijving_tot', label: 'Inschrijven tot', type: 'datumtijd', hulp: 'Leeg = tot het evenement' },
+      { naam: 'voorinschrijving', label: 'Voorinschrijving', type: 'jaNee', standaard: false },
+      { naam: 'deelnemer_type', label: 'Deelnemers', type: 'keuze', verplicht: true, standaard: 'leerling',
+        opties: opties(['leerling', 'Leerlingen (met ouder als contact)'], ['volwassene', 'Volwassenen']) },
+      { naam: 'leerjaar_opties', label: 'Keuzes voor leerjaar', type: 'lijst', standaard: [], hulp: 'Gescheiden door komma’s, bv. 5de leerjaar, 6de leerjaar' },
+      { naam: 'max_dagdelen', label: 'Max. aantal momenten per inschrijving', type: 'getal', min: 1, verplicht: true, standaard: 1 },
+      { naam: 'contact_email', label: 'Contactadres', type: 'email' },
+      { naam: 'privacy_tekst', label: 'Privacytekst', type: 'lang' },
+      { naam: 'bewaartermijn_dagen', label: 'Bewaartermijn (dagen na het evenement)', type: 'getal', min: 0, verplicht: true, standaard: 30 },
+      { naam: 'logo', label: 'Logo (URL)', type: 'tekst' },
+      { naam: 'afbeelding', label: 'Afbeelding (URL)', type: 'tekst' },
+      { naam: 'opmerkingen', label: 'Interne opmerkingen', type: 'lang' },
+    ],
+  },
+  doelgroep: {
+    tabel: 'doelgroepen',
+    id: 'doelgroep_id',
+    ouder: { kolom: 'evenement_id', soort: 'evenement' },
+    titel: 'naam',
+    velden: [
+      { naam: 'naam', label: 'Naam', type: 'tekst', verplicht: true },
+      { naam: 'beschrijving', label: 'Beschrijving', type: 'lang' },
+      { naam: 'sessiekeuze', label: 'Kiest lesjes', type: 'jaNee', standaard: true, hulp: 'Uit = enkel een moment kiezen' },
+      volgorde,
+    ],
+  },
+  dag: {
+    tabel: 'evenement_dagen',
+    id: 'dag_id',
+    ouder: { kolom: 'evenement_id', soort: 'evenement' },
+    titel: 'naam',
+    velden: [
+      { naam: 'naam', label: 'Naam', type: 'tekst', verplicht: true, hulp: 'Bv. Zaterdag 23 januari' },
+      { naam: 'datum', label: 'Datum', type: 'datum', verplicht: true },
+      { naam: 'start_uur', label: 'Van', type: 'uur', verplicht: true },
+      { naam: 'eind_uur', label: 'Tot', type: 'uur', verplicht: true },
+      { naam: 'sessiekeuze_tot', label: 'Lesjes kiezen tot', type: 'datumtijd', hulp: 'Daarna enkel nog een moment kiezen' },
+      { naam: 'status', label: 'Status', type: 'keuze', verplicht: true, standaard: 'actief', opties: STATUS_ACTIEF },
+      volgorde,
+    ],
+  },
+  dagdeel: {
+    tabel: 'dagdelen',
+    id: 'dagdeel_id',
+    ouder: { kolom: 'dag_id', soort: 'dag' },
+    titel: 'naam',
+    velden: [
+      { naam: 'naam', label: 'Naam', type: 'tekst', verplicht: true, hulp: 'Bv. Voormiddag' },
+      { naam: 'start_uur', label: 'Van', type: 'uur', verplicht: true },
+      { naam: 'eind_uur', label: 'Tot', type: 'uur', verplicht: true },
+      { naam: 'capaciteit', label: 'Max. deelnemers', type: 'getal', min: 0, hulp: 'Leeg = onbeperkt' },
+      { naam: 'status', label: 'Status', type: 'keuze', verplicht: true, standaard: 'actief', opties: STATUS_ACTIEF },
+      volgorde,
+    ],
+  },
+  tijdsblok: {
+    tabel: 'tijdsblokken',
+    id: 'tijdsblok_id',
+    ouder: { kolom: 'dagdeel_id', soort: 'dagdeel' },
+    titel: 'naam',
+    velden: [
+      { naam: 'naam', label: 'Naam', type: 'tekst', verplicht: true, hulp: 'Bv. Keuzelesje 1, Rondleiding' },
+      { naam: 'type', label: 'Soort', type: 'keuze', verplicht: true, standaard: 'keuze',
+        opties: opties(['keuze', 'Keuze (deelnemer kiest een lesje)'], ['programma', 'Programma (voor iedereen)']) },
+      { naam: 'verplicht', label: 'Keuze verplicht', type: 'jaNee', standaard: false },
+      { naam: 'omschrijving', label: 'Omschrijving', type: 'lang' },
+      { naam: 'start_uur', label: 'Van', type: 'uur', verplicht: true },
+      { naam: 'eind_uur', label: 'Tot', type: 'uur', verplicht: true },
+      volgorde,
+    ],
+  },
+  sessie: {
+    tabel: 'sessies',
+    id: 'sessie_id',
+    ouder: { kolom: 'tijdsblok_id', soort: 'tijdsblok' },
+    titel: 'titel',
+    gewijzigd: true,
+    velden: [
+      { naam: 'titel', label: 'Titel', type: 'tekst', verplicht: true },
+      { naam: 'code', label: 'Code', type: 'tekst', hulp: 'Zelfde code in een ander tijdsblok = zelfde lesje (niet twee keer te kiezen)' },
+      { naam: 'soort_id', label: 'Soort', type: 'ref', ref: 'soort' },
+      { naam: 'doelgroep_id', label: 'Doelgroep', type: 'ref', ref: 'doelgroep', hulp: 'Leeg = iedereen' },
+      { naam: 'locatie_id', label: 'Lokaal', type: 'ref', ref: 'locatie' },
+      { naam: 'capaciteit', label: 'Max. deelnemers', type: 'getal', min: 0, hulp: 'Leeg = onbeperkt' },
+      { naam: 'status', label: 'Status', type: 'keuze', verplicht: true, standaard: 'open',
+        opties: opties(['open', 'Open'], ['gesloten', 'Gesloten'], ['geannuleerd', 'Geannuleerd']) },
+      { naam: 'zichtbaar', label: 'Zichtbaar', type: 'jaNee', standaard: true },
+      { naam: 'wachtlijst_toegelaten', label: 'Wachtlijst', type: 'jaNee', standaard: false },
+      { naam: 'volzet_weergave', label: 'Als volzet', type: 'keuze', verplicht: true, standaard: 'tonen',
+        opties: opties(['tonen', 'Tonen als volzet'], ['verbergen', 'Verbergen']) },
+      { naam: 'uniek_per_deelnemer', label: 'Maar één keer te kiezen', type: 'jaNee', standaard: true },
+      { naam: 'beschrijving', label: 'Beschrijving', type: 'lang' },
+      { naam: 'kleur', label: 'Kleur', type: 'tekst', hulp: 'Bv. #2b5797' },
+      volgorde,
+      { naam: 'opmerkingen', label: 'Interne opmerkingen', type: 'lang' },
+    ],
+  },
+};
+
+export const isSoort = (s: string): s is Soort => s in SCHEMA;
+
+/** Evenement waartoe een record hoort (voor de rechtencontrole). */
+const EVENEMENT_VAN: Record<Soort, string> = {
+  evenement: `select evenement_id from evenementen where evenement_id = ?`,
+  doelgroep: `select evenement_id from doelgroepen where doelgroep_id = ?`,
+  dag: `select evenement_id from evenement_dagen where dag_id = ?`,
+  dagdeel: `select d.evenement_id from dagdelen dd join evenement_dagen d on d.dag_id = dd.dag_id where dd.dagdeel_id = ?`,
+  tijdsblok: `select d.evenement_id from tijdsblokken t join dagdelen dd on dd.dagdeel_id = t.dagdeel_id
+              join evenement_dagen d on d.dag_id = dd.dag_id where t.tijdsblok_id = ?`,
+  sessie: `select d.evenement_id from sessies s join tijdsblokken t on t.tijdsblok_id = s.tijdsblok_id
+           join dagdelen dd on dd.dagdeel_id = t.dagdeel_id join evenement_dagen d on d.dag_id = dd.dag_id where s.sessie_id = ?`,
+};
+
+async function evenementVan(env: Env, soort: Soort, id: string): Promise<string> {
+  const r = await env.DB.prepare(EVENEMENT_VAN[soort]).bind(id).first<{ evenement_id: string }>();
+  if (!r) throw new DbFout('GEEN_TOEGANG'); // zelfde antwoord als zonder rechten
+  return r.evenement_id;
+}
+
+// ---------------------------------------------------------------------------
+// Validatie
+// ---------------------------------------------------------------------------
+const leeg = (v: unknown) => v === undefined || v === null || (typeof v === 'string' && v.trim() === '');
+
+function zetOm(v: Veld, waarde: unknown): unknown {
+  const fout = (m: string) => new ValidatieFout({ [v.naam]: m });
+  if (v.type === 'jaNee') return waarde === true || waarde === 1 || waarde === '1' ? 1 : 0;
+  if (v.type === 'lijst') {
+    const lijst = Array.isArray(waarde) ? waarde : String(waarde ?? '').split(',');
+    const schoon = lijst.map((x) => String(x).trim().slice(0, 100)).filter(Boolean);
+    if (schoon.length > 50) throw fout('Te veel waarden.');
+    return JSON.stringify(schoon);
+  }
+  if (leeg(waarde)) {
+    if (v.verplicht) throw fout('Verplicht.');
+    return null;
+  }
+  const s = String(waarde).trim();
+  switch (v.type) {
+    case 'tekst':
+    case 'ref':
+      if (s.length > 200) throw fout('Maximaal 200 tekens.');
+      return s;
+    case 'lang':
+      if (s.length > 5000) throw fout('Maximaal 5000 tekens.');
+      return s;
+    case 'datum':
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || Number.isNaN(Date.parse(s))) throw fout('Geef een geldige datum.');
+      return s;
+    case 'uur':
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(s)) throw fout('Geef een uur als 09:30.');
+      return s;
+    case 'datumtijd': {
+      const t = Date.parse(s);
+      if (Number.isNaN(t)) throw fout('Geef een geldige datum en tijd.');
+      return new Date(t).toISOString();
+    }
+    case 'getal': {
+      const n = Number(s);
+      if (!Number.isInteger(n) || n > 1_000_000) throw fout('Geef een geheel getal.');
+      if (v.min !== undefined && n < v.min) throw fout(`Minstens ${v.min}.`);
+      return n;
+    }
+    case 'keuze':
+      if (!v.opties?.some((o) => o.waarde === s)) throw fout('Maak een geldige keuze.');
+      return s;
+    case 'slug':
+      if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(s) || s.length > 80) throw fout('Enkel kleine letters, cijfers en enkele streepjes.');
+      return s;
+    case 'email':
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s) || s.length > 254) throw fout('Geef een geldig e-mailadres.');
+      return s.toLowerCase();
+  }
+  return s;
+}
+
+/** Een verwijzing (doelgroep, soort, lokaal) moet bestaan, en een doelgroep moet bij hetzelfde evenement horen. */
+async function controleerRef(env: Env, v: Veld, waarde: unknown, evenementId: string) {
+  if (waarde === null || v.type !== 'ref') return;
+  const sql = {
+    doelgroep: `select 1 from doelgroepen where doelgroep_id = ?1 and evenement_id = ?2`,
+    soort: `select 1 from soorten_onderdelen where soort_id = ?1`,
+    locatie: `select 1 from locaties where locatie_id = ?1`,
+  }[v.ref!];
+  const ok = await env.DB.prepare(sql).bind(waarde, evenementId).first();
+  if (!ok) throw new ValidatieFout({ [v.naam]: 'Maak een geldige keuze.' });
+}
+
+async function zetWaardenOm(env: Env, def: Definitie, invoer: Record<string, unknown>, nieuw: boolean, evenementId: string | null) {
+  const uit: Record<string, unknown> = {};
+  const fouten: Record<string, string> = {};
+  for (const v of def.velden) {
+    const aanwezig = Object.prototype.hasOwnProperty.call(invoer, v.naam);
+    if (!aanwezig && !nieuw) continue; // gedeeltelijke wijziging
+    const waarde = aanwezig ? invoer[v.naam] : v.standaard;
+    try {
+      uit[v.naam] = zetOm(v, waarde);
+      if (evenementId) await controleerRef(env, v, uit[v.naam], evenementId);
+    } catch (e) {
+      if (e instanceof ValidatieFout) Object.assign(fouten, e.velden);
+      else throw e;
+    }
+  }
+  if (Object.keys(fouten).length) throw new ValidatieFout(fouten);
+  return uit;
+}
+
+/** Vertaalt fouten van het schema (CHECK, UNIQUE, FOREIGN KEY) naar begrijpelijke meldingen. */
+function vertaalSchemaFout(e: unknown): never {
+  const m = e instanceof Error ? `${e.message} ${String((e as { cause?: unknown }).cause ?? '')}` : String(e);
+  if (m.includes('UNIQUE') && m.includes('slug')) throw new ValidatieFout({ slug: 'Dit adres is al in gebruik door een ander evenement.' });
+  if (m.includes('FOREIGN KEY')) throw new DbFout('IN_GEBRUIK');
+  if (m.includes('CHECK')) {
+    throw new ValidatieFout({ algemeen: 'Controleer de uren en datums: het einde moet na het begin liggen, en inschrijven moet eindigen na de start.' });
+  }
+  throw e;
+}
+
+// ---------------------------------------------------------------------------
+// Lezen
+// ---------------------------------------------------------------------------
+export async function instellingen(env: Env, g: Gebruiker, evenementId: string) {
+  await controleerToegang(env, g, evenementId);
+  const kanSchrijven = await controleerToegang(env, g, evenementId, true).then(
+    () => true,
+    () => false,
+  );
+  const db = env.DB;
+  const [ev, doelgroepen, dagen, dagdelen, tijdsblokken, sessies, tellingDagdeel, tellingSessie, soorten, locaties] = await db.batch<any>([
+    db.prepare(`select * from evenementen where evenement_id = ?`).bind(evenementId),
+    db.prepare(`select * from doelgroepen where evenement_id = ? order by volgorde, naam`).bind(evenementId),
+    db.prepare(`select * from evenement_dagen where evenement_id = ? order by volgorde, datum`).bind(evenementId),
+    db.prepare(`select dd.* from dagdelen dd join evenement_dagen d on d.dag_id = dd.dag_id where d.evenement_id = ? order by dd.volgorde, dd.start_uur`).bind(evenementId),
+    db.prepare(
+      `select t.* from tijdsblokken t join dagdelen dd on dd.dagdeel_id = t.dagdeel_id join evenement_dagen d on d.dag_id = dd.dag_id
+       where d.evenement_id = ? order by t.volgorde, t.start_uur`,
+    ).bind(evenementId),
+    db.prepare(
+      `select s.* from sessies s join tijdsblokken t on t.tijdsblok_id = s.tijdsblok_id join dagdelen dd on dd.dagdeel_id = t.dagdeel_id
+       join evenement_dagen d on d.dag_id = dd.dag_id where d.evenement_id = ? order by s.volgorde, s.titel`,
+    ).bind(evenementId),
+    db.prepare(
+      `select dagdeel_id as id, sum(status = 'bevestigd') as bevestigd, sum(status = 'wachtlijst') as wachtlijst
+       from inschrijvingen where evenement_id = ? and sessie_id is null group by dagdeel_id`,
+    ).bind(evenementId),
+    db.prepare(
+      `select sessie_id as id, sum(status = 'bevestigd') as bevestigd, sum(status = 'wachtlijst') as wachtlijst
+       from inschrijvingen where evenement_id = ? and sessie_id is not null group by sessie_id`,
+    ).bind(evenementId),
+    db.prepare(`select soort_id as waarde, naam as label from soorten_onderdelen order by naam`),
+    db.prepare(
+      `select locatie_id as waarde, naam || coalesce(' – ' || nullif(lokaal, naam), '') as label from locaties
+       where school_id is null or school_id = (select school_id from evenementen where evenement_id = ?) or ? = 'platformbeheerder'
+       order by naam`,
+    ).bind(evenementId, g.rol),
+  ]);
+  if (!ev.results[0]) throw new DbFout('GEEN_TOEGANG');
+
+  const telling = (rijen: any[]) => new Map(rijen.map((r) => [r.id, { bevestigd: r.bevestigd ?? 0, wachtlijst: r.wachtlijst ?? 0 }]));
+  const perDagdeel = telling(tellingDagdeel.results);
+  const perSessie = telling(tellingSessie.results);
+  const leeg0 = { bevestigd: 0, wachtlijst: 0 };
+  const evenement = { ...ev.results[0], leerjaar_opties: JSON.parse(ev.results[0].leerjaar_opties ?? '[]') };
+
+  return {
+    kanSchrijven,
+    schema: Object.fromEntries(Object.entries(SCHEMA).map(([k, d]) => [k, d.velden])),
+    opties: {
+      soort: soorten.results,
+      locatie: locaties.results,
+      doelgroep: doelgroepen.results.map((d: any) => ({ waarde: d.doelgroep_id, label: d.naam })),
+    },
+    evenement,
+    doelgroepen: doelgroepen.results,
+    dagen: dagen.results.map((d: any) => ({
+      ...d,
+      dagdelen: dagdelen.results
+        .filter((dd: any) => dd.dag_id === d.dag_id)
+        .map((dd: any) => ({
+          ...dd,
+          ingeschreven: perDagdeel.get(dd.dagdeel_id) ?? leeg0,
+          tijdsblokken: tijdsblokken.results
+            .filter((t: any) => t.dagdeel_id === dd.dagdeel_id)
+            .map((t: any) => ({
+              ...t,
+              sessies: sessies.results
+                .filter((s: any) => s.tijdsblok_id === t.tijdsblok_id)
+                .map((s: any) => ({ ...s, ingeschreven: perSessie.get(s.sessie_id) ?? leeg0 })),
+            })),
+        })),
+    })),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Schrijven
+// ---------------------------------------------------------------------------
+export async function wijzig(env: Env, g: Gebruiker, soort: Soort, id: string, invoer: Record<string, unknown>, ip: string | null) {
+  const def = SCHEMA[soort];
+  const evenementId = await evenementVan(env, soort, id);
+  await controleerToegang(env, g, evenementId, true);
+  const waarden = await zetWaardenOm(env, def, invoer ?? {}, false, evenementId);
+  const kolommen = Object.keys(waarden);
+  if (!kolommen.length) return { ok: true };
+  const extra = def.gewijzigd ? `, modified_by = ?, modified_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')` : '';
+  const bind = [...kolommen.map((k) => waarden[k]), ...(def.gewijzigd ? [g.gebruikerId] : []), id];
+  try {
+    await env.DB.batch([
+      env.DB.prepare(`update ${def.tabel} set ${kolommen.map((k) => `${k} = ?`).join(', ')}${extra} where ${def.id} = ?`).bind(...bind),
+      audit(env, g, def.tabel, id, 'WIJZIGEN', waarden, ip),
+    ]);
+  } catch (e) {
+    vertaalSchemaFout(e);
+  }
+  return { ok: true };
+}
+
+export async function maak(env: Env, g: Gebruiker, soort: Soort, ouderId: string | null, invoer: Record<string, unknown>, ip: string | null) {
+  const def = SCHEMA[soort];
+  let evenementId: string | null = null;
+  if (def.ouder) {
+    if (!ouderId) throw new ValidatieFout({ algemeen: 'Ontbrekend bovenliggend onderdeel.' });
+    evenementId = await evenementVan(env, def.ouder.soort, ouderId);
+    await controleerToegang(env, g, evenementId, true);
+  } else if (g.rol !== 'platformbeheerder') {
+    throw new DbFout('GEEN_TOEGANG'); // een nieuw evenement maakt enkel platformbeheer
+  }
+  const waarden = await zetWaardenOm(env, def, invoer ?? {}, true, evenementId);
+  const id = crypto.randomUUID();
+  const kol: Record<string, unknown> = { [def.id]: id, ...waarden };
+  if (def.ouder) kol[def.ouder.kolom] = ouderId;
+  if (def.gewijzigd) kol.created_by = g.gebruikerId;
+  const namen = Object.keys(kol);
+  try {
+    await env.DB.batch([
+      env.DB.prepare(`insert into ${def.tabel} (${namen.join(', ')}) values (${namen.map(() => '?').join(', ')})`).bind(...namen.map((k) => kol[k])),
+      audit(env, g, def.tabel, id, 'AANMAKEN', waarden, ip),
+    ]);
+  } catch (e) {
+    vertaalSchemaFout(e);
+  }
+  return { id };
+}
+
+export async function verwijder(env: Env, g: Gebruiker, soort: Soort, id: string, ip: string | null) {
+  if (soort === 'evenement') throw new DbFout('GEEN_TOEGANG'); // te ingrijpend: zet de status op gearchiveerd
+  const def = SCHEMA[soort];
+  const evenementId = await evenementVan(env, soort, id);
+  await controleerToegang(env, g, evenementId, true);
+  try {
+    await env.DB.batch([
+      env.DB.prepare(`delete from ${def.tabel} where ${def.id} = ?`).bind(id),
+      audit(env, g, def.tabel, id, 'VERWIJDEREN', undefined, ip),
+    ]);
+  } catch (e) {
+    vertaalSchemaFout(e);
+  }
+  return { ok: true };
+}

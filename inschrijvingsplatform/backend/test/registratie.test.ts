@@ -501,3 +501,84 @@ describe('aanmelden (authenticator en passkey)', () => {
     expect((await ik(cookie)).status).toBe(401);
   });
 });
+
+describe('instellingen van een evenement', () => {
+  let evId: string;
+  beforeAll(async () => {
+    env.DEV_BEHEER_EMAIL = BEHEERDER; // platformbeheerder (zie 'meldingen')
+    evId = (await een(`select evenement_id from evenementen where slug = ?`, SLUG)).evenement_id;
+  });
+
+  test('lezen: volledige boom met schema, keuzelijsten en tellingen', async () => {
+    const r = await api('GET', `/api/beheer/evenementen/${evId}/instellingen`);
+    expect(r.status).toBe(200);
+    expect(r.data.kanSchrijven).toBe(true);
+    expect(r.data.schema.sessie.some((v: any) => v.naam === 'capaciteit')).toBe(true);
+    expect(r.data.evenement.slug).toBe(SLUG);
+    expect(Array.isArray(r.data.evenement.leerjaar_opties)).toBe(true);
+    const s = r.data.dagen[0].dagdelen[0].tijdsblokken.find((t: any) => t.sessies.length).sessies[0];
+    expect(s.ingeschreven).toHaveProperty('bevestigd');
+    expect(r.data.opties.soort.length).toBeGreaterThan(0);
+  });
+
+  test('wijzigen met validatie; onbekende kolommen worden genegeerd', async () => {
+    const ev = (await api('GET', `/api/beheer/evenementen/${evId}/instellingen`)).data;
+    const sessie = ev.dagen[0].dagdelen[0].tijdsblokken.find((t: any) => t.sessies.length).sessies[0];
+    const ok = await api('PATCH', `/api/beheer/instellingen/sessie/${sessie.sessie_id}`, { waarden: { capaciteit: 25, titel: 'Nieuwe titel', tijdsblok_id: 'x' } });
+    expect(ok.status).toBe(200);
+    const rij = await een(`select capaciteit, titel, tijdsblok_id, modified_by from sessies where sessie_id = ?`, sessie.sessie_id);
+    expect(rij).toMatchObject({ capaciteit: 25, titel: 'Nieuwe titel', tijdsblok_id: sessie.tijdsblok_id });
+    expect(rij.modified_by).toBeTruthy();
+
+    const fout = await api('PATCH', `/api/beheer/instellingen/sessie/${sessie.sessie_id}`, { waarden: { capaciteit: -1, status: 'raar', titel: '' } });
+    expect(fout.status).toBe(400);
+    expect(Object.keys(fout.data.velden).sort()).toEqual(['capaciteit', 'status', 'titel']);
+    // Doelgroep van een ander evenement of onbestaand: geweigerd
+    expect((await api('PATCH', `/api/beheer/instellingen/sessie/${sessie.sessie_id}`, { waarden: { doelgroep_id: 'bestaat-niet' } })).data.velden).toHaveProperty('doelgroep_id');
+    // Einde voor begin: schemafout wordt een begrijpelijke melding
+    const uren = await api('PATCH', `/api/beheer/instellingen/dag/${ev.dagen[0].dag_id}`, { waarden: { start_uur: '16:00', eind_uur: '09:00' } });
+    expect(uren.data.velden).toHaveProperty('algemeen');
+    expect((await api('PATCH', `/api/beheer/instellingen/evenement/${evId}`, { waarden: { leerjaar_opties: '5de, 6de ,' } })).status).toBe(200);
+    expect((await een(`select leerjaar_opties from evenementen where evenement_id = ?`, evId)).leerjaar_opties).toBe('["5de","6de"]');
+  });
+
+  test('toevoegen en verwijderen; verwijderen met inschrijvingen wordt geweigerd', async () => {
+    const ev = (await api('GET', `/api/beheer/evenementen/${evId}/instellingen`)).data;
+    const blok = ev.dagen[0].dagdelen[0].tijdsblokken.find((t: any) => t.type === 'keuze');
+    const nieuw = await api('POST', '/api/beheer/instellingen/sessie', { ouderId: blok.tijdsblok_id, waarden: { titel: 'Robotica', capaciteit: 10 } });
+    expect(nieuw.status).toBe(201);
+    const rij = await een(`select status, zichtbaar, uniek_per_deelnemer from sessies where sessie_id = ?`, nieuw.data.id);
+    expect(rij).toMatchObject({ status: 'open', zichtbaar: 1, uniek_per_deelnemer: 1 }); // standaardwaarden
+    expect((await api('DELETE', `/api/beheer/instellingen/sessie/${nieuw.data.id}`)).status).toBe(200);
+    expect(await een(`select 1 from sessies where sessie_id = ?`, nieuw.data.id)).toBeNull();
+
+    const bezet = await een(`select sessie_id from inschrijvingen where evenement_id = ? and sessie_id is not null limit 1`, evId);
+    const weg = await api('DELETE', `/api/beheer/instellingen/sessie/${bezet.sessie_id}`);
+    expect(weg.data.fout).toBe('IN_GEBRUIK');
+    expect((await api('DELETE', `/api/beheer/instellingen/evenement/${evId}`)).status).toBe(403);
+  });
+
+  test('rechten: zonder koppeling geen toegang, onthaal enkel lezen', async () => {
+    await sql(`insert into gebruikers (naam, voornaam, email, rol_id) select 'O', 'T', 'onthaal.test@onderwijs.gent.be', rol_id from rollen where code = 'onthaal'`);
+    env.DEV_BEHEER_EMAIL = 'onthaal.test@onderwijs.gent.be';
+    expect((await api('GET', `/api/beheer/evenementen/${evId}/instellingen`)).status).toBe(403);
+    await sql(`insert into evenement_beheerders (evenement_id, gebruiker_id, rol) select ?, gebruiker_id, 'onthaal' from gebruikers where email = ?`, evId, 'onthaal.test@onderwijs.gent.be');
+    const r = await api('GET', `/api/beheer/evenementen/${evId}/instellingen`);
+    expect(r.data.kanSchrijven).toBe(false);
+    expect((await api('PATCH', `/api/beheer/instellingen/evenement/${evId}`, { waarden: { titel: 'X' } })).status).toBe(403);
+    expect((await api('POST', '/api/beheer/instellingen/evenement', { waarden: { titel: 'X' } })).status).toBe(403);
+    env.DEV_BEHEER_EMAIL = BEHEERDER;
+  });
+
+  test('nieuw evenement (platformbeheer)', async () => {
+    const r = await api('POST', '/api/beheer/instellingen/evenement', {
+      waarden: { titel: 'Opendeur', slug: 'opendeur-2027', start_datum: '2027-05-01', eind_datum: '2027-05-01' },
+    });
+    expect(r.status).toBe(201);
+    expect(await een(`select status, max_dagdelen from evenementen where evenement_id = ?`, r.data.id)).toMatchObject({ status: 'concept', max_dagdelen: 1 });
+    const dubbel = await api('POST', '/api/beheer/instellingen/evenement', {
+      waarden: { titel: 'X', slug: 'opendeur-2027', start_datum: '2027-05-01', eind_datum: '2027-05-01' },
+    });
+    expect(dubbel.data.velden).toHaveProperty('slug');
+  });
+});

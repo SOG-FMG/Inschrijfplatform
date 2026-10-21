@@ -4,6 +4,7 @@ import { sha256 } from './crypto/versleuteling';
 import { anonimiseerEvenement, anonimiseerVerlopenEvenementen, audit, deelnemerslijst, kenSessieToe, verplaatsDagdeel } from './db/beheer';
 import { publiekEvenement, scholen } from './db/evenement';
 import { DbFout } from './db/fouten';
+import { instellingen, isSoort, maak, verwijder, wijzig } from './db/instellingen';
 import { bewaarMelding, lijstMeldingen, MeldingFout, ruimMeldingenOp, zetStatusMelding } from './db/meldingen';
 import { annuleerViaToken, registratieViaToken, registreer } from './db/registratie';
 import { bevestigingsmail, meldingsmail, verstuur } from './mail';
@@ -35,6 +36,7 @@ const MELDINGEN: Record<string, [number, string]> = {
   ONGELDIGE_UITNODIGING: [400, 'Deze uitnodiging is ongeldig of verlopen.'],
   TE_VEEL_POGINGEN: [429, 'Te veel pogingen. Probeer het over 15 minuten opnieuw.'],
   GEBRUIKER_BESTAAT: [409, 'Er bestaat al een gebruiker met dit e-mailadres.'],
+  IN_GEBRUIK: [409, 'Dit onderdeel heeft al inschrijvingen (ook geannuleerde). Zet de status op gesloten of geannuleerd in plaats van te verwijderen.'],
   GEEN_TOEGANG: [403, 'Je hebt geen toegang tot deze gegevens.'],
   INSCHRIJVING_NIET_GEVONDEN: [404, 'Deze deelnemer is niet ingeschreven voor dat moment.'],
   EERST_DAGDEEL_VERPLAATSEN: [409, 'Verplaats de deelnemer eerst naar het dagdeel van deze sessie.'],
@@ -160,6 +162,18 @@ async function beheerRoute(request: Request, env: Env, pad: string, m: string): 
 
   const aanmelden = await aanmeldBeheerRoute(request, env, g, pad);
   if (aanmelden) return aanmelden;
+
+  // Instellingen van een evenement (zie db/instellingen.ts)
+  if (m === 'GET' && (p = pad.match(/^\/evenementen\/([A-Za-z0-9-]{1,64})\/instellingen$/))) return json(await instellingen(env, g, p[1]));
+  if ((p = pad.match(/^\/instellingen\/([a-z]+)(?:\/([A-Za-z0-9-]{1,64}))?$/)) && isSoort(p[1])) {
+    if (m === 'POST' && !p[2]) {
+      const body = (await leesJson(request, 64 * 1024)) as any;
+      const ouderId = typeof body?.ouderId === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(body.ouderId) ? body.ouderId : null;
+      return json(await maak(env, g, p[1], ouderId, body?.waarden ?? {}, ip), 201);
+    }
+    if (m === 'PATCH' && p[2]) return json(await wijzig(env, g, p[1], p[2], ((await leesJson(request, 64 * 1024)) as any)?.waarden ?? {}, ip));
+    if (m === 'DELETE' && p[2]) return json(await verwijder(env, g, p[1], p[2], ip));
+  }
 
   if (m === 'GET' && (p = pad.match(/^\/evenementen\/([0-9a-f-]{36})\/deelnemers\.csv$/)) && isUuid(p[1])) {
     const rijen = await deelnemerslijst(env, g, p[1], ip);

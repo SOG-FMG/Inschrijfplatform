@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import qrcode from 'qrcode-generator';
 import { Tekstveld } from '../components/Velden';
+import { Instellingen } from './Instellingen';
 import '../medewerkers.css';
 import { isDemo } from '../services/api';
-import { beheerApi, type BeheerGebruiker, type Profiel, type Uitnodiging } from '../services/beheerApi';
+import { beheerApi, instellingenApi, type BeheerGebruiker, type Profiel, type Uitnodiging } from '../services/beheerApi';
 import { meldAanMetPasskey, passkeysBeschikbaar, registreerPasskey } from '../services/passkey';
 import { ApiFout } from '../types';
 
@@ -46,7 +47,11 @@ export function Medewerkers() {
       </main>
     );
   }
-  if (profiel) return <Beheer profiel={profiel} naVerandering={laad} />;
+  if (profiel) {
+    const ev = location.pathname.match(/^\/medewerkers\/evenementen\/([A-Za-z0-9-]{1,64})\/?$/);
+    if (ev) return <Instellingen evenementId={ev[1]} />;
+    return <Beheer profiel={profiel} naVerandering={laad} />;
+  }
   return activeren ? <Activeren naKlaar={laad} /> : <Aanmelden naKlaar={laad} />;
 }
 
@@ -242,11 +247,14 @@ function Beheer({ profiel, naVerandering }: { profiel: Profiel; naVerandering: (
               <li key={e.id}>
                 <strong>{e.titel}</strong> <span className="info--klein">({e.status}, {e.start})</span>
                 <br />
+                <a href={`/medewerkers/evenementen/${e.id}`}>Instellingen</a>
+                {' · '}
                 <a href={beheerApi.csvUrl(e.id)} download>Deelnemerslijst downloaden (Excel/CSV)</a>
               </li>
             ))}
           </ul>
         )}
+        {profiel.rol === 'platformbeheerder' && <NieuwEvenement />}
       </section>
 
       <section className="kaartblok">
@@ -390,5 +398,47 @@ function Gebruikers({ profiel }: { profiel: Profiel }) {
         </div>
       </form>
     </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+/** Een nieuw evenement starten; de rest stel je in op de instellingenpagina. */
+function NieuwEvenement() {
+  const [open, setOpen] = useState(false);
+  const [w, setW] = useState({ titel: '', slug: '', start_datum: '', eind_datum: '' });
+  const [fout, setFout] = useState<string | null>(null);
+  if (!open) return <button type="button" className="knop knop--secundair" onClick={() => setOpen(true)}>Nieuw evenement</button>;
+  const maakSlug = (t: string) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return (
+    <form
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setFout(null);
+        try {
+          const { id } = await instellingenApi.maak('evenement', null, { ...w, eind_datum: w.eind_datum || w.start_datum });
+          location.href = `/medewerkers/evenementen/${id}`;
+        } catch (err) {
+          setFout(err instanceof ApiFout ? Object.values(err.velden ?? {}).join(' ') || err.message : 'Aanmaken mislukt.');
+        }
+      }}
+    >
+      <h3>Nieuw evenement</h3>
+      {fout && <div className="melding melding--fout" role="alert">{fout}</div>}
+      <Tekstveld label="Titel" waarde={w.titel} onWijzig={(v) => setW({ ...w, titel: v, slug: w.slug || maakSlug(v) })} verplicht />
+      <Tekstveld label="Adres (slug)" waarde={w.slug} onWijzig={(v) => setW({ ...w, slug: v })} verplicht hulp="Kleine letters, cijfers en streepjes, bv. opendeur-2027" />
+      <div className="veld">
+        <label htmlFor="nieuw-start">Eerste dag</label>
+        <input id="nieuw-start" type="date" required value={w.start_datum} onChange={(e) => setW({ ...w, start_datum: e.target.value })} />
+      </div>
+      <div className="veld">
+        <label htmlFor="nieuw-eind">Laatste dag</label>
+        <input id="nieuw-eind" type="date" value={w.eind_datum} onChange={(e) => setW({ ...w, eind_datum: e.target.value })} />
+      </div>
+      <p className="hulp">Het evenement start als <strong>concept</strong> en is pas zichtbaar als je het publiceert.</p>
+      <div className="knoppen">
+        <button type="button" className="knop knop--secundair" onClick={() => setOpen(false)}>Annuleren</button>
+        <button type="submit" className="knop">Aanmaken</button>
+      </div>
+    </form>
   );
 }

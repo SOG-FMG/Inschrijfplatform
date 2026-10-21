@@ -21,6 +21,46 @@ Alles draait op Cloudflare, met data in de EU:
 | Logs | Workers Observability | zonder persoonsgegevens |
 | Anonimiseren en opruimen | Cron Trigger (dagelijks 03:15 UTC) | |
 
+## Adressen
+
+Vervang `<account>` door de accountnaam in de Worker-URL (bv. `freinetmiddenschool-automatisatie`). Alles staat onder één hostnaam: `https://fmg-inschrijfplatform.<account>.workers.dev`.
+
+| Wat | Adres | Voor wie |
+| --- | --- | --- |
+| Inschrijfformulier | `/` of `/fmg-infodagen-2027` (de slug van het evenement) | ouders en leerlingen |
+| Zelfbeheer van een inschrijving (bekijken, annuleren) | `/beheer/<persoonlijk-token>` (staat in de bevestiging op het scherm) | de ouder |
+| **Aanmelden medewerkers en beheer** | `/medewerkers` | medewerkers |
+| Instellingen van een evenement | `/medewerkers/evenementen/<id>` (via *Instellingen* op `/medewerkers`) | organisatoren en beheerders |
+| **Account activeren** (eerste keer) | `/medewerkers/activeren` | nieuwe medewerkers, met hun uitnodigingscode |
+| API | `https://inschrijvingsplatform-api.<account>.workers.dev` (de frontend stuurt `/api/*` zelf door) | enkel technisch, niet delen |
+
+## Wie kan gebruikers aanmaken?
+
+Enkel een **platformbeheerder**, onder *Gebruikers* op `/medewerkers`. Andere rollen (organisator, onthaal, schoolbeheerder) zien dat deel niet, en de API weigert het ook (403).
+
+- De eerste platformbeheerder is de **hoofdadmin**: het adres in `HOOFDADMIN_EMAIL` (`backend/wrangler.toml`). Die activeert zich één keer met het secret `HOOFDADMIN_SETUP_CODE`.
+- Een nieuwe gebruiker moet `@onderwijs.gent.be` zijn en krijgt een eenmalige **uitnodigingscode** (7 dagen geldig) die je persoonlijk doorgeeft.
+- Een platformbeheerder kan een gebruiker **resetten** (verloren toestel) of **deactiveren**, maar niet zichzelf.
+- Elke aanmelding en elke wijziging van gebruikers komt in `audit_log`.
+
+## Is alles versleuteld?
+
+Niet alles, en dat is bewust: wat persoonlijk is, wel. Cloudflare versleutelt D1 en R2 bovendien op schijf, en al het verkeer loopt via HTTPS.
+
+| Gegeven | Hoe bewaard |
+| --- | --- |
+| Naam, voornaam, e-mail, telefoon, ouder/voogd, vrije school, functie en opmerkingen van deelnemers | **Versleuteld** (AES-256-GCM, kolommen `*_enc`) met `ENCRYPTION_KEY`. Weg na anonimisering. |
+| Tekst en e-mail van meldingen | **Versleuteld** (`*_enc`) |
+| Authenticator-geheim van medewerkers | **Versleuteld** (zelfde sleutel) |
+| Persoonlijke beheerlink van een ouder, sessiecookies, uitnodigingscodes | Enkel de **hash** (SHA-256) staat in de database, nooit de waarde zelf |
+| Dubbele inschrijving herkennen | Een **blinde index** (HMAC) in plaats van het adres |
+| Passkeys | Enkel de **publieke sleutel** (die is niet geheim). De privésleutel verlaat het toestel nooit. |
+| `HOOFDADMIN_SETUP_CODE`, `TURNSTILE_SECRET`, `ENCRYPTION_KEY` | Cloudflare-**secrets**, niet uitleesbaar en niet in Git |
+| Evenementen, lesjes, scholenlijst, capaciteiten | **Niet versleuteld** (geen persoonsgegevens) |
+| IP-adres in `audit_log` en aanmeldregistratie | **Niet versleuteld** (nodig voor controle en misbruikdetectie). Wordt tijdelijk of beperkt bewaard. |
+
+Kwijt je `ENCRYPTION_KEY`, dan zijn alle versleutelde gegevens definitief onleesbaar. Bewaar hem in de wachtwoordkluis (zie stap 5 van het stappenplan).
+
 ## Snel proberen (demomodus, zonder backend)
 
 ```bash
@@ -154,7 +194,8 @@ Alle beheerroutes vragen een aanmelding (authenticator of passkey) en controlere
 
 Elke actie komt in `audit_log`.
 
-- **Rechten.** Voeg een rij toe in `gebruikers` (enkel `@onderwijs.gent.be`) en in `evenement_beheerders`, met `wrangler d1 execute DB --remote --command "…"`.
+- **Rechten.** Gebruikers voeg je toe in `/medewerkers` (zie *Wie kan gebruikers aanmaken?*). Het koppelen aan evenementen kan daar bij het aanmaken; achteraf kan het nog met een rij in `evenement_beheerders` via `wrangler d1 execute DB --remote --command "…"`.
+- **Evenement instellen.** Op `/medewerkers` → *Instellingen* bij een evenement (`/medewerkers/evenementen/<id>`): algemene gegevens, inschrijfperiode, doelgroepen, dagen, momenten (dagdelen), tijdsblokken en lesjes met lokaal en capaciteit. Wijzigen kan voor platformbeheerders, organisatoren van dat evenement en schoolbeheerders van de school; onthaal kan enkel kijken. Een nieuw evenement maakt een platformbeheerder aan (start als concept). Een onderdeel met inschrijvingen kan je niet verwijderen: zet het op gesloten of geannuleerd.
 - **Export.** `GET /api/beheer/evenementen/<id>/deelnemers.csv` levert een ontsleutelde CSV in Excel-formaat. De export zelf wordt gelogd.
 - **Verplaatsen.**
   - Naar een ander dagdeel: `POST /api/beheer/deelnemers/<id>/dagdeel` met `{"van": "<dagdeel>", "naar": "<dagdeel>"}`.
@@ -166,7 +207,7 @@ Persoonsgegevens staan versleuteld in D1. Rechtstreeks met SQL in de database ki
 
 ## Nog te bouwen
 
-- Beheerdashboard: evenementen en sessies configureren, deelnemerslijst, verplaatsen, etiketten en klaslijsten per lesje, meldingen opvolgen.
+- Beheerdashboard: deelnemerslijst op het scherm, verplaatsen, etiketten en klaslijsten per lesje, meldingen opvolgen.
 - Herinneringsmail en mail bij doorschuiven van de wachtlijst.
 - QR-check-in op de dag zelf (fase 2). De velden `aanwezig` en `checkin_datum` bestaan al.
 - Officiële lijst van Belgische gemeenten (NIS-codes).
