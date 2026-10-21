@@ -53,6 +53,7 @@ export function Evenementen({ profiel, naVerandering }: { profiel: Profiel; naVe
                 <th>Inschrijven tot</th>
                 <th className="getal">Ingeschreven</th>
                 <th className="getal">Wachtlijst</th>
+                <th>Mislukte mails</th>
                 <th>Acties</th>
               </tr>
             </thead>
@@ -68,6 +69,13 @@ export function Evenementen({ profiel, naVerandering }: { profiel: Profiel; naVe
                   <td>{datumTijd(e.inschrijvingTot)}</td>
                   <td className="getal">{e.deelnemers}</td>
                   <td className="getal">{e.wachtlijst || '—'}</td>
+                  <td>
+                    {e.mailMislukt > 0 ? (
+                      <span className="d-nee" title="Zie het stappenplan: controleer de flow in Power Automate">{e.mailMislukt} mislukt</span>
+                    ) : (
+                      <span className="d-klein">—</span>
+                    )}
+                  </td>
                   <td className="d-acties">
                     <Link href={`/dashboard/evenementen/${e.id}`}>Instellingen</Link>
                     <a href={beheerApi.csvUrl(e.id)} download>Deelnemers (Excel)</a>

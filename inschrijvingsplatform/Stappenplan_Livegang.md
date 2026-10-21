@@ -250,22 +250,94 @@ Medewerkers melden aan met hun `@onderwijs.gent.be`-adres, een **wachtwoord** en
 
 Beveiliging in het kort: sessiecookie `HttpOnly` + `Secure` + `SameSite=Strict` (8 uur, 2 uur inactiviteit), elke code kan maar één keer gebruikt worden, na 5 foute pogingen per adres of 20 per IP-adres volgt 15 minuten blokkade, passkeys vereisen altijd gebruikersverificatie, en alle aanmeldingen komen in het auditlogboek.
 
-## 14. Bevestigingsmails via Microsoft 365
+## 14. Bevestigingsmails via Power Automate (Teams Workflows)
 
-Zonder deze stap krijgen ouders **geen** mail met hun beheerlink.
+Zonder deze stap krijgen ouders **geen** mail met hun persoonlijke link (bekijken en annuleren).
 
-1. Maak in Entra ID een app-registratie met de Graph-applicatierechten `Mail.Send` en admin consent.
-2. Beperk die rechten met een *Application Access Policy* tot één gedeelde mailbox, bv. `infodag@<school>.be`.
-3. Zet in `wrangler.toml` `MAIL_PROVIDER = "graph"`, `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID` en `GRAPH_SENDER`. Zet eventueel ook `MELDINGEN_MAIL`.
-4. Zet het secret:
+De Worker stelt de volledige mail samen en stuurt die naar een webhook van een flow. De flow verstuurt de mail met Outlook vanuit `freinetmiddenschool.automatisatie@onderwijs.gent.be` (of een gedeelde mailbox). Geen SMTP, geen eigen domein, geen premiumlicentie. De mails komen echt van jullie mailbox, dus ze belanden niet in spam.
 
-   ```bash
-   npx wrangler secret put GRAPH_CLIENT_SECRET
+```text
+Formulier → Worker ──JSON──► flow (Teams Workflows) ──► Outlook "Een e-mail verzenden (V2)" ──► ouder
+```
+
+### 14a. De flow maken
+
+Werk met het account `freinetmiddenschool.automatisatie@onderwijs.gent.be`. De flow hoort bij de maker: wordt dat account uitgeschakeld, dan stopt de flow.
+
+1. Teams → **Workflows** → *Maken* → sjabloon **"Send webhook alerts to a channel"** (of *"Post to a channel when a webhook request is received"*).
+2. Open de workflow om te **bewerken** (in Teams via *Beheren*, of op make.powerautomate.com).
+3. **Trigger** *When a Teams webhook request is received*: zet **Who can trigger the flow** op **Anyone**. De Worker is geen Teams-gebruiker.
+4. **Verwijder** de stappen die naar een kanaal posten. De inhoud bevat namen en e-mailadressen en hoort niet in een kanaal.
+5. Voeg **Data Operation → Parse JSON** toe:
+   - *Content*: **Body** van de trigger.
+   - *Schema*:
+
+     ```json
+     {
+       "type": "object",
+       "properties": {
+         "sleutel":    { "type": "string" },
+         "type":       { "type": "string" },
+         "referentie": { "type": "string" },
+         "aan":        { "type": "string" },
+         "onderwerp":  { "type": "string" },
+         "html":       { "type": "string" }
+       },
+       "required": ["sleutel", "aan", "onderwerp", "html"]
+     }
+     ```
+
+6. Voeg een **Condition** toe: `sleutel` *is equal to* `<de sleutel uit 14b>`.
+   - **If yes**: **Office 365 Outlook → Een e-mail verzenden (V2)**
+     - *Aan*: `aan`
+     - *Onderwerp*: `onderwerp`
+     - *Hoofdtekst*: klik op **</>** (codeweergave) en voeg `html` in, zodat de opmaak en de link behouden blijven.
+     - Optioneel onder *Geavanceerde parameters*: *Van (Verzenden als)* = een gedeelde mailbox waarop het account "Verzenden als"-rechten heeft. Of gebruik de actie *Een e-mail verzenden vanuit een gedeeld postvak (V2)*.
+   - **If no**: niets. Zo kan niemand zonder de sleutel via jullie mailbox mails sturen.
+7. **Privacy van de uitvoeringsgeschiedenis**: zet bij de trigger en bij *Parse JSON* onder **Instellingen** → **Secure inputs** en **Secure outputs** aan. Dan staan adressen en links niet leesbaar in de geschiedenis van de flow.
+8. **Opslaan** en het **webhook-adres** kopiëren (bij de trigger). Behandel dat adres als een wachtwoord.
+
+### 14b. De Worker koppelen
+
+1. Maak een sleutel (PowerShell). Bewaar ze in de kluis en vul dezelfde waarde in bij de Condition van de flow:
+
+   ```powershell
+   $b=[byte[]]::new(24); [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); -join ($b | ForEach-Object { 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'[$_ % 58] })
    ```
 
-5. Test met een eigen inschrijving: komt de mail aan en werkt de link?
+2. **Test eerst de flow alleen**, zonder het platform. Je krijgt een testmail op je eigen adres:
 
-> **Zonder Graph (geen Entra-app mogelijk):** laat `MAIL_PROVIDER = "log"`. Er gaan dan geen mails uit. Exporteer de deelnemerslijst (stap 17) en verstuur de bevestigingen zelf via afdruk samenvoegen in Word. Let op: de persoonlijke beheerlink (annuleren) staat niet in de export, want die wordt enkel als hash bewaard. Ouders zien de link wel op het scherm direct na het inschrijven.
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\inschrijvingsplatform\tools\test-mail-flow.ps1
+   ```
+
+3. Zet de twee secrets op de API-Worker:
+
+   ```powershell
+   cd inschrijvingsplatform/backend
+   npx wrangler secret put MAIL_WEBHOOK_URL
+   npx wrangler secret put MAIL_WEBHOOK_SLEUTEL
+   ```
+
+4. Zet in `backend/wrangler.toml` `MAIL_PROVIDER = "webhook"`. Commit en push.
+5. **Test in het dashboard**: *Medewerkers* → **Testmail naar mezelf sturen**. Doe daarna een echte testinschrijving: komt de bevestiging aan en werkt de link? Annuleer ze via de link: je krijgt een annulatiemail.
+
+### Wat de ouder krijgt
+
+| Wanneer | Mail |
+| --- | --- |
+| Na het inschrijven | Bevestiging met momenten, gekozen lesjes, referentie en de **persoonlijke link** om te bekijken of te annuleren |
+| Na annuleren via de link | Bevestiging van de annulatie, met een link om opnieuw in te schrijven |
+
+De persoonlijke link is een willekeurige code van 256 bit. In de database staat enkel de hash. De link geeft alleen toegang tot die ene inschrijving en vervalt bij de anonimisering.
+
+### Als het misgaat
+
+- Lukt een mail niet, dan probeert de Worker het één keer opnieuw. Daarna wordt het als *mislukt* gelogd, zonder de inhoud. In het dashboard zie je per evenement het aantal **mislukte mails**. De inschrijving zelf lukt altijd, en de ouder ziet de link ook op het scherm.
+- Kijk dan in Power Automate → de flow → **Uitvoeringsgeschiedenis** welke stap faalde.
+- Grenzen van een gewone Microsoft 365-licentie: enkele duizenden acties per dag. Dat is ruim voldoende voor een infodag (± 3 acties per mail).
+
+> **Andere mogelijkheden** (niet nodig als de flow werkt): Microsoft Graph met een Entra-app (`MAIL_PROVIDER = "graph"`, `GRAPH_*` en het secret `GRAPH_CLIENT_SECRET`), of zonder mails werken via de Excel-export en afdruk samenvoegen in Word.
 
 ## 15. Rate limiting
 
@@ -313,7 +385,7 @@ Werk `Todo_SetupBackupSystem.md` af: minstens laag 1 (Workers Paid, Time Travel)
 | `ALLOWED_ORIGINS`, `PUBLIC_APP_URL` | `backend/wrangler.toml` | 11 |
 | `HOOFDADMIN_EMAIL` / `HOOFDADMIN_SETUP_CODE` | `backend/wrangler.toml` / Worker-secret | 13 |
 | `[[ratelimits]]` | `backend/wrangler.toml` | 15 |
-| `MAIL_PROVIDER`, `GRAPH_*`, `MELDINGEN_MAIL` | `backend/wrangler.toml` | 14 |
-| `GRAPH_CLIENT_SECRET` | Worker-secret | 14 |
+| `MAIL_PROVIDER` (= `webhook`), `MELDINGEN_MAIL` | `backend/wrangler.toml` | 14 |
+| `MAIL_WEBHOOK_URL`, `MAIL_WEBHOOK_SLEUTEL` | Worker-secrets | 14 |
 
 Secrets staan **nooit** in `wrangler.toml` of in Git. Met `npx wrangler secret list` zie je welke er zijn (zonder de waarden).

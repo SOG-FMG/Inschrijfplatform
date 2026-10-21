@@ -175,26 +175,69 @@ export function Koppelen({ geheim, otpauth }: { geheim: string; otpauth: string 
   );
 }
 
-/** Toont een eenmalige code groot, met kopieerknop. */
-export function EenmaligeCode({ code, geldigTot, voor }: { code: string; geldigTot: string; voor: string }) {
-  const [gekopieerd, setGekopieerd] = useState(false);
+/** Wanneer de code vervalt, uitgeschreven ("donderdag 28 oktober 2026 om 14:30"). */
+const langeDatum = (iso: string) =>
+  new Date(iso).toLocaleString('nl-BE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+/** Het bericht dat je naar de medewerker mailt, met alle uitleg. */
+export function uitnodigingsBericht(p: { voornaam: string; email: string; code: string; geldigTot: string; afzender: string }) {
+  const url = location.origin;
+  return {
+    onderwerp: 'Je account voor het beheer van het Inschrijvingsplatform',
+    tekst: `Dag ${p.voornaam},
+
+Er is een account voor je aangemaakt voor het beheer van het Inschrijvingsplatform. Zo activeer je het:
+
+1. Ga naar ${url}/dashboard/activeren
+2. Vul je e-mailadres in: ${p.email}
+3. Vul deze uitnodigingscode in: ${p.code}
+4. Kies een wachtwoord (minstens 12 tekens, bv. een zin van enkele woorden).
+5. Scan de QR-code met een authenticator-app (bv. Microsoft Authenticator of Google Authenticator) en vul de 6-cijferige code in die de app toont.
+
+Let op:
+- De uitnodigingscode is geldig tot ${langeDatum(p.geldigTot)} (7 dagen) en kan maar één keer gebruikt worden. Is ze verlopen of werkt ze niet meer? Vraag dan een nieuwe aan bij ${p.afzender}.
+- Deel de code met niemand.
+
+Daarna meld je aan op ${url}/dashboard met je e-mailadres, je wachtwoord en de code uit de app. Die code wisselt elke 30 seconden. Liever zonder wachtwoord en code? Stel onder "Mijn account" een passkey in; dan meld je aan met de pincode of vingerafdruk van je laptop.
+
+Je blijft maximaal 8 uur aangemeld, en na 2 uur zonder activiteit meld je je opnieuw aan.
+
+Groeten,
+${p.afzender}`,
+  };
+}
+
+/** Eenmalige code als kant-en-klaar bericht dat je kopieert of rechtstreeks in je mailprogramma opent. */
+export function EenmaligeCode({ code, geldigTot, voornaam, email, afzender }: {
+  code: string;
+  geldigTot: string;
+  voornaam: string;
+  email: string;
+  afzender: string;
+}) {
+  const [gekopieerd, setGekopieerd] = useState<'bericht' | 'code' | null>(null);
+  const { onderwerp, tekst } = uitnodigingsBericht({ voornaam, email, code, geldigTot, afzender });
+  const kopieer = (wat: 'bericht' | 'code') =>
+    navigator.clipboard?.writeText(wat === 'bericht' ? `Onderwerp: ${onderwerp}
+
+${tekst}` : code).then(() => setGekopieerd(wat));
+  const mailto = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(onderwerp)}&body=${encodeURIComponent(tekst)}`;
+
   return (
     <div className="d-code">
-      <p>Uitnodigingscode voor <strong>{voor}</strong>, geldig tot {datumTijd(geldigTot)}:</p>
-      <div className="d-code__waarde">
-        <code>{code}</code>
-        <button
-          type="button"
-          className="d-knop d-knop--klein"
-          onClick={() => navigator.clipboard?.writeText(code).then(() => setGekopieerd(true))}
-        >
-          {gekopieerd ? 'Gekopieerd' : 'Kopiëren'}
-        </button>
-      </div>
       <Melding soort="let-op">
-        Deze code wordt maar één keer getoond. Geef hem persoonlijk door (niet in dezelfde mail als het adres). De medewerker activeert via{' '}
-        <strong>{location.origin}/dashboard/activeren</strong> en kiest daar een wachtwoord en de authenticator-app.
+        Deze code wordt <strong>maar één keer</strong> getoond. Kopieer het bericht nu, of sluit dit venster pas als de medewerker het bericht heeft. Is de code kwijt, kies dan <em>2FA opnieuw instellen</em> voor een nieuwe.
       </Melding>
+      <p className="d-klein">Bericht voor <strong>{email}</strong> (aan: {email}, onderwerp: <em>{onderwerp}</em>)</p>
+      <textarea className="d-bericht" readOnly rows={19} value={tekst} aria-label="Bericht voor de medewerker" onFocus={(e) => e.currentTarget.select()} />
+      <div className="d-knoppen d-knoppen--links">
+        <button type="button" className="d-knop" onClick={() => kopieer('bericht')}>{gekopieerd === 'bericht' ? '✓ Bericht gekopieerd' : 'Bericht kopiëren'}</button>
+        <a className="d-knop d-knop--secundair" href={mailto}>Openen in mail</a>
+        <button type="button" className="d-knop d-knop--secundair" onClick={() => kopieer('code')}>{gekopieerd === 'code' ? '✓ Code gekopieerd' : 'Enkel de code kopiëren'}</button>
+      </div>
+      <p className="d-klein">
+        Voorkeur voor meer veiligheid? Mail het bericht, en geef de code apart door (bv. via Teams of telefonisch). Vervang dan in het bericht de code door <em>"wordt apart doorgegeven"</em>.
+      </p>
     </div>
   );
 }

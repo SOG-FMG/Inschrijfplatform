@@ -52,6 +52,8 @@ enabled = true
 #   ENCRYPTION_KEY        64 hex-tekens; eerst in de kluis bewaren (stap 5)
 #   TURNSTILE_SECRET      stap 10
 #   HOOFDADMIN_SETUP_CODE 16 tekens (A-Z, 2-7); stap 13
+#   MAIL_WEBHOOK_URL      webhook-adres van de Power Automate-flow; stap 14
+#   MAIL_WEBHOOK_SLEUTEL  gedeeld geheim dat de flow controleert; stap 14
 #   GRAPH_CLIENT_SECRET   stap 14
 [vars]
 # URL van de frontend (Cloudflare Pages), zonder slash op het einde. Meerdere origins: komma-gescheiden.
@@ -60,8 +62,8 @@ PUBLIC_APP_URL = "https://fmg-inschrijfplatform.freinetmiddenschool-automatisati
 # Hoofdadmin (stap 13): de enige die zich de eerste keer kan activeren, met het secret HOOFDADMIN_SETUP_CODE.
 # Daarna voegt die de andere medewerkers toe in het beheerscherm. Enkel adressen @onderwijs.gent.be.
 HOOFDADMIN_EMAIL = "freinetmiddenschool.automatisatie@onderwijs.gent.be" #van FMG
-# 'log' = geen mails versturen (enkel loggen). Op 'graph' zetten in stap 14.
-MAIL_PROVIDER = "log"
+# 'log' = geen mails versturen (enkel loggen). Op 'webhook' zetten in stap 14 (Power Automate-flow).
+MAIL_PROVIDER = "webhook"
 # GRAPH_TENANT_ID = "<tenant-id>"
 # GRAPH_CLIENT_ID = "<app-registratie-client-id>"
 # GRAPH_SENDER = "infodag@<school>.be"

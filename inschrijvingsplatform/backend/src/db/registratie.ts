@@ -238,6 +238,28 @@ export async function registratieViaToken(env: Env, tokenHash: string) {
   };
 }
 
+/** Gegevens voor de annulatiemail; op te halen vóór het annuleren. */
+export async function annulatieGegevens(env: Env, tokenHash: string) {
+  const dn = await env.DB
+    .prepare(
+      `select dn.deelnemer_id, dn.email_enc, dn.voornaam_enc, e.titel, e.slug, e.contact_email
+       from deelnemers dn join evenementen e on e.evenement_id = dn.evenement_id
+       where dn.beheer_token_hash = ? and dn.status = 'actief' and dn.geanonimiseerd_op is null`,
+    )
+    .bind(tokenHash)
+    .first<{ deelnemer_id: string; email_enc: string | null; voornaam_enc: string | null; titel: string; slug: string; contact_email: string | null }>();
+  if (!dn?.email_enc) return null;
+  return {
+    deelnemerId: dn.deelnemer_id,
+    email: await ontsleutel(env, dn.email_enc),
+    voornaam: (await ontsleutel(env, dn.voornaam_enc)) ?? '',
+    evenement: dn.titel,
+    slug: dn.slug,
+    contactEmail: dn.contact_email,
+    referentie: referentie(dn.deelnemer_id),
+  };
+}
+
 export async function annuleerViaToken(env: Env, tokenHash: string) {
   const db = env.DB;
   const dn = await db

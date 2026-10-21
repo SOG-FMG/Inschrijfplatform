@@ -21,8 +21,12 @@ export interface Env {
   HOOFDADMIN_SETUP_CODE?: string;
   /** Enkel lokaal (localhost): meld aan als deze medewerker, zonder authenticator. */
   DEV_BEHEER_EMAIL?: string;
-  /** 'graph' (Microsoft 365 via de eigen tenant) of 'log' (enkel loggen, voor ontwikkeling). */
-  MAIL_PROVIDER?: 'graph' | 'log';
+  /** 'webhook' (Power Automate-flow die de mail verstuurt), 'graph' (Microsoft Graph) of 'log' (enkel loggen, voor ontwikkeling). */
+  MAIL_PROVIDER?: 'webhook' | 'graph' | 'log';
+  /** Secret – het webhook-adres van de flow (Teams Workflows / Power Automate). */
+  MAIL_WEBHOOK_URL?: string;
+  /** Secret – gedeeld geheim; de flow weigert aanvragen waarin het ontbreekt of niet klopt. */
+  MAIL_WEBHOOK_SLEUTEL?: string;
   GRAPH_TENANT_ID?: string;
   GRAPH_CLIENT_ID?: string;
   GRAPH_CLIENT_SECRET?: string;

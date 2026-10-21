@@ -33,6 +33,7 @@ export interface EvenementKort {
   wachtlijst: number;
   bewaartermijn: number;
   heeftPrivacytekst: number;
+  mailMislukt: number;
 }
 
 export interface Profiel {
@@ -98,6 +99,7 @@ export const beheerApi = {
   bewerkGebruiker: (id: string, wijziging: Partial<{ voornaam: string; naam: string; rol: string; evenementIds: string[]; actief: boolean }>) =>
     call<{ ok: true }>(`/api/beheer/gebruikers/${id}`, { method: 'PATCH', body: wijziging }),
   resetGebruiker: (id: string) => post<Uitnodiging>(`/api/beheer/gebruikers/${id}/reset`),
+  testMail: () => post<{ ok: boolean; provider: string; status?: string; fout?: string }>('/api/beheer/mail/test'),
 
   csvUrl: (evenementId: string) => `${BASIS}/api/beheer/evenementen/${evenementId}/deelnemers.csv`,
 };

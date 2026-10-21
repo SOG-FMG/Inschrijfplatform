@@ -244,6 +244,8 @@ async function profiel(env: Env, g: Gebruiker): Promise<Response> {
       `select e.evenement_id as id, e.titel, e.slug, e.start_datum as start, e.eind_datum as eind, e.status,
               e.inschrijving_tot as inschrijvingTot, e.bewaartermijn_dagen as bewaartermijn,
               (e.privacy_tekst is not null and trim(e.privacy_tekst) <> '') as heeftPrivacytekst,
+              (select count(*) from mail_berichten mb join deelnemers d2 on d2.deelnemer_id = mb.deelnemer_id
+                 where d2.evenement_id = e.evenement_id and mb.status = 'mislukt') as mailMislukt,
               (select count(*) from deelnemers d where d.evenement_id = e.evenement_id and d.status = 'actief') as deelnemers,
               (select count(distinct i.deelnemer_id) from inschrijvingen i where i.evenement_id = e.evenement_id and i.status = 'wachtlijst') as wachtlijst
        from evenementen e

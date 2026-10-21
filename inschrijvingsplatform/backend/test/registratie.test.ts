@@ -3,7 +3,7 @@
 // Uitvoeren:  cd backend && npm test
 import { execSync } from 'node:child_process';
 import { rmSync } from 'node:fs';
-import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { getPlatformProxy } from 'wrangler';
 import worker from '../src/index';
 import type { Env } from '../src/types';
@@ -649,5 +649,111 @@ describe('instellingen van een evenement', () => {
       waarden: { titel: 'X', slug: 'opendeur-2027', start_datum: '2027-05-01', eind_datum: '2027-05-01' },
     });
     expect(dubbel.data.velden).toHaveProperty('slug');
+  });
+});
+
+describe('e-mail via de Power Automate-webhook', () => {
+  const URL_FLOW = 'https://prod-12.westeurope.logic.azure.com:443/workflows/abc/triggers/manual/paths/invoke?sig=geheim';
+  type Aanroep = { url: string; body: any };
+  let aanroepen: Aanroep[];
+  let antwoord: () => Response;
+  const echteFetch = globalThis.fetch;
+
+  const wacht = async () => {
+    await Promise.all(wachtend.splice(0));
+  };
+
+  beforeAll(() => {
+    env.DEV_BEHEER_EMAIL = BEHEERDER;
+    env.MAIL_PROVIDER = 'webhook';
+    env.MAIL_WEBHOOK_URL = URL_FLOW;
+    env.MAIL_WEBHOOK_SLEUTEL = 'testsleutel-123';
+    globalThis.fetch = (async (url: any, init?: any) => {
+      if (String(url).startsWith('https://prod-12.westeurope.logic.azure.com')) {
+        aanroepen.push({ url: String(url), body: JSON.parse(init.body) });
+        return antwoord();
+      }
+      return echteFetch(url, init);
+    }) as typeof fetch;
+  });
+  afterAll(() => {
+    globalThis.fetch = echteFetch;
+    env.MAIL_PROVIDER = 'log';
+  });
+  beforeEach(() => {
+    aanroepen = [];
+    antwoord = () => new Response(null, { status: 202 });
+  });
+
+  test('inschrijven stuurt één bevestigingsmail met de persoonlijke link', async () => {
+    const ev = (await api('GET', `/api/evenementen/${SLUG}`)).data;
+    const dagdeel = ev.dagen[0].dagdelen[0];
+    const r = await registreer(deelnemer({ voornaam: 'Mailtest' }), [dagdeel.id], []);
+    expect(r.status).toBe(201);
+    await wacht();
+    expect(aanroepen).toHaveLength(1);
+    const b = aanroepen[0].body;
+    expect(b).toMatchObject({ sleutel: 'testsleutel-123', type: 'bevestiging', aan: expect.stringMatching(/^ouder\d+@example\.org$/) });
+    expect(b.onderwerp).toContain(r.data.referentie);
+    expect(b.html).toContain(r.data.beheerUrl); // de link om te bekijken of te annuleren
+    const rij = await een(`select status, type, fout from mail_berichten order by created_at desc limit 1`);
+    expect(rij).toMatchObject({ status: 'verzonden', type: 'bevestiging', fout: null });
+    // De inhoud van de mail wordt nergens in de database bewaard.
+    expect(JSON.stringify(await een(`select * from mail_berichten order by created_at desc limit 1`))).not.toContain('example.org');
+  });
+
+  test('annuleren via de link stuurt een annulatiemail', async () => {
+    const ev = (await api('GET', `/api/evenementen/${SLUG}`)).data;
+    const r = await registreer(deelnemer(), [ev.dagen[0].dagdelen[0].id], []);
+    await wacht();
+    aanroepen = [];
+    const t = r.data.beheerUrl.split('/beheer/')[1];
+    expect((await api('DELETE', `/api/registraties/${t}`)).status).toBe(200);
+    await wacht();
+    expect(aanroepen).toHaveLength(1);
+    expect(aanroepen[0].body).toMatchObject({ type: 'annulatie' });
+    expect(aanroepen[0].body.html).toContain('geannuleerd');
+    // Nog eens annuleren: geen tweede mail
+    aanroepen = [];
+    expect((await api('DELETE', `/api/registraties/${t}`)).status).toBe(404);
+    await wacht();
+    expect(aanroepen).toHaveLength(0);
+  });
+
+  test('een flow die uitvalt: de inschrijving lukt, de mislukking wordt gelogd (zonder inhoud)', async () => {
+    antwoord = () => new Response('boom', { status: 500 });
+    const ev = (await api('GET', `/api/evenementen/${SLUG}`)).data;
+    const r = await registreer(deelnemer(), [ev.dagen[0].dagdelen[0].id], []);
+    expect(r.status).toBe(201);
+    expect(r.data.beheerUrl).toBeTruthy(); // de ouder ziet de link nog altijd op het scherm
+    await wacht();
+    expect(aanroepen).toHaveLength(2); // twee pogingen
+    const rij = await een(`select status, fout from mail_berichten order by created_at desc limit 1`);
+    expect(rij.status).toBe('mislukt');
+    expect(rij.fout).toContain('500');
+    expect(rij.fout).not.toContain('example.org');
+  });
+
+  test('een ongeldig webhook-adres wordt nooit aangeroepen', async () => {
+    env.MAIL_WEBHOOK_URL = 'https://kwaadaardig.example/hook';
+    const ev = (await api('GET', `/api/evenementen/${SLUG}`)).data;
+    await registreer(deelnemer(), [ev.dagen[0].dagdelen[0].id], []);
+    await wacht();
+    expect(aanroepen).toHaveLength(0);
+    expect((await een(`select status from mail_berichten order by created_at desc limit 1`)).status).toBe('mislukt');
+    env.MAIL_WEBHOOK_URL = URL_FLOW;
+  });
+
+  test('testmail: enkel platformbeheer, naar jezelf, met duidelijke fout als de flow niet werkt', async () => {
+    const ok = await api('POST', '/api/beheer/mail/test', {});
+    expect(ok.data).toMatchObject({ ok: true, provider: 'webhook', status: 'verzonden' });
+    expect(aanroepen[0].body).toMatchObject({ type: 'test', aan: BEHEERDER });
+    antwoord = () => new Response('nee', { status: 401 });
+    const fout = await api('POST', '/api/beheer/mail/test', {});
+    expect(fout.data).toMatchObject({ ok: false });
+    expect(fout.data.fout).toContain('401');
+    await sql(`update gebruikers set rol_id = (select rol_id from rollen where code = 'organisator') where email = ?`, BEHEERDER);
+    expect((await api('POST', '/api/beheer/mail/test', {})).status).toBe(403);
+    await sql(`update gebruikers set rol_id = (select rol_id from rollen where code = 'platformbeheerder') where email = ?`, BEHEERDER);
   });
 });

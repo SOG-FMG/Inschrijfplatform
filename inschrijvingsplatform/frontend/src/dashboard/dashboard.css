@@ -205,3 +205,12 @@
   .iv--lang, .iv--logo { grid-column: auto; }
   .d-koppelen { flex-direction: column; }
 }
+
+/* Inklapbare uitleg */
+.d-info { background: var(--vlak); border: 1px solid var(--d-rand); border-radius: 6px; padding: 6px 12px; margin-bottom: 10px; }
+.d-info > summary { cursor: pointer; font-weight: 700; }
+.d-info .d-lijst { margin-top: 6px; }
+
+/* Bericht voor de medewerker */
+.d-bericht { width: 100%; font: inherit; font-size: 1.1em; line-height: 1.5; padding: 10px 12px; border: 1px solid var(--d-rand); border-radius: 5px; background: var(--vlak); color: inherit; resize: vertical; white-space: pre-wrap; }
+.d-knoppen--links { justify-content: flex-start; }

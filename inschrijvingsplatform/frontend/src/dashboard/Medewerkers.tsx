@@ -21,7 +21,7 @@ export function Medewerkers({ profiel }: { profiel: Profiel }) {
   const [lijst, setLijst] = useState<BeheerGebruiker[] | null>(null);
   const [fout, setFout] = useState<string | null>(null);
   const [bewerk, setBewerk] = useState<BeheerGebruiker | 'nieuw' | null>(null);
-  const [code, setCode] = useState<(Uitnodiging & { voor: string }) | null>(null);
+  const [code, setCode] = useState<(Uitnodiging & { voor: string; voornaam: string }) | null>(null);
   const [zoek, setZoek] = useState('');
 
   const laad = useCallback(() => {
@@ -47,7 +47,7 @@ export function Medewerkers({ profiel }: { profiel: Profiel }) {
 
   const reset = (g: BeheerGebruiker) => {
     if (!confirm(`2FA van ${g.voornaam} ${g.naam} opnieuw instellen?\n\nWachtwoord, authenticator, passkeys en sessies worden gewist. Je krijgt een nieuwe eenmalige code.`)) return;
-    uitvoeren(async () => setCode({ ...(await beheerApi.resetGebruiker(g.id)), voor: g.email }));
+    uitvoeren(async () => setCode({ ...(await beheerApi.resetGebruiker(g.id)), voor: g.email, voornaam: g.voornaam }));
   };
   const actief = (g: BeheerGebruiker) => {
     if (g.actief && !confirm(`${g.voornaam} ${g.naam} deactiveren? Aanmelden is dan niet meer mogelijk.`)) return;
@@ -64,6 +64,28 @@ export function Medewerkers({ profiel }: { profiel: Profiel }) {
         <button type="button" className="d-knop" onClick={() => setBewerk('nieuw')}>+ Medewerker toevoegen</button>
       </header>
       {fout && <Melding soort="fout">{fout}</Melding>}
+
+      <details className="d-info">
+        <summary>Hoe lang zijn codes en sessies geldig?</summary>
+        <ul className="d-lijst">
+          <li>
+            <strong>Uitnodigingscode</strong> (bij een nieuwe medewerker of na <em>2FA opnieuw instellen</em>): <strong>7 dagen</strong> geldig en maar{' '}
+            <strong>één keer</strong> te gebruiken. Is ze verlopen, kies dan opnieuw <em>2FA opnieuw instellen</em> voor een nieuwe code.
+          </li>
+          <li>
+            <strong>Code uit de authenticator-app</strong>: wisselt elke <strong>30 seconden</strong> (met een kleine marge voor een klokverschil) en werkt maar één keer.
+          </li>
+          <li>
+            <strong>Sessie na het aanmelden</strong>: maximaal <strong>8 uur</strong>, en na <strong>2 uur zonder activiteit</strong> moet je opnieuw aanmelden.
+          </li>
+          <li>
+            <strong>Foute pogingen</strong>: na 5 foute pogingen voor één e-mailadres (of 20 vanaf één IP-adres) volgt <strong>15 minuten</strong> blokkade.
+          </li>
+          <li>
+            <strong>Wachtwoord</strong>: minstens 12 tekens, geen vervaldatum. Een medewerker wijzigt het zelf onder <em>Mijn account</em>.
+          </li>
+        </ul>
+      </details>
 
       <div className="d-werkbalk">
         <input type="search" placeholder="Zoeken op naam of e-mail…" value={zoek} onChange={(e) => setZoek(e.target.value)} aria-label="Zoeken" />
@@ -118,21 +140,29 @@ export function Medewerkers({ profiel }: { profiel: Profiel }) {
         </div>
       )}
 
+      <MailTest />
+
       {bewerk && (
         <Bewerken
           gebruiker={bewerk === 'nieuw' ? null : bewerk}
           profiel={profiel}
           onSluit={() => setBewerk(null)}
-          naKlaar={(uitnodiging, email) => {
+          naKlaar={(uitnodiging, email, voornaam) => {
             setBewerk(null);
-            if (uitnodiging) setCode({ ...uitnodiging, voor: email });
+            if (uitnodiging) setCode({ ...uitnodiging, voor: email, voornaam });
             laad();
           }}
         />
       )}
       {code && (
-        <Venster titel="Eenmalige code" onSluit={() => setCode(null)}>
-          <EenmaligeCode code={code.uitnodigingscode} geldigTot={code.geldigTot} voor={code.voor} />
+        <Venster titel="Eenmalige code" onSluit={() => setCode(null)} breed>
+          <EenmaligeCode
+            code={code.uitnodigingscode}
+            geldigTot={code.geldigTot}
+            voornaam={code.voornaam}
+            email={code.voor}
+            afzender={`${profiel.voornaam} ${profiel.naam}`}
+          />
           <div className="d-knoppen">
             <button type="button" className="d-knop" onClick={() => setCode(null)}>Klaar</button>
           </div>
@@ -146,7 +176,7 @@ function Bewerken({ gebruiker, profiel, onSluit, naKlaar }: {
   gebruiker: BeheerGebruiker | null;
   profiel: Profiel;
   onSluit: () => void;
-  naKlaar: (uitnodiging: Uitnodiging | null, email: string) => void;
+  naKlaar: (uitnodiging: Uitnodiging | null, email: string, voornaam: string) => void;
 }) {
   const [w, setW] = useState({
     voornaam: gebruiker?.voornaam ?? '',
@@ -173,10 +203,10 @@ function Bewerken({ gebruiker, profiel, onSluit, naKlaar }: {
                 ...(ik ? {} : { rol: w.rol }),
                 evenementIds: w.evenementIds,
               });
-              naKlaar(null, w.email);
+              naKlaar(null, w.email, w.voornaam);
             } else {
               const r = await beheerApi.maakGebruiker({ ...w, email: w.email.trim().toLowerCase() });
-              naKlaar(r, w.email.trim().toLowerCase());
+              naKlaar(r, w.email.trim().toLowerCase(), w.voornaam);
             }
           } catch (err) {
             setFout(foutTekst(err, 'Opslaan mislukt.'));
@@ -233,5 +263,39 @@ function Bewerken({ gebruiker, profiel, onSluit, naKlaar }: {
         </div>
       </form>
     </Venster>
+  );
+}
+
+/** Controleert de e-mailverzending (Worker → flow → mailbox) met een testmail naar jezelf. */
+function MailTest() {
+  const [uitslag, setUitslag] = useState<{ ok: boolean; tekst: string } | null>(null);
+  const [bezig, setBezig] = useState(false);
+  return (
+    <section className="d-kaart">
+      <h2>E-mailverzending testen</h2>
+      <p className="d-klein">Stuurt een testmail naar je eigen adres via dezelfde weg als de bevestigingsmails voor ouders.</p>
+      {uitslag && <Melding soort={uitslag.ok ? 'ok' : 'fout'}>{uitslag.tekst}</Melding>}
+      <button
+        type="button"
+        className="d-knop d-knop--secundair"
+        disabled={bezig}
+        onClick={async () => {
+          setBezig(true);
+          setUitslag(null);
+          try {
+            const r = await beheerApi.testMail();
+            if (!r.ok) setUitslag({ ok: false, tekst: `Versturen mislukt (${r.provider}): ${r.fout}` });
+            else if (r.status === 'overgeslagen') setUitslag({ ok: false, tekst: 'Er is niets verstuurd: MAIL_PROVIDER staat op "log". Zet hem op "webhook" (stap 14 van het stappenplan).' });
+            else setUitslag({ ok: true, tekst: 'Verstuurd naar de flow. Kijk in je mailbox (het kan een minuut duren).' });
+          } catch (e) {
+            setUitslag({ ok: false, tekst: foutTekst(e) });
+          } finally {
+            setBezig(false);
+          }
+        }}
+      >
+        {bezig ? 'Bezig…' : 'Testmail naar mezelf sturen'}
+      </button>
+    </section>
   );
 }

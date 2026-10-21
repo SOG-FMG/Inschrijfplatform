@@ -6,8 +6,8 @@ import { publiekEvenement, scholen } from './db/evenement';
 import { DbFout } from './db/fouten';
 import { bewaarLogo, instellingen, isSoort, maak, verwijder, verwijderLogo, wijzig } from './db/instellingen';
 import { bewaarMelding, lijstMeldingen, MeldingFout, ruimMeldingenOp, zetStatusMelding } from './db/meldingen';
-import { annuleerViaToken, registratieViaToken, registreer } from './db/registratie';
-import { bevestigingsmail, meldingsmail, verstuur } from './mail';
+import { annulatieGegevens, annuleerViaToken, registratieViaToken, registreer } from './db/registratie';
+import { annulatiemail, bevestigingsmail, meldingsmail, type Mail, testmail, verstuur } from './mail';
 import { huidigeGebruiker, isToegelatenEmail } from './middleware/toegang';
 import type { Env } from './types';
 import { isUuid, ValidatieFout, valideerRegistratie } from './validatie';
@@ -102,6 +102,19 @@ async function teSnel(limiet: RateLimit | undefined, request: Request): Promise<
 
 const teVeelAanvragen = () => json({ fout: 'TE_VEEL_AANVRAGEN', melding: 'Te veel aanvragen na elkaar. Wacht even en probeer opnieuw.' }, 429);
 
+/** Verstuurt een mail op de achtergrond en bewaart het resultaat (zonder inhoud) in mail_berichten. */
+function stuurEnLog(env: Env, ctx: ExecutionContext, deelnemerId: string, mail: Mail) {
+  const log = (status: string, fout?: string) =>
+    env.DB.prepare(`insert into mail_berichten (bericht_id, deelnemer_id, type, status, fout) values (?, ?, ?, ?, ?)`)
+      .bind(crypto.randomUUID(), deelnemerId, mail.type ?? 'bericht', status, fout ?? null)
+      .run();
+  ctx.waitUntil(
+    verstuur(env, mail)
+      .then((status) => log(status))
+      .catch((e) => log('mislukt', String(e).slice(0, 500))),
+  );
+}
+
 async function registreerRoute(request: Request, env: Env, ctx: ExecutionContext, slug: string): Promise<Response> {
   if (await teSnel(env.RL_REGISTRATIE, request)) return teVeelAanvragen();
   const invoer = valideerRegistratie(await leesJson(request, 64 * 1024));
@@ -113,16 +126,7 @@ async function registreerRoute(request: Request, env: Env, ctx: ExecutionContext
   const resultaat = await registreer(env, slug, invoer, await sha256(token));
 
   const beheerUrl = `${env.PUBLIC_APP_URL.replace(/\/$/, '')}/beheer/${token}`;
-  const mail = bevestigingsmail(resultaat, invoer.deelnemer.email, invoer.deelnemer.voornaam, beheerUrl);
-  const logMail = (status: string, fout?: string) =>
-    env.DB.prepare(`insert into mail_berichten (bericht_id, deelnemer_id, type, status, fout) values (?, ?, 'bevestiging', ?, ?)`)
-      .bind(crypto.randomUUID(), resultaat.deelnemerId, status, fout ?? null)
-      .run();
-  ctx.waitUntil(
-    verstuur(env, mail)
-      .then((status) => logMail(status))
-      .catch((e) => logMail('mislukt', String(e).slice(0, 500))),
-  );
+  stuurEnLog(env, ctx, resultaat.deelnemerId, bevestigingsmail(resultaat, invoer.deelnemer.email, invoer.deelnemer.voornaam, beheerUrl));
 
   const { deelnemerId: _intern, ...publiek } = resultaat;
   return json({ ...publiek, beheerUrl }, 201);
@@ -161,6 +165,18 @@ async function beheerRoute(request: Request, env: Env, pad: string, m: string): 
   const g = await huidigeGebruiker(request, env);
   const ip = request.headers.get('CF-Connecting-IP');
   let p: RegExpMatchArray | null;
+
+  // Testmail naar jezelf: controleert de hele keten (Worker → flow → mailbox) zonder een inschrijving te doen.
+  if (m === 'POST' && pad === '/mail/test') {
+    if (g.rol !== 'platformbeheerder') throw new DbFout('GEEN_TOEGANG');
+    try {
+      const status = await verstuur(env, testmail(g.email));
+      await audit(env, g, 'mail', '*', 'TESTMAIL', { status }, ip).run();
+      return json({ ok: true, provider: env.MAIL_PROVIDER ?? 'log', status });
+    } catch (e) {
+      return json({ ok: false, provider: env.MAIL_PROVIDER ?? 'log', fout: String(e instanceof Error ? e.message : e).slice(0, 200) });
+    }
+  }
 
   const aanmelden = await aanmeldBeheerRoute(request, env, g, pad);
   if (aanmelden) return aanmelden;
@@ -257,7 +273,15 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       const r = await registratieViaToken(env, hash);
       return r ? json(r) : json({ fout: 'REGISTRATIE_NIET_GEVONDEN', melding: MELDINGEN.REGISTRATIE_NIET_GEVONDEN[1] }, 404);
     }
-    if (m === 'DELETE') return json(await annuleerViaToken(env, hash));
+    if (m === 'DELETE') {
+      const gegevens = await annulatieGegevens(env, hash);
+      const resultaat = await annuleerViaToken(env, hash);
+      if (gegevens?.email) {
+        const basis = env.PUBLIC_APP_URL.replace(/\/$/, '');
+        stuurEnLog(env, ctx, gegevens.deelnemerId, annulatiemail({ ...gegevens, aan: gegevens.email, formulierUrl: `${basis}/${gegevens.slug}` }));
+      }
+      return json(resultaat);
+    }
   }
   if (m === 'POST' && pathname === '/api/meldingen') return meldingRoute(request, env, ctx);
   if (pathname.startsWith('/api/auth/')) return authRoute(request, env, pathname.slice('/api/auth'.length));
