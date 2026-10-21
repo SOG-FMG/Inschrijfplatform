@@ -16,7 +16,7 @@ Alles draait op Cloudflare, met data in de EU:
 | --- | --- | --- |
 | Database | D1 | jurisdictie `eu` (afgedwongen, niet enkel een location hint) |
 | Schermafbeeldingen bij meldingen | R2 | jurisdictie `eu` |
-| Aanmelden medewerkers | Authenticator-app (TOTP) of passkey, hoofdadmin in `wrangler.toml` | enkel `@onderwijs.gent.be` |
+| Aanmelden medewerkers | E-mail + wachtwoord + authenticator-app (TOTP), of een passkey; hoofdadmin in `wrangler.toml` | enkel `@onderwijs.gent.be` |
 | Persoonsgegevens | AES-256-GCM in de Worker (`*_enc`-kolommen) | sleutel als Worker-secret |
 | Logs | Workers Observability | zonder persoonsgegevens |
 | Anonimiseren en opruimen | Cron Trigger (dagelijks 03:15 UTC) | |
@@ -29,18 +29,19 @@ Vervang `<account>` door de accountnaam in de Worker-URL (bv. `freinetmiddenscho
 | --- | --- | --- |
 | Inschrijfformulier | `/` of `/fmg-infodagen-2027` (de slug van het evenement) | ouders en leerlingen |
 | Zelfbeheer van een inschrijving (bekijken, annuleren) | `/beheer/<persoonlijk-token>` (staat in de bevestiging op het scherm) | de ouder |
-| **Aanmelden medewerkers en beheer** | `/medewerkers` | medewerkers |
-| Instellingen van een evenement | `/medewerkers/evenementen/<id>` (via *Instellingen* op `/medewerkers`) | organisatoren en beheerders |
-| **Account activeren** (eerste keer) | `/medewerkers/activeren` | nieuwe medewerkers, met hun uitnodigingscode |
+| **Beheer (dashboard)** | `/dashboard` | medewerkers |
+| Instellingen van een evenement | `/dashboard/evenementen/<id>` (via *Instellingen* op `/dashboard`) | organisatoren en beheerders |
+| **Account activeren** (eerste keer) | `/dashboard/activeren` | nieuwe medewerkers, met hun uitnodigingscode |
 | API | `https://inschrijvingsplatform-api.<account>.workers.dev` (de frontend stuurt `/api/*` zelf door) | enkel technisch, niet delen |
 
 ## Wie kan gebruikers aanmaken?
 
-Enkel een **platformbeheerder**, onder *Gebruikers* op `/medewerkers`. Andere rollen (organisator, onthaal, schoolbeheerder) zien dat deel niet, en de API weigert het ook (403).
+Enkel een **platformbeheerder**, onder *Medewerkers* in het dashboard (`/dashboard/medewerkers`). Andere rollen (organisator, onthaal, schoolbeheerder) zien dat deel niet, en de API weigert het ook (403).
 
 - De eerste platformbeheerder is de **hoofdadmin**: het adres in `HOOFDADMIN_EMAIL` (`backend/wrangler.toml`). Die activeert zich één keer met het secret `HOOFDADMIN_SETUP_CODE`.
 - Een nieuwe gebruiker moet `@onderwijs.gent.be` zijn en krijgt een eenmalige **uitnodigingscode** (7 dagen geldig) die je persoonlijk doorgeeft.
-- Een platformbeheerder kan een gebruiker **resetten** (verloren toestel) of **deactiveren**, maar niet zichzelf.
+- Een platformbeheerder kan een medewerker **bewerken** (naam, rol, evenementen), de **2FA opnieuw instellen** (wist wachtwoord, authenticator en passkeys; geeft een nieuwe eenmalige code) of **deactiveren**, maar niet zichzelf. De hoofdadmin blijft altijd platformbeheerder.
+- Aanmelden: e-mail + **wachtwoord** (minstens 12 tekens) + code uit de authenticator-app. Een passkey (pincode/vingerafdruk) vervangt die drie, want die is op zich al tweestaps. Eigen wachtwoord, authenticator en passkeys beheer je onder *Mijn account*.
 - Elke aanmelding en elke wijziging van gebruikers komt in `audit_log`.
 
 ## Is alles versleuteld?
@@ -194,8 +195,8 @@ Alle beheerroutes vragen een aanmelding (authenticator of passkey) en controlere
 
 Elke actie komt in `audit_log`.
 
-- **Rechten.** Gebruikers voeg je toe in `/medewerkers` (zie *Wie kan gebruikers aanmaken?*). Het koppelen aan evenementen kan daar bij het aanmaken; achteraf kan het nog met een rij in `evenement_beheerders` via `wrangler d1 execute DB --remote --command "…"`.
-- **Evenement instellen.** Op `/medewerkers` → *Instellingen* bij een evenement (`/medewerkers/evenementen/<id>`): algemene gegevens, inschrijfperiode, doelgroepen, dagen, momenten (dagdelen), tijdsblokken en lesjes met lokaal en capaciteit. Wijzigen kan voor platformbeheerders, organisatoren van dat evenement en schoolbeheerders van de school; onthaal kan enkel kijken. Een nieuw evenement maakt een platformbeheerder aan (start als concept). Een onderdeel met inschrijvingen kan je niet verwijderen: zet het op gesloten of geannuleerd.
+- **Rechten.** Gebruikers voeg je toe in `/dashboard` (zie *Wie kan gebruikers aanmaken?*). Het koppelen aan evenementen kan daar bij het aanmaken; achteraf kan het nog met een rij in `evenement_beheerders` via `wrangler d1 execute DB --remote --command "…"`.
+- **Evenement instellen.** Op `/dashboard` → *Instellingen* bij een evenement (`/dashboard/evenementen/<id>`): algemene gegevens, inschrijfperiode, doelgroepen, dagen, momenten (dagdelen), tijdsblokken en lesjes met lokaal en capaciteit. Wijzigen kan voor platformbeheerders, organisatoren van dat evenement en schoolbeheerders van de school; onthaal kan enkel kijken. Een nieuw evenement maakt een platformbeheerder aan (start als concept). Een onderdeel met inschrijvingen kan je niet verwijderen: zet het op gesloten of geannuleerd.
 - **Export.** `GET /api/beheer/evenementen/<id>/deelnemers.csv` levert een ontsleutelde CSV in Excel-formaat. De export zelf wordt gelogd.
 - **Verplaatsen.**
   - Naar een ander dagdeel: `POST /api/beheer/deelnemers/<id>/dagdeel` met `{"van": "<dagdeel>", "naar": "<dagdeel>"}`.

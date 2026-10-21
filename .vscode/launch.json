@@ -1,0 +1,50 @@
+{
+  // F5: start de devserver(s) en opent de website in Edge binnen VS Code (extensie Microsoft Edge Tools).
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Edge headless (demo)",
+      "type": "msedge",
+      "request": "launch",
+      "url": "http://localhost:5173",
+      "runtimeArgs": ["--headless", "--remote-debugging-port=9222"],
+      "presentation": { "hidden": true }
+    },
+    {
+      "name": "Edge headless (met backend)",
+      "type": "msedge",
+      "request": "launch",
+      "url": "http://localhost:5173",
+      "runtimeArgs": ["--headless", "--remote-debugging-port=9222"],
+      "presentation": { "hidden": true }
+    },
+    {
+      "name": "Edge DevTools",
+      "type": "vscode-edge-devtools.debug",
+      "request": "attach",
+      "url": "http://localhost:5173",
+      "presentation": { "hidden": true }
+    },
+    {
+      "name": "Website in Edge (extern venster)",
+      "type": "msedge",
+      "request": "launch",
+      "url": "http://localhost:5173",
+      "preLaunchTask": "frontend: demo"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Website: demo (zonder backend)",
+      "configurations": ["Edge headless (demo)", "Edge DevTools"],
+      "preLaunchTask": "frontend: demo",
+      "stopAll": true
+    },
+    {
+      "name": "Website: met lokale backend",
+      "configurations": ["Edge headless (met backend)", "Edge DevTools"],
+      "preLaunchTask": "frontend: met backend",
+      "stopAll": true
+    }
+  ]
+}

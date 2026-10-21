@@ -15,6 +15,8 @@ interface EvenementRij {
   bewaartermijn_dagen: number;
   logo: string | null;
   afbeelding: string | null;
+  kleur_primair: string | null;
+  kleur_accent: string | null;
   inschrijving_vanaf: string | null;
   inschrijving_tot: string | null;
 }
@@ -89,6 +91,8 @@ export async function publiekEvenement(env: Env, slug: string) {
     bewaartermijnDagen: e.bewaartermijn_dagen,
     logo: e.logo,
     afbeelding: e.afbeelding,
+    kleurPrimair: e.kleur_primair,
+    kleurAccent: e.kleur_accent,
     inschrijvingVanaf: e.inschrijving_vanaf,
     inschrijvingTot: e.inschrijving_tot,
     inschrijvingOpen: binnen(nu, e.inschrijving_vanaf, e.inschrijving_tot),

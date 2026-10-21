@@ -17,27 +17,35 @@ export interface Gebruiker {
   email: string;
   rol: 'platformbeheerder' | 'schoolbeheerder' | 'organisator' | 'onthaal';
   schoolId: string | null;
+  /** Aangemeld met een sessie maar nog zonder wachtwoord (account van vóór de wachtwoordstap): eerst instellen. */
+  moetWachtwoordInstellen: boolean;
 }
 
-/** Enkel accounts van dit domein krijgen toegang tot beheer en gegevens, ongeacht de Access-policy. */
+/** Enkel accounts van dit domein krijgen toegang tot beheer en gegevens. */
 export const TOEGELATEN_DOMEIN = 'onderwijs.gent.be';
 
 export const isToegelatenEmail = (email: string) =>
   /^[^@\s]+@[^@\s]+$/.test(email) && email.toLowerCase().endsWith(`@${TOEGELATEN_DOMEIN}`);
 
 export async function huidigeGebruiker(request: Request, env: Env): Promise<Gebruiker> {
-  const email = await aangemeldEmail(request, env);
+  const { email, viaSessie } = await aangemeldEmail(request, env);
   // Tweede slot naast het schema: een gebruikersrij met een extern adres geeft nooit toegang.
   if (!isToegelatenEmail(email)) throw new DbFout('GEEN_TOEGANG');
   const g = await env.DB.prepare(
-    `select g.gebruiker_id, g.email, g.school_id, r.code as rol
+    `select g.gebruiker_id, g.email, g.school_id, r.code as rol, g.wachtwoord_hash is not null as heeft_wachtwoord
      from gebruikers g join rollen r on r.rol_id = g.rol_id
      where g.email = ? and g.actief = 1`,
   )
     .bind(email)
-    .first<{ gebruiker_id: string; email: string; school_id: string | null; rol: Gebruiker['rol'] }>();
+    .first<{ gebruiker_id: string; email: string; school_id: string | null; rol: Gebruiker['rol']; heeft_wachtwoord: number }>();
   if (!g) throw new DbFout('GEEN_TOEGANG');
-  return { gebruikerId: g.gebruiker_id, email: g.email, rol: g.rol, schoolId: g.school_id };
+  return {
+    gebruikerId: g.gebruiker_id,
+    email: g.email,
+    rol: g.rol,
+    schoolId: g.school_id,
+    moetWachtwoordInstellen: viaSessie && !g.heeft_wachtwoord,
+  };
 }
 
 /** Gooit GEEN_TOEGANG tenzij de gebruiker dit evenement mag lezen (of, met schrijven, wijzigen). */
@@ -56,11 +64,11 @@ export async function controleerToegang(env: Env, g: Gebruiker, evenementId: str
   if (!ok) throw new DbFout('GEEN_TOEGANG');
 }
 
-async function aangemeldEmail(request: Request, env: Env): Promise<string> {
+async function aangemeldEmail(request: Request, env: Env): Promise<{ email: string; viaSessie: boolean }> {
   const email = await sessieEmail(request, env);
-  if (email) return email;
+  if (email) return { email, viaSessie: true };
   // Lokale ontwikkeling zonder aanmelden: enkel op localhost en enkel als het expliciet ingesteld is.
   const host = new URL(request.url).hostname;
-  if (env.DEV_BEHEER_EMAIL && (host === 'localhost' || host === '127.0.0.1')) return env.DEV_BEHEER_EMAIL.toLowerCase();
+  if (env.DEV_BEHEER_EMAIL && (host === 'localhost' || host === '127.0.0.1')) return { email: env.DEV_BEHEER_EMAIL.toLowerCase(), viaSessie: false };
   throw new DbFout('NIET_AANGEMELD');
 }

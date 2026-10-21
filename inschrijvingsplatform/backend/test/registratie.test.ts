@@ -323,6 +323,7 @@ describe('logging', () => {
 describe('aanmelden (authenticator en passkey)', () => {
   const HOOFD = 'hoofd@onderwijs.gent.be';
   const SETUP = 'ABCDEFGHIJKLMNOP';
+  const WW = 'paard batterij nietje correct';
   const ORIGIN = 'http://localhost:5173';
   let cookie = '';
   let geheim = '';
@@ -354,10 +355,12 @@ describe('aanmelden (authenticator en passkey)', () => {
     expect(rij.secret_enc).toMatch(/^v1\./); // versleuteld bewaard
 
     const { totpCode, huidigeStap } = await import('../src/auth/totp');
-    const fout = await post('/api/auth/activeren/bevestig', { email: HOOFD, code: SETUP, totp: '000000' });
+    const zwak = await post('/api/auth/activeren/bevestig', { email: HOOFD, code: SETUP, totp: '000000', wachtwoord: 'kort' });
+    expect(zwak.data.velden).toHaveProperty('wachtwoord');
+    const fout = await post('/api/auth/activeren/bevestig', { email: HOOFD, code: SETUP, totp: '000000', wachtwoord: WW });
     expect(fout.data.fout).toBe('AANMELDEN_MISLUKT');
     geheim = start.data.geheim;
-    const ok = await post('/api/auth/activeren/bevestig', { email: HOOFD, code: SETUP, totp: await totpCode(geheim, huidigeStap()) });
+    const ok = await post('/api/auth/activeren/bevestig', { email: HOOFD, code: SETUP, totp: await totpCode(geheim, huidigeStap()), wachtwoord: WW });
     expect(ok.status).toBe(200);
     expect(ok.cookie).toMatch(/^(__Host-)?beheer=/);
     cookie = ok.cookie;
@@ -379,11 +382,13 @@ describe('aanmelden (authenticator en passkey)', () => {
     const { totpCode, huidigeStap } = await import('../src/auth/totp');
     const stap = huidigeStap();
     // De activeercode (huidige stap) is al gebruikt.
-    expect((await post('/api/auth/aanmelden', { email: HOOFD, code: await totpCode(geheim, stap) })).status).toBe(401);
-    const volgende = await post('/api/auth/aanmelden', { email: HOOFD, code: await totpCode(geheim, stap + 1) });
+    expect((await post('/api/auth/aanmelden', { email: HOOFD, wachtwoord: WW, code: await totpCode(geheim, stap) })).status).toBe(401);
+    // Juiste code maar fout wachtwoord: geweigerd (en de code blijft bruikbaar).
+    expect((await post('/api/auth/aanmelden', { email: HOOFD, wachtwoord: 'fout wachtwoord!!', code: await totpCode(geheim, stap + 1) })).status).toBe(401);
+    const volgende = await post('/api/auth/aanmelden', { email: HOOFD, wachtwoord: WW, code: await totpCode(geheim, stap + 1) });
     expect(volgende.status).toBe(200);
     // Zelfde code opnieuw: geweigerd.
-    expect((await post('/api/auth/aanmelden', { email: HOOFD, code: await totpCode(geheim, stap + 1) })).status).toBe(401);
+    expect((await post('/api/auth/aanmelden', { email: HOOFD, wachtwoord: WW, code: await totpCode(geheim, stap + 1) })).status).toBe(401);
     // Onbekend adres geeft dezelfde melding als een foute code.
     expect((await post('/api/auth/aanmelden', { email: 'niemand@onderwijs.gent.be', code: '123456' })).data.fout).toBe('AANMELDEN_MISLUKT');
   });
@@ -404,6 +409,7 @@ describe('aanmelden (authenticator en passkey)', () => {
       email: 'an.janssens@onderwijs.gent.be',
       code: nieuw.data.uitnodigingscode,
       totp: await totpCode(start.data.geheim, huidigeStap()),
+      wachtwoord: 'een ander lang wachtwoord',
     });
     expect(klaar.status).toBe(200);
     expect((await ik(klaar.cookie)).data.rol).toBe('onthaal');
@@ -487,10 +493,73 @@ describe('aanmelden (authenticator en passkey)', () => {
     expect((await post('/api/auth/passkey/aanmelden', await aanmeldBody(lo5.challenge, 3))).status).toBe(200);
   });
 
+  test('eigen account: wachtwoord wijzigen vraagt het huidige; authenticator opnieuw koppelen', async () => {
+    const { totpCode, huidigeStap } = await import('../src/auth/totp');
+    expect((await post('/api/beheer/account/wachtwoord', { huidig: 'fout fout fout', nieuw: 'nieuw lang wachtwoord 1' }, cookie)).data.fout).toBe('HUIDIG_WACHTWOORD_FOUT');
+    expect((await post('/api/beheer/account/wachtwoord', { huidig: WW, nieuw: 'kort' }, cookie)).data.velden).toHaveProperty('nieuw');
+    expect((await post('/api/beheer/account/wachtwoord', { huidig: WW, nieuw: 'nieuw lang wachtwoord 1' }, cookie)).status).toBe(200);
+    expect((await post('/api/beheer/account/wachtwoord', { huidig: 'nieuw lang wachtwoord 1', nieuw: WW }, cookie)).status).toBe(200);
+
+    const start = await post('/api/beheer/account/authenticator/start', {}, cookie);
+    expect(start.data.geheim).not.toBe(geheim);
+    // Tot de bevestiging blijft de oude app werken.
+    expect((await post('/api/beheer/account/authenticator/bevestig', { code: '000000' }, cookie)).status).toBe(401);
+    expect((await post('/api/beheer/account/authenticator/bevestig', { code: await totpCode(start.data.geheim, huidigeStap()) }, cookie)).status).toBe(200);
+    geheim = start.data.geheim;
+    await sql(`delete from aanmeld_pogingen`);
+  });
+
+  test('account zonder wachtwoord (van vóór de wachtwoordstap) moet er eerst één instellen', async () => {
+    const { totpCode, huidigeStap } = await import('../src/auth/totp');
+    const id = (await een(`select gebruiker_id from gebruikers where email = ?`, HOOFD)).gebruiker_id;
+    await sql(`update gebruikers set wachtwoord_hash = null where gebruiker_id = ?`, id);
+    await sql(`update gebruiker_totp set laatste_stap = 0 where gebruiker_id = ?`, id);
+    const r = await post('/api/auth/aanmelden', { email: HOOFD, wachtwoord: '', code: await totpCode(geheim, huidigeStap() + 1) });
+    expect(r.status).toBe(200);
+    expect((await ik(r.cookie)).data.heeftWachtwoord).toBe(false);
+    expect((await post('/api/beheer/gebruikers', undefined, r.cookie, null, 'GET')).data.fout).toBe('WACHTWOORD_INSTELLEN');
+    expect((await post('/api/beheer/account/wachtwoord', { nieuw: WW }, r.cookie)).status).toBe(200);
+    expect((await post('/api/beheer/gebruikers', undefined, r.cookie, null, 'GET')).status).toBe(200);
+    cookie = r.cookie;
+  });
+
+  test('gebruiker bewerken: naam, rol, evenementen; hoofdadmin en jezelf beschermd', async () => {
+    const lijst = (await post('/api/beheer/gebruikers', undefined, cookie, null, 'GET')).data;
+    const an = lijst.find((g: any) => g.email === 'an.janssens@onderwijs.gent.be');
+    const evId = (await een(`select evenement_id from evenementen where slug = ?`, SLUG)).evenement_id;
+    expect((await post(`/api/beheer/gebruikers/${an.id}`, { voornaam: 'Anna', rol: 'organisator', evenementIds: [evId], actief: true }, cookie, ORIGIN, 'PATCH')).status).toBe(200);
+    const na = (await post('/api/beheer/gebruikers', undefined, cookie, null, 'GET')).data.find((g: any) => g.id === an.id);
+    expect(na).toMatchObject({ voornaam: 'Anna', rol: 'organisator', actief: 1, evenementIds: [evId] });
+    expect(na).toHaveProperty('laatsteAanmelding');
+    const hoofd = lijst.find((g: any) => g.email === HOOFD);
+    expect((await post(`/api/beheer/gebruikers/${hoofd.id}`, { rol: 'onthaal' }, cookie, ORIGIN, 'PATCH')).status).toBe(403);
+  });
+
+  test('logo en kleuren', async () => {
+    const evId = (await een(`select evenement_id from evenementen where slug = ?`, SLUG)).evenement_id;
+    const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0, 1, 2, 3]);
+    const upload = (body: BodyInit, type: string) =>
+      worker.fetch(new Request(`http://localhost/api/beheer/evenementen/${evId}/logo`, { method: 'POST', headers: { 'Content-Type': type, Origin: ORIGIN, Cookie: cookie }, body }), env, ctx);
+    expect((await upload('<svg onload="alert(1)"/>', 'image/svg+xml')).status).toBe(400);
+    expect((await upload('geen png', 'image/png')).status).toBe(400);
+    const ok = await upload(png, 'image/png');
+    expect(ok.status).toBe(200);
+    const { logo } = (await ok.json()) as any;
+    expect(logo).toMatch(new RegExp(`^/api/logo/${evId}\\?v=\\d+$`));
+    const img = await worker.fetch(new Request(`http://localhost${logo}`), env, ctx);
+    expect(img.headers.get('Content-Type')).toBe('image/png');
+    expect(img.headers.get('Content-Security-Policy')).toBe("default-src 'none'");
+
+    expect((await post(`/api/beheer/instellingen/evenement/${evId}`, { waarden: { kleur_primair: 'rood' } }, cookie, ORIGIN, 'PATCH')).data.velden).toHaveProperty('kleur_primair');
+    expect((await post(`/api/beheer/instellingen/evenement/${evId}`, { waarden: { kleur_primair: '#AA3300', logo: 'https://kwaad.example/x.png' } }, cookie, ORIGIN, 'PATCH')).status).toBe(200);
+    const pub = await api('GET', `/api/evenementen/${SLUG}`);
+    expect(pub.data).toMatchObject({ kleurPrimair: '#aa3300', logo }); // logo niet via PATCH te overschrijven
+  });
+
   test('te veel foute pogingen blokkeren het e-mailadres', async () => {
     await sql(`delete from aanmeld_pogingen`);
-    for (let i = 0; i < 5; i++) expect((await post('/api/auth/aanmelden', { email: HOOFD, code: '000000' })).data.fout).toBe('AANMELDEN_MISLUKT');
-    const zesde = await post('/api/auth/aanmelden', { email: HOOFD, code: '000000' });
+    for (let i = 0; i < 5; i++) expect((await post('/api/auth/aanmelden', { email: HOOFD, wachtwoord: WW, code: '000000' })).data.fout).toBe('AANMELDEN_MISLUKT');
+    const zesde = await post('/api/auth/aanmelden', { email: HOOFD, wachtwoord: WW, code: '000000' });
     expect(zesde.status).toBe(429);
     await sql(`delete from aanmeld_pogingen`);
   });

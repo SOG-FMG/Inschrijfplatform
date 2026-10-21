@@ -1,0 +1,55 @@
+{
+  // Devservers voor lokaal testen. Worden gestart vanuit launch.json (F5).
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "frontend: demo",
+      "detail": "Vite op http://localhost:5173 zonder backend (voorbeelddata, er wordt niets verstuurd)",
+      "type": "npm",
+      "script": "dev",
+      "path": "inschrijvingsplatform/frontend",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": { "regexp": "^x^" },
+        "background": { "activesBegins": true, "beginsPattern": "VITE", "endsPattern": "Local:" }
+      }
+    },
+    {
+      "label": "backend",
+      "detail": "Wrangler op http://localhost:8787 met lokale D1 (eerst eenmalig: npm run db:lokaal)",
+      "type": "npm",
+      "script": "dev",
+      "path": "inschrijvingsplatform/backend",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "wrangler",
+        "pattern": { "regexp": "^x^" },
+        "background": { "activesBegins": true, "beginsPattern": "wrangler", "endsPattern": "Ready on" }
+      }
+    },
+    {
+      "label": "frontend: met backend",
+      "detail": "Vite op http://localhost:5173 dat de lokale backend aanspreekt",
+      "type": "npm",
+      "script": "dev",
+      "path": "inschrijvingsplatform/frontend",
+      "options": { "env": { "VITE_API_URL": "http://localhost:8787" } },
+      "dependsOn": ["backend"],
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": { "regexp": "^x^" },
+        "background": { "activesBegins": true, "beginsPattern": "VITE", "endsPattern": "Local:" }
+      }
+    },
+    {
+      "label": "backend: lokale database klaarzetten",
+      "detail": "D1-migraties + seed in .wrangler/ (eenmalig, of na een nieuwe migratie)",
+      "type": "npm",
+      "script": "db:lokaal",
+      "path": "inschrijvingsplatform/backend",
+      "problemMatcher": []
+    }
+  ]
+}

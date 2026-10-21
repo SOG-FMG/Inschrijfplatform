@@ -1,15 +1,15 @@
 import { ApiFout } from '../types';
 import { BASIS } from './api';
 
-/** Aanroepen voor medewerkers. De sessie zit in een HttpOnly-cookie; hier is geen token om te bewaren. */
-async function call<T>(pad: string, init?: { method?: string; body?: unknown }): Promise<T> {
+/** Aanroepen voor het beheer. De sessie zit in een HttpOnly-cookie; hier is geen token om te bewaren. */
+async function call<T>(pad: string, init?: { method?: string; body?: unknown; ruw?: { data: Blob; type: string } }): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${BASIS}${pad}`, {
       method: init?.method ?? 'GET',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: init?.body === undefined ? undefined : JSON.stringify(init.body),
+      headers: { 'Content-Type': init?.ruw?.type ?? 'application/json' },
+      body: init?.ruw ? init.ruw.data : init?.body === undefined ? undefined : JSON.stringify(init.body),
     });
   } catch {
     throw new ApiFout('NETWERK', 'Geen verbinding. Controleer je internet en probeer opnieuw.');
@@ -19,13 +19,31 @@ async function call<T>(pad: string, init?: { method?: string; body?: unknown }):
   return data as T;
 }
 
+export type Rol = 'platformbeheerder' | 'schoolbeheerder' | 'organisator' | 'onthaal';
+
+export interface EvenementKort {
+  id: string;
+  titel: string;
+  slug: string;
+  start: string;
+  eind: string;
+  status: string;
+  inschrijvingTot: string | null;
+  deelnemers: number;
+  wachtlijst: number;
+  bewaartermijn: number;
+  heeftPrivacytekst: number;
+}
+
 export interface Profiel {
   email: string;
-  rol: 'platformbeheerder' | 'schoolbeheerder' | 'organisator' | 'onthaal';
+  rol: Rol;
   voornaam: string;
   naam: string;
+  heeftWachtwoord: boolean;
+  heeftAuthenticator: boolean;
   passkeys: { id: string; naam: string; aangemaakt: string; laatstGebruikt: string | null }[];
-  evenementen: { id: string; titel: string; slug: string; start: string; status: string }[];
+  evenementen: EvenementKort[];
 }
 
 export interface BeheerGebruiker {
@@ -34,10 +52,13 @@ export interface BeheerGebruiker {
   naam: string;
   email: string;
   actief: number;
-  rol: string;
+  rol: Rol;
   heeftAuthenticator: number;
+  heeftWachtwoord: number;
   aantalPasskeys: number;
   uitnodigingOpen: number;
+  laatsteAanmelding: string | null;
+  evenementIds: string[];
 }
 
 export interface Uitnodiging {
@@ -45,24 +66,39 @@ export interface Uitnodiging {
   geldigTot: string;
 }
 
+export interface Koppeling {
+  geheim: string;
+  otpauth: string;
+}
+
+const post = <T>(pad: string, body: unknown = {}) => call<T>(pad, { method: 'POST', body });
+
 export const beheerApi = {
   profiel: () => call<Profiel>('/api/beheer/ik'),
-  afmelden: () => call<{ ok: true }>('/api/auth/afmelden', { method: 'POST', body: {} }),
-  aanmelden: (email: string, code: string) => call<{ ok: true }>('/api/auth/aanmelden', { method: 'POST', body: { email, code } }),
-  activeerStart: (email: string, code: string) =>
-    call<{ geheim: string; otpauth: string }>('/api/auth/activeren/start', { method: 'POST', body: { email, code } }),
-  activeerBevestig: (email: string, code: string, totp: string) =>
-    call<{ ok: true }>('/api/auth/activeren/bevestig', { method: 'POST', body: { email, code, totp } }),
-  passkeyLoginOpties: () => call<any>('/api/auth/passkey/opties', { method: 'POST', body: {} }),
-  passkeyLogin: (body: unknown) => call<{ ok: true }>('/api/auth/passkey/aanmelden', { method: 'POST', body }),
-  passkeyRegistratieOpties: () => call<any>('/api/beheer/passkeys/opties', { method: 'POST', body: {} }),
-  passkeyOpslaan: (body: unknown) => call<{ ok: true }>('/api/beheer/passkeys', { method: 'POST', body }),
+  afmelden: () => post<{ ok: true }>('/api/auth/afmelden'),
+  aanmelden: (email: string, wachtwoord: string, code: string) => post<{ ok: true }>('/api/auth/aanmelden', { email, wachtwoord, code }),
+  activeerStart: (email: string, code: string) => post<Koppeling>('/api/auth/activeren/start', { email, code }),
+  activeerBevestig: (email: string, code: string, totp: string, wachtwoord: string) =>
+    post<{ ok: true }>('/api/auth/activeren/bevestig', { email, code, totp, wachtwoord }),
+  passkeyLoginOpties: () => post<any>('/api/auth/passkey/opties'),
+  passkeyLogin: (body: unknown) => post<{ ok: true }>('/api/auth/passkey/aanmelden', body),
+
+  // eigen account
+  wijzigWachtwoord: (huidig: string, nieuw: string) => post<{ ok: true }>('/api/beheer/account/wachtwoord', { huidig, nieuw }),
+  authenticatorStart: () => post<Koppeling>('/api/beheer/account/authenticator/start'),
+  authenticatorBevestig: (code: string) => post<{ ok: true }>('/api/beheer/account/authenticator/bevestig', { code }),
+  passkeyRegistratieOpties: () => post<any>('/api/beheer/passkeys/opties'),
+  passkeyOpslaan: (body: unknown) => post<{ ok: true }>('/api/beheer/passkeys', body),
   passkeyVerwijder: (id: string) => call<{ ok: true }>(`/api/beheer/passkeys/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  // medewerkers (platformbeheer)
   gebruikers: () => call<BeheerGebruiker[]>('/api/beheer/gebruikers'),
   maakGebruiker: (g: { voornaam: string; naam: string; email: string; rol: string; evenementIds: string[] }) =>
-    call<Uitnodiging & { id: string }>('/api/beheer/gebruikers', { method: 'POST', body: g }),
-  resetGebruiker: (id: string) => call<Uitnodiging>(`/api/beheer/gebruikers/${id}/reset`, { method: 'POST', body: {} }),
-  zetActief: (id: string, actief: boolean) => call<{ ok: true }>(`/api/beheer/gebruikers/${id}`, { method: 'PATCH', body: { actief } }),
+    post<Uitnodiging & { id: string }>('/api/beheer/gebruikers', g),
+  bewerkGebruiker: (id: string, wijziging: Partial<{ voornaam: string; naam: string; rol: string; evenementIds: string[]; actief: boolean }>) =>
+    call<{ ok: true }>(`/api/beheer/gebruikers/${id}`, { method: 'PATCH', body: wijziging }),
+  resetGebruiker: (id: string) => post<Uitnodiging>(`/api/beheer/gebruikers/${id}/reset`),
+
   csvUrl: (evenementId: string) => `${BASIS}/api/beheer/evenementen/${evenementId}/deelnemers.csv`,
 };
 
@@ -71,7 +107,7 @@ export type InstellingSoort = 'evenement' | 'doelgroep' | 'dag' | 'dagdeel' | 't
 export interface InstellingVeld {
   naam: string;
   label: string;
-  type: 'tekst' | 'lang' | 'datum' | 'uur' | 'datumtijd' | 'getal' | 'jaNee' | 'keuze' | 'slug' | 'email' | 'lijst' | 'ref';
+  type: 'tekst' | 'lang' | 'datum' | 'uur' | 'datumtijd' | 'getal' | 'jaNee' | 'keuze' | 'slug' | 'email' | 'lijst' | 'ref' | 'kleur' | 'logo';
   verplicht?: boolean;
   opties?: { waarde: string; label: string }[];
   ref?: 'doelgroep' | 'soort' | 'locatie';
@@ -84,7 +120,10 @@ export const instellingenApi = {
   wijzig: (soort: InstellingSoort, id: string, waarden: Record<string, unknown>) =>
     call<{ ok: true }>(`/api/beheer/instellingen/${soort}/${encodeURIComponent(id)}`, { method: 'PATCH', body: { waarden } }),
   maak: (soort: InstellingSoort, ouderId: string | null, waarden: Record<string, unknown>) =>
-    call<{ id: string }>(`/api/beheer/instellingen/${soort}`, { method: 'POST', body: { ouderId, waarden } }),
+    post<{ id: string }>(`/api/beheer/instellingen/${soort}`, { ouderId, waarden }),
   verwijder: (soort: InstellingSoort, id: string) =>
     call<{ ok: true }>(`/api/beheer/instellingen/${soort}/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  uploadLogo: (evenementId: string, bestand: File) =>
+    call<{ logo: string }>(`/api/beheer/evenementen/${encodeURIComponent(evenementId)}/logo`, { method: 'POST', ruw: { data: bestand, type: bestand.type } }),
+  verwijderLogo: (evenementId: string) => call<{ ok: true }>(`/api/beheer/evenementen/${encodeURIComponent(evenementId)}/logo`, { method: 'DELETE' }),
 };

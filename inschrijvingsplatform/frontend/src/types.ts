@@ -66,6 +66,8 @@ export interface Evenement {
   bewaartermijnDagen: number;
   logo: string | null;
   afbeelding: string | null;
+  kleurPrimair?: string | null;
+  kleurAccent?: string | null;
   inschrijvingVanaf: string | null;
   inschrijvingTot: string | null;
   inschrijvingOpen: boolean;

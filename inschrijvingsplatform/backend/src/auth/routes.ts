@@ -14,6 +14,7 @@ import {
   wisTeller,
 } from './sessie';
 import { controleerTotp, gelijk, naarBase32, nieuwTotpGeheim } from './totp';
+import { controleerWachtwoord, hashWachtwoord, wachtwoordProbleem } from './wachtwoord';
 import { ALGORITMEN, naarB64u, rpInfo, uitdagingUitClientData, verifieerAanmelding, verifieerRegistratie } from './webauthn';
 
 const ISSUER = 'Inschrijfplatform';
@@ -137,6 +138,8 @@ async function activeerStart(env: Env, request: Request, body: any): Promise<Res
 
 async function activeerBevestig(env: Env, request: Request, body: any): Promise<Response> {
   const email = String(body?.email ?? '').trim().toLowerCase();
+  const probleem = wachtwoordProbleem(body?.wachtwoord, email);
+  if (probleem) return json({ fout: 'VALIDATIE', melding: probleem, velden: { wachtwoord: probleem } }, 400);
   return metLimiet(env, request, email, async () => {
     const { gebruikerId } = await controleerActivatie(env, body?.email, body?.code);
     const t = await env.DB.prepare(`select secret_enc from gebruiker_totp where gebruiker_id = ? and bevestigd = 0`)
@@ -147,7 +150,10 @@ async function activeerBevestig(env: Env, request: Request, body: any): Promise<
     if (stap === null) throw new DbFout('AANMELDEN_MISLUKT');
     await env.DB.batch([
       env.DB.prepare(`update gebruiker_totp set bevestigd = 1, laatste_stap = ? where gebruiker_id = ?`).bind(stap, gebruikerId),
-      env.DB.prepare(`update gebruikers set uitnodiging_hash = null, uitnodiging_tot = null where gebruiker_id = ?`).bind(gebruikerId),
+      env.DB.prepare(`update gebruikers set uitnodiging_hash = null, uitnodiging_tot = null, wachtwoord_hash = ? where gebruiker_id = ?`).bind(
+        await hashWachtwoord(body.wachtwoord),
+        gebruikerId,
+      ),
     ]);
     await gebeurtenis(env, gebruikerId, gebruikerId, 'ACTIVEREN', request.headers.get('CF-Connecting-IP'));
     return json({ ok: true }, 200, { 'Set-Cookie': await startSessie(env, request, gebruikerId, 'totp') });
@@ -161,12 +167,16 @@ async function aanmeldenTotp(env: Env, request: Request, body: any): Promise<Res
   const email = String(body?.email ?? '').trim().toLowerCase();
   return metLimiet(env, request, email, async () => {
     const r = await env.DB.prepare(
-      `select g.gebruiker_id, t.secret_enc, t.laatste_stap from gebruikers g join gebruiker_totp t on t.gebruiker_id = g.gebruiker_id
+      `select g.gebruiker_id, g.wachtwoord_hash, t.secret_enc, t.laatste_stap from gebruikers g join gebruiker_totp t on t.gebruiker_id = g.gebruiker_id
        where g.email = ? and g.actief = 1 and t.bevestigd = 1`,
     )
       .bind(email)
-      .first<{ gebruiker_id: string; secret_enc: string; laatste_stap: number }>();
+      .first<{ gebruiker_id: string; wachtwoord_hash: string | null; secret_enc: string; laatste_stap: number }>();
+    // Het wachtwoord wordt altijd berekend (ook bij een onbekend adres), zodat de responstijd niets verraadt.
+    const wachtwoordOk = await controleerWachtwoord(String(body?.wachtwoord ?? ''), r?.wachtwoord_hash);
     if (!r || !isToegelatenEmail(email)) throw new DbFout('AANMELDEN_MISLUKT');
+    // Accounts van vóór de wachtwoordstap hebben nog geen wachtwoord: die moeten er meteen één instellen (zie beheerRoute).
+    if (r.wachtwoord_hash && !wachtwoordOk) throw new DbFout('AANMELDEN_MISLUKT');
     const stap = await controleerTotp((await ontsleutel(env, r.secret_enc))!, String(body?.code ?? '').replace(/\s/g, ''), r.laatste_stap);
     if (stap === null) throw new DbFout('AANMELDEN_MISLUKT');
     // Atomisch: twee gelijktijdige aanvragen met dezelfde code kunnen niet allebei slagen.
@@ -224,17 +234,36 @@ export async function authRoute(request: Request, env: Env, pad: string): Promis
 // ---------------------------------------------------------------------------
 async function profiel(env: Env, g: Gebruiker): Promise<Response> {
   const [ik, passkeys, evenementen] = await env.DB.batch<any>([
-    env.DB.prepare(`select voornaam, naam from gebruikers where gebruiker_id = ?`).bind(g.gebruikerId),
+    env.DB.prepare(
+      `select voornaam, naam, wachtwoord_hash is not null as heeftWachtwoord,
+              coalesce((select bevestigd from gebruiker_totp t where t.gebruiker_id = g.gebruiker_id), 0) as heeftAuthenticator
+       from gebruikers g where gebruiker_id = ?`,
+    ).bind(g.gebruikerId),
     env.DB.prepare(`select credential_id as id, naam, created_at as aangemaakt, laatst_gebruikt as laatstGebruikt from passkeys where gebruiker_id = ? order by created_at`).bind(g.gebruikerId),
     env.DB.prepare(
-      `select e.evenement_id as id, e.titel, e.slug, e.start_datum as start, e.status from evenementen e
+      `select e.evenement_id as id, e.titel, e.slug, e.start_datum as start, e.eind_datum as eind, e.status,
+              e.inschrijving_tot as inschrijvingTot, e.bewaartermijn_dagen as bewaartermijn,
+              (e.privacy_tekst is not null and trim(e.privacy_tekst) <> '') as heeftPrivacytekst,
+              (select count(*) from deelnemers d where d.evenement_id = e.evenement_id and d.status = 'actief') as deelnemers,
+              (select count(distinct i.deelnemer_id) from inschrijvingen i where i.evenement_id = e.evenement_id and i.status = 'wachtlijst') as wachtlijst
+       from evenementen e
        where ?1 = 'platformbeheerder'
           or exists (select 1 from evenement_beheerders b where b.evenement_id = e.evenement_id and b.gebruiker_id = ?2)
           or (?1 = 'schoolbeheerder' and e.school_id = ?3)
        order by e.start_datum desc`,
     ).bind(g.rol, g.gebruikerId, g.schoolId),
   ]);
-  return json({ email: g.email, rol: g.rol, voornaam: ik.results[0]?.voornaam, naam: ik.results[0]?.naam, passkeys: passkeys.results, evenementen: evenementen.results });
+  const r = ik.results[0] ?? {};
+  return json({
+    email: g.email,
+    rol: g.rol,
+    voornaam: r.voornaam,
+    naam: r.naam,
+    heeftWachtwoord: !!r.heeftWachtwoord,
+    heeftAuthenticator: !!r.heeftAuthenticator,
+    passkeys: passkeys.results,
+    evenementen: evenementen.results,
+  });
 }
 
 async function passkeyOptiesRegistratie(env: Env, g: Gebruiker): Promise<Response> {
@@ -275,12 +304,16 @@ async function lijstGebruikers(env: Env): Promise<Response> {
     `select g.gebruiker_id as id, g.voornaam, g.naam, g.email, g.actief, r.code as rol,
             coalesce((select bevestigd from gebruiker_totp t where t.gebruiker_id = g.gebruiker_id), 0) as heeftAuthenticator,
             (select count(*) from passkeys p where p.gebruiker_id = g.gebruiker_id) as aantalPasskeys,
-            (g.uitnodiging_hash is not null and g.uitnodiging_tot > ?) as uitnodigingOpen
+            (g.uitnodiging_hash is not null and g.uitnodiging_tot > ?) as uitnodigingOpen,
+            g.wachtwoord_hash is not null as heeftWachtwoord,
+            (select max(a.datum) from audit_log a where a.gebruiker_id = g.gebruiker_id and a.entiteit = 'aanmelden'
+               and a.actie like 'AANMELDEN%') as laatsteAanmelding,
+            (select json_group_array(b.evenement_id) from evenement_beheerders b where b.gebruiker_id = g.gebruiker_id) as evenementIds
      from gebruikers g join rollen r on r.rol_id = g.rol_id order by g.naam, g.voornaam`,
   )
     .bind(new Date().toISOString())
-    .all();
-  return json(r.results);
+    .all<any>();
+  return json(r.results.map((g) => ({ ...g, evenementIds: JSON.parse(g.evenementIds ?? '[]') })));
 }
 
 async function maakGebruiker(env: Env, request: Request, g: Gebruiker, body: any): Promise<Response> {
@@ -320,20 +353,111 @@ async function resetGebruiker(env: Env, request: Request, g: Gebruiker, id: stri
     env.DB.prepare(`delete from gebruiker_totp where gebruiker_id = ?`).bind(id),
     env.DB.prepare(`delete from passkeys where gebruiker_id = ?`).bind(id),
     env.DB.prepare(`delete from beheer_sessies where gebruiker_id = ?`).bind(id),
+    env.DB.prepare(`update gebruikers set wachtwoord_hash = null where gebruiker_id = ?`).bind(id),
   ]);
   const uitnodiging = await maakUitnodiging(env, id);
   await gebeurtenis(env, g.gebruikerId, id, 'GEBRUIKER_RESET', request.headers.get('CF-Connecting-IP'));
   return json(uitnodiging);
 }
 
-async function zetActief(env: Env, request: Request, g: Gebruiker, id: string, actief: boolean): Promise<Response> {
-  if (id === g.gebruikerId) throw new DbFout('GEEN_TOEGANG');
-  await env.DB.batch([
-    env.DB.prepare(`update gebruikers set actief = ? where gebruiker_id = ?`).bind(actief ? 1 : 0, id),
-    ...(actief ? [] : [env.DB.prepare(`delete from beheer_sessies where gebruiker_id = ?`).bind(id)]),
-  ]);
-  await gebeurtenis(env, g.gebruikerId, id, actief ? 'GEBRUIKER_GEACTIVEERD' : 'GEBRUIKER_GEDEACTIVEERD', request.headers.get('CF-Connecting-IP'));
+/** Naam, rol, evenementen of actief aanpassen. Jezelf kan je niet deactiveren of je rol afnemen; de hoofdadmin blijft platformbeheerder. */
+async function bewerkGebruiker(env: Env, request: Request, g: Gebruiker, id: string, body: any): Promise<Response> {
+  const doel = await env.DB.prepare(`select g.email, r.code as rol from gebruikers g join rollen r on r.rol_id = g.rol_id where g.gebruiker_id = ?`)
+    .bind(id)
+    .first<{ email: string; rol: string }>();
+  if (!doel) throw new DbFout('GEEN_TOEGANG');
+  const isHoofdadmin = !!env.HOOFDADMIN_EMAIL && doel.email.toLowerCase() === env.HOOFDADMIN_EMAIL.trim().toLowerCase();
+  const stmts: D1PreparedStatement[] = [];
+  const gewijzigd: Record<string, unknown> = {};
+
+  if (body?.actief !== undefined) {
+    if (typeof body.actief !== 'boolean') throw new DbFout('ONGELDIGE_GEGEVENS');
+    if (id === g.gebruikerId || isHoofdadmin) throw new DbFout('GEEN_TOEGANG');
+    stmts.push(env.DB.prepare(`update gebruikers set actief = ? where gebruiker_id = ?`).bind(body.actief ? 1 : 0, id));
+    if (!body.actief) stmts.push(env.DB.prepare(`delete from beheer_sessies where gebruiker_id = ?`).bind(id));
+    gewijzigd.actief = body.actief;
+  }
+  for (const veld of ['voornaam', 'naam'] as const) {
+    if (body?.[veld] === undefined) continue;
+    const waarde = tekst(body[veld], 100);
+    if (!waarde) throw new DbFout('ONGELDIGE_GEGEVENS');
+    stmts.push(env.DB.prepare(`update gebruikers set ${veld} = ? where gebruiker_id = ?`).bind(waarde, id));
+    gewijzigd[veld] = true;
+  }
+  const rol = body?.rol === undefined ? doel.rol : tekst(body.rol, 30);
+  if (body?.rol !== undefined && rol !== doel.rol) {
+    if (!(ROLLEN_BEHEER as readonly string[]).includes(rol)) throw new DbFout('ONGELDIGE_GEGEVENS');
+    if (id === g.gebruikerId || isHoofdadmin) throw new DbFout('GEEN_TOEGANG');
+    stmts.push(env.DB.prepare(`update gebruikers set rol_id = (select rol_id from rollen where code = ?) where gebruiker_id = ?`).bind(rol, id));
+    gewijzigd.rol = rol;
+  }
+  if (Array.isArray(body?.evenementIds)) {
+    const ids: string[] = body.evenementIds.filter((x: unknown) => typeof x === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(x));
+    stmts.push(env.DB.prepare(`delete from evenement_beheerders where gebruiker_id = ?`).bind(id));
+    if (rol !== 'platformbeheerder') {
+      const bRol = rol === 'onthaal' ? 'onthaal' : 'organisator';
+      for (const e of ids) {
+        stmts.push(
+          env.DB.prepare(`insert or ignore into evenement_beheerders (evenement_id, gebruiker_id, rol) select evenement_id, ?, ? from evenementen where evenement_id = ?`).bind(id, bRol, e),
+        );
+      }
+    }
+    gewijzigd.evenementen = ids.length;
+  }
+  if (!stmts.length) return json({ ok: true });
+  await env.DB.batch(stmts);
+  await gebeurtenis(env, g.gebruikerId, id, 'GEBRUIKER_GEWIJZIGD', request.headers.get('CF-Connecting-IP'), gewijzigd);
   return json({ ok: true });
+}
+
+// ---------------------------------------------------------------------------
+// Eigen account: wachtwoord en authenticator
+// ---------------------------------------------------------------------------
+async function wijzigWachtwoord(env: Env, request: Request, g: Gebruiker, body: any): Promise<Response> {
+  const probleem = wachtwoordProbleem(body?.nieuw, g.email);
+  if (probleem) return json({ fout: 'VALIDATIE', melding: probleem, velden: { nieuw: probleem } }, 400);
+  return metLimiet(env, request, g.email, async () => {
+    const r = await env.DB.prepare(`select wachtwoord_hash from gebruikers where gebruiker_id = ?`).bind(g.gebruikerId).first<{ wachtwoord_hash: string | null }>();
+    // Wie al een wachtwoord heeft, moet het huidige kennen (een open laptop is niet genoeg).
+    if (r?.wachtwoord_hash && !(await controleerWachtwoord(String(body?.huidig ?? ''), r.wachtwoord_hash))) {
+      throw new DbFout('HUIDIG_WACHTWOORD_FOUT');
+    }
+    await env.DB.prepare(`update gebruikers set wachtwoord_hash = ? where gebruiker_id = ?`).bind(await hashWachtwoord(body.nieuw), g.gebruikerId).run();
+    await gebeurtenis(env, g.gebruikerId, g.gebruikerId, 'WACHTWOORD_GEWIJZIGD', request.headers.get('CF-Connecting-IP'));
+    return json({ ok: true });
+  });
+}
+
+async function authenticatorStart(env: Env, g: Gebruiker): Promise<Response> {
+  const geheim = nieuwTotpGeheim();
+  const versleuteld = await versleutel(env, geheim);
+  await env.DB.prepare(
+    `insert into gebruiker_totp (gebruiker_id, secret_enc, bevestigd, nieuw_secret_enc) values (?1, ?2, 0, ?2)
+     on conflict (gebruiker_id) do update set nieuw_secret_enc = excluded.nieuw_secret_enc`,
+  )
+    .bind(g.gebruikerId, versleuteld)
+    .run();
+  const otpauth = `otpauth://totp/${encodeURIComponent(ISSUER)}:${encodeURIComponent(g.email)}?secret=${geheim}&issuer=${encodeURIComponent(ISSUER)}&algorithm=SHA1&digits=6&period=30`;
+  return json({ geheim, otpauth });
+}
+
+/** Wisselt pas naar het nieuwe geheim als de code eruit klopt; tot dan blijft de oude app werken. */
+async function authenticatorBevestig(env: Env, request: Request, g: Gebruiker, body: any): Promise<Response> {
+  return metLimiet(env, request, g.email, async () => {
+    const t = await env.DB.prepare(`select nieuw_secret_enc from gebruiker_totp where gebruiker_id = ? and nieuw_secret_enc is not null`)
+      .bind(g.gebruikerId)
+      .first<{ nieuw_secret_enc: string }>();
+    if (!t) throw new DbFout('AANMELDEN_MISLUKT');
+    const stap = await controleerTotp((await ontsleutel(env, t.nieuw_secret_enc))!, String(body?.code ?? '').replace(/\s/g, ''), 0);
+    if (stap === null) throw new DbFout('AANMELDEN_MISLUKT');
+    await env.DB.prepare(
+      `update gebruiker_totp set secret_enc = nieuw_secret_enc, nieuw_secret_enc = null, bevestigd = 1, laatste_stap = ? where gebruiker_id = ?`,
+    )
+      .bind(stap, g.gebruikerId)
+      .run();
+    await gebeurtenis(env, g.gebruikerId, g.gebruikerId, 'AUTHENTICATOR_GEWIJZIGD', request.headers.get('CF-Connecting-IP'));
+    return json({ ok: true });
+  });
 }
 
 /** Routes onder /api/beheer die over het aanmelden zelf gaan. Geeft null als het pad hier niet thuishoort. */
@@ -342,6 +466,10 @@ export async function aanmeldBeheerRoute(request: Request, env: Env, g: Gebruike
   let p: RegExpMatchArray | null;
 
   if (m === 'GET' && pad === '/ik') return profiel(env, g);
+  if (m === 'POST' && pad === '/account/wachtwoord') return wijzigWachtwoord(env, request, g, await leesBody(request));
+  if (g.moetWachtwoordInstellen) throw new DbFout('WACHTWOORD_INSTELLEN'); // al de rest pas na het instellen van een wachtwoord
+  if (m === 'POST' && pad === '/account/authenticator/start') return authenticatorStart(env, g);
+  if (m === 'POST' && pad === '/account/authenticator/bevestig') return authenticatorBevestig(env, request, g, await leesBody(request));
   if (m === 'POST' && pad === '/passkeys/opties') return passkeyOptiesRegistratie(env, g);
   if (m === 'POST' && pad === '/passkeys') return passkeyOpslaan(env, request, g, await leesBody(request));
   if (m === 'DELETE' && (p = pad.match(/^\/passkeys\/([A-Za-z0-9_-]{16,512})$/))) {
@@ -355,9 +483,7 @@ export async function aanmeldBeheerRoute(request: Request, env: Env, g: Gebruike
     if (m === 'POST' && pad === '/gebruikers') return maakGebruiker(env, request, g, await leesBody(request));
     if (m === 'POST' && (p = pad.match(/^\/gebruikers\/([0-9a-f-]{36})\/reset$/)) && isUuid(p[1])) return resetGebruiker(env, request, g, p[1]);
     if (m === 'PATCH' && (p = pad.match(/^\/gebruikers\/([0-9a-f-]{36})$/)) && isUuid(p[1])) {
-      const body = await leesBody(request);
-      if (typeof body?.actief !== 'boolean') throw new DbFout('ONGELDIGE_GEGEVENS');
-      return zetActief(env, request, g, p[1], body.actief);
+      return bewerkGebruiker(env, request, g, p[1], await leesBody(request));
     }
   }
   return null;

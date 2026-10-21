@@ -1,7 +1,0 @@
-/* Medewerkers */
-.lijst { list-style: none; padding: 0; margin: 0 0 13px; }
-.lijst li { padding: 8px 0; border-bottom: 1px solid var(--lijn, #ddd); }
-.qr { max-width: 220px; margin: 10px 0; background: #fff; padding: 6px; border-radius: 6px; }
-.code { font-size: 1.2rem; letter-spacing: .08em; font-weight: 700; }
-select { font: inherit; padding: 8px; max-width: 100%; }
-hr { border: 0; border-top: 1px solid var(--lijn, #ddd); margin: 16px 0; }

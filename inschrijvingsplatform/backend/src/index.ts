@@ -4,7 +4,7 @@ import { sha256 } from './crypto/versleuteling';
 import { anonimiseerEvenement, anonimiseerVerlopenEvenementen, audit, deelnemerslijst, kenSessieToe, verplaatsDagdeel } from './db/beheer';
 import { publiekEvenement, scholen } from './db/evenement';
 import { DbFout } from './db/fouten';
-import { instellingen, isSoort, maak, verwijder, wijzig } from './db/instellingen';
+import { bewaarLogo, instellingen, isSoort, maak, verwijder, verwijderLogo, wijzig } from './db/instellingen';
 import { bewaarMelding, lijstMeldingen, MeldingFout, ruimMeldingenOp, zetStatusMelding } from './db/meldingen';
 import { annuleerViaToken, registratieViaToken, registreer } from './db/registratie';
 import { bevestigingsmail, meldingsmail, verstuur } from './mail';
@@ -36,6 +36,8 @@ const MELDINGEN: Record<string, [number, string]> = {
   ONGELDIGE_UITNODIGING: [400, 'Deze uitnodiging is ongeldig of verlopen.'],
   TE_VEEL_POGINGEN: [429, 'Te veel pogingen. Probeer het over 15 minuten opnieuw.'],
   GEBRUIKER_BESTAAT: [409, 'Er bestaat al een gebruiker met dit e-mailadres.'],
+  HUIDIG_WACHTWOORD_FOUT: [400, 'Je huidige wachtwoord klopt niet.'],
+  WACHTWOORD_INSTELLEN: [403, 'Stel eerst een wachtwoord in voor je account.'],
   IN_GEBRUIK: [409, 'Dit onderdeel heeft al inschrijvingen (ook geannuleerde). Zet de status op gesloten of geannuleerd in plaats van te verwijderen.'],
   GEEN_TOEGANG: [403, 'Je hebt geen toegang tot deze gegevens.'],
   INSCHRIJVING_NIET_GEVONDEN: [404, 'Deze deelnemer is niet ingeschreven voor dat moment.'],
@@ -165,6 +167,10 @@ async function beheerRoute(request: Request, env: Env, pad: string, m: string): 
 
   // Instellingen van een evenement (zie db/instellingen.ts)
   if (m === 'GET' && (p = pad.match(/^\/evenementen\/([A-Za-z0-9-]{1,64})\/instellingen$/))) return json(await instellingen(env, g, p[1]));
+  if ((p = pad.match(/^\/evenementen\/([A-Za-z0-9-]{1,64})\/logo$/))) {
+    if (m === 'POST') return json(await bewaarLogo(env, g, p[1], request, ip));
+    if (m === 'DELETE') return json(await verwijderLogo(env, g, p[1], ip));
+  }
   if ((p = pad.match(/^\/instellingen\/([a-z]+)(?:\/([A-Za-z0-9-]{1,64}))?$/)) && isSoort(p[1])) {
     if (m === 'POST' && !p[2]) {
       const body = (await leesJson(request, 64 * 1024)) as any;
@@ -230,6 +236,17 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   }
   if (m === 'POST' && (p = pathname.match(/^\/api\/evenementen\/([a-z0-9-]{1,80})\/registraties$/))) {
     return registreerRoute(request, env, ctx, p[1]);
+  }
+  if (m === 'GET' && (p = pathname.match(/^\/api\/logo\/([A-Za-z0-9-]{1,64})$/))) {
+    const obj = await env.STORAGE.get(`logos/${p[1]}`);
+    if (!obj) return json({ fout: 'NIET_GEVONDEN', melding: 'Niet gevonden.' }, 404);
+    return new Response(obj.body, {
+      headers: {
+        'Content-Type': obj.httpMetadata?.contentType ?? 'application/octet-stream',
+        'Cache-Control': 'public, max-age=300',
+        'Content-Security-Policy': "default-src 'none'",
+      },
+    });
   }
   if (m === 'GET' && pathname === '/api/scholen') {
     return json(await scholen(env), 200, { 'Cache-Control': 'public, max-age=3600' });

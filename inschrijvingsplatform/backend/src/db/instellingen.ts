@@ -14,7 +14,7 @@ import { DbFout } from './fouten';
  */
 
 export type Soort = 'evenement' | 'doelgroep' | 'dag' | 'dagdeel' | 'tijdsblok' | 'sessie';
-type VeldType = 'tekst' | 'lang' | 'datum' | 'uur' | 'datumtijd' | 'getal' | 'jaNee' | 'keuze' | 'slug' | 'email' | 'lijst' | 'ref';
+type VeldType = 'tekst' | 'lang' | 'datum' | 'uur' | 'datumtijd' | 'getal' | 'jaNee' | 'keuze' | 'slug' | 'email' | 'lijst' | 'ref' | 'kleur' | 'logo';
 
 export interface Veld {
   naam: string;
@@ -69,8 +69,9 @@ export const SCHEMA: Record<Soort, Definitie> = {
       { naam: 'contact_email', label: 'Contactadres', type: 'email' },
       { naam: 'privacy_tekst', label: 'Privacytekst', type: 'lang' },
       { naam: 'bewaartermijn_dagen', label: 'Bewaartermijn (dagen na het evenement)', type: 'getal', min: 0, verplicht: true, standaard: 30 },
-      { naam: 'logo', label: 'Logo (URL)', type: 'tekst' },
-      { naam: 'afbeelding', label: 'Afbeelding (URL)', type: 'tekst' },
+      { naam: 'logo', label: 'Logo', type: 'logo', hulp: 'PNG, JPG of WebP, max. 500 kB. Verschijnt bovenaan het formulier.' },
+      { naam: 'kleur_primair', label: 'Hoofdkleur', type: 'kleur', hulp: 'Knoppen, titels en links. Leeg = standaard blauw.' },
+      { naam: 'kleur_accent', label: 'Accentkleur', type: 'kleur', hulp: 'Markeringen en focus. Leeg = standaard.' },
       { naam: 'opmerkingen', label: 'Interne opmerkingen', type: 'lang' },
     ],
   },
@@ -152,7 +153,7 @@ export const SCHEMA: Record<Soort, Definitie> = {
         opties: opties(['tonen', 'Tonen als volzet'], ['verbergen', 'Verbergen']) },
       { naam: 'uniek_per_deelnemer', label: 'Maar één keer te kiezen', type: 'jaNee', standaard: true },
       { naam: 'beschrijving', label: 'Beschrijving', type: 'lang' },
-      { naam: 'kleur', label: 'Kleur', type: 'tekst', hulp: 'Bv. #2b5797' },
+      { naam: 'kleur', label: 'Kleur', type: 'kleur' },
       volgorde,
       { naam: 'opmerkingen', label: 'Interne opmerkingen', type: 'lang' },
     ],
@@ -229,6 +230,9 @@ function zetOm(v: Veld, waarde: unknown): unknown {
     case 'slug':
       if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(s) || s.length > 80) throw fout('Enkel kleine letters, cijfers en enkele streepjes.');
       return s;
+    case 'kleur':
+      if (!/^#[0-9a-fA-F]{6}$/.test(s)) throw fout('Geef een kleur als #1d4f91.');
+      return s.toLowerCase();
     case 'email':
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s) || s.length > 254) throw fout('Geef een geldig e-mailadres.');
       return s.toLowerCase();
@@ -252,6 +256,7 @@ async function zetWaardenOm(env: Env, def: Definitie, invoer: Record<string, unk
   const uit: Record<string, unknown> = {};
   const fouten: Record<string, string> = {};
   for (const v of def.velden) {
+    if (v.type === 'logo') continue; // enkel via de uploadroute
     const aanwezig = Object.prototype.hasOwnProperty.call(invoer, v.naam);
     if (!aanwezig && !nieuw) continue; // gedeeltelijke wijziging
     const waarde = aanwezig ? invoer[v.naam] : v.standaard;
@@ -417,5 +422,46 @@ export async function verwijder(env: Env, g: Gebruiker, soort: Soort, id: string
   } catch (e) {
     vertaalSchemaFout(e);
   }
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Logo (R2). Enkel PNG, JPEG en WebP: geen SVG (kan scripts bevatten).
+// ---------------------------------------------------------------------------
+const LOGO_MAX = 500 * 1024;
+const LOGO_TYPES: Record<string, number[]> = {
+  'image/png': [0x89, 0x50, 0x4e, 0x47],
+  'image/jpeg': [0xff, 0xd8, 0xff],
+  'image/webp': [0x52, 0x49, 0x46, 0x46], // 'RIFF' … 'WEBP'
+};
+
+export async function bewaarLogo(env: Env, g: Gebruiker, evenementId: string, request: Request, ip: string | null) {
+  await controleerToegang(env, g, evenementId, true);
+  const type = (request.headers.get('Content-Type') ?? '').split(';')[0].trim().toLowerCase();
+  const fout = (m: string) => new ValidatieFout({ logo: m });
+  const handtekening = LOGO_TYPES[type];
+  if (!handtekening) throw fout('Kies een PNG-, JPG- of WebP-bestand.');
+  if (Number(request.headers.get('Content-Length') ?? 0) > LOGO_MAX) throw fout('Het bestand is groter dan 500 kB.');
+  const data = new Uint8Array(await request.arrayBuffer());
+  if (data.length > LOGO_MAX) throw fout('Het bestand is groter dan 500 kB.');
+  const webpOk = type !== 'image/webp' || String.fromCharCode(...data.slice(8, 12)) === 'WEBP';
+  if (data.length < 12 || !handtekening.every((b, i) => data[i] === b) || !webpOk) throw fout('Dit bestand is geen geldige afbeelding.');
+
+  await env.STORAGE.put(`logos/${evenementId}`, data, { httpMetadata: { contentType: type } });
+  const logo = `/api/logo/${evenementId}?v=${Date.now()}`; // ?v= zodat browsers het nieuwe logo meteen tonen
+  await env.DB.batch([
+    env.DB.prepare(`update evenementen set logo = ?, modified_by = ?, modified_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') where evenement_id = ?`).bind(logo, g.gebruikerId, evenementId),
+    audit(env, g, 'evenementen', evenementId, 'LOGO', { bytes: data.length, type }, ip),
+  ]);
+  return { logo };
+}
+
+export async function verwijderLogo(env: Env, g: Gebruiker, evenementId: string, ip: string | null) {
+  await controleerToegang(env, g, evenementId, true);
+  await env.STORAGE.delete(`logos/${evenementId}`);
+  await env.DB.batch([
+    env.DB.prepare(`update evenementen set logo = null where evenement_id = ?`).bind(evenementId),
+    audit(env, g, 'evenementen', evenementId, 'LOGO_VERWIJDERD', undefined, ip),
+  ]);
   return { ok: true };
 }

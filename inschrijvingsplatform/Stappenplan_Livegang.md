@@ -217,7 +217,7 @@ Een eigen domein is niet vereist. Het aanmelden van medewerkers (stap 13) en de 
 
 ## 13. Beheer afschermen: enkel @onderwijs.gent.be
 
-Medewerkers melden aan met hun `@onderwijs.gent.be`-adres **plus** een authenticator-app (6-cijferige code) of een **passkey** (pincode, vingerafdruk of gezichtsherkenning van de laptop, bv. Windows Hello). Er is geen wachtwoord en geen mail nodig. Enkel adressen in de tabel `gebruikers` komen binnen, en de hoofdadmin staat in de configuratie.
+Medewerkers melden aan met hun `@onderwijs.gent.be`-adres, een **wachtwoord** en een authenticator-app (6-cijferige code), of met een **passkey** (pincode, vingerafdruk of gezichtsherkenning van de laptop, bv. Windows Hello). Er is geen mail nodig. Enkel adressen in de tabel `gebruikers` komen binnen, en de hoofdadmin staat in de configuratie.
 
 1. **Hoofdadmin vastleggen.** Zet in `backend/wrangler.toml`:
 
@@ -239,10 +239,10 @@ Medewerkers melden aan met hun `@onderwijs.gent.be`-adres **plus** een authentic
    npx wrangler d1 migrations apply DB --remote
    ```
 
-4. **Hoofdadmin activeert zich.** Ga naar `https://fmg-inschrijfplatform.<account>.workers.dev/medewerkers/activeren`, vul het adres en de setupcode in, scan de QR-code met een authenticator-app en geef de code in. Je bent nu aangemeld.
+4. **Hoofdadmin activeert zich.** Ga naar `https://fmg-inschrijfplatform.<account>.workers.dev/dashboard/activeren`, vul het adres en de setupcode in, kies een wachtwoord (minstens 12 tekens), scan de QR-code met een authenticator-app en geef de code in. Je bent nu aangemeld. Voortaan meld je aan op `/dashboard` met e-mail + wachtwoord + code, of met een passkey.
 5. **Passkey toevoegen** (aanbevolen): klik op *Passkey toevoegen op dit toestel*. Daarna kan je aanmelden met de pincode of vingerafdruk van dit toestel. Houd liefst twee methodes (passkey en app), zodat je niet buitengesloten raakt.
-6. **Andere medewerkers toevoegen** onder *Gebruikers*: naam, adres, rol en (voor organisator en onthaal) de evenementen. Je krijgt een **uitnodigingscode** die je persoonlijk doorgeeft. De medewerker activeert zich zoals in punt 4. De code is 7 dagen geldig en werkt één keer.
-7. **Verloren toestel?** Kies bij de gebruiker *Resetten*: authenticator, passkeys en sessies worden gewist en je krijgt een nieuwe code. Is het de hoofdadmin zelf, wis dan zijn gegevens en gebruik de setupcode opnieuw:
+6. **Andere medewerkers toevoegen** onder *Medewerkers*: naam, adres, rol en (voor organisator en onthaal) de evenementen. Je krijgt een **uitnodigingscode** die je persoonlijk doorgeeft. De medewerker activeert zich zoals in punt 4. De code is 7 dagen geldig en werkt één keer.
+7. **Verloren toestel?** Kies bij de medewerker *2FA opnieuw instellen*: wachtwoord, authenticator, passkeys en sessies worden gewist en je krijgt een nieuwe eenmalige code. Is het de hoofdadmin zelf, wis dan zijn gegevens en gebruik de setupcode opnieuw:
 
    ```bash
    npx wrangler d1 execute DB --remote --command "delete from gebruiker_totp where gebruiker_id = (select gebruiker_id from gebruikers where email = '<hoofdadmin>'); delete from passkeys where gebruiker_id = (select gebruiker_id from gebruikers where email = '<hoofdadmin>');"
@@ -297,7 +297,7 @@ Werk `Todo_SetupBackupSystem.md` af: minstens laag 1 (Workers Paid, Time Travel)
   ```
 
   Inschrijvingen en mailberichten verdwijnen mee via de cascade.
-- [ ] Je weet hoe je een export maakt: aangemeld op `/medewerkers` bij *Evenementen* → *Deelnemerslijst downloaden* (CSV met puntkomma, opent in Excel).
+- [ ] Je weet hoe je een export maakt: aangemeld op `/dashboard` bij *Evenementen* → *Deelnemerslijst downloaden* (CSV met puntkomma, opent in Excel).
 - [ ] De link naar het formulier wordt verspreid.
 
 ---
