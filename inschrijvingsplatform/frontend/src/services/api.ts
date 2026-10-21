@@ -16,6 +16,7 @@ export interface Api {
   registreer(slug: string, aanvraag: RegistratieAanvraag): Promise<RegistratieAntwoord>;
   haalRegistratie(token: string): Promise<RegistratieOverzicht>;
   annuleer(token: string): Promise<RegistratieOverzicht>;
+  wijzigKeuzes(token: string, sessies: string[]): Promise<RegistratieOverzicht>;
   meld(melding: Melding): Promise<{ referentie: string }>;
 }
 
@@ -55,6 +56,7 @@ const echteApi: Api = {
     call(`/api/evenementen/${encodeURIComponent(slug)}/registraties`, { method: 'POST', body: JSON.stringify(aanvraag) }),
   haalRegistratie: (token) => call(`/api/registraties/${encodeURIComponent(token)}`),
   annuleer: (token) => call(`/api/registraties/${encodeURIComponent(token)}`, { method: 'DELETE' }),
+  wijzigKeuzes: (token, sessies) => call(`/api/registraties/${encodeURIComponent(token)}`, { method: 'PATCH', body: JSON.stringify({ sessies }) }),
   meld: (melding) => call('/api/meldingen', { method: 'POST', body: JSON.stringify(melding) }),
 };
 

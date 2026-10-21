@@ -19,6 +19,7 @@ interface DemoRegistratie {
   overzicht: RegistratieOverzicht;
   sessies: string[];
   dagdelen: string[];
+  doelgroepId?: string;
   sleutel: string;
 }
 
@@ -131,7 +132,7 @@ export const demoApi: Api = {
       if (g.s.capaciteit !== null && bezet >= g.s.capaciteit) {
         throw new ApiFout('SESSIE_VOLZET', `Een gekozen onderdeel is intussen volzet. Kies een ander onderdeel. (${g.s.titel})`, undefined, g.s.id);
       }
-      keuzes.push({ titel: g.s.titel, tijdsblok: g.tb.naam, startUur: g.tb.startUur, locatie: g.s.locatie, status: 'bevestigd' });
+      keuzes.push({ sessieId: g.s.id, tijdsblokId: g.tb.id, titel: g.s.titel, tijdsblok: g.tb.naam, startUur: g.tb.startUur, locatie: g.s.locatie, status: 'bevestigd' });
     }
     for (const g of gevonden) st.bezetting[g!.s.id] = (st.bezetting[g!.s.id] ?? 0) + 1;
 
@@ -146,6 +147,7 @@ export const demoApi: Api = {
       sleutel,
       sessies: a.sessies,
       dagdelen: a.dagdelen,
+      doelgroepId: d.doelgroepId,
       overzicht: {
         referentie, evenement: basis.titel, slug: basis.slug, contactEmail: basis.contactEmail, status: 'actief',
         voornaam: d.voornaam, naam: d.naam, annuleerbaar: true,
@@ -163,7 +165,33 @@ export const demoApi: Api = {
     await wacht();
     const r = staat().registraties[t];
     if (!r) throw new ApiFout('REGISTRATIE_NIET_GEVONDEN', 'Deze inschrijving werd niet gevonden of is al geannuleerd.');
-    return r.overzicht;
+    return metWijzigen(r);
+  },
+
+  async wijzigKeuzes(t, sessies) {
+    await wacht(500);
+    const st = staat();
+    const r = st.registraties[t];
+    if (!r || r.overzicht.status !== 'actief') {
+      throw new ApiFout('REGISTRATIE_NIET_GEVONDEN', 'Deze inschrijving werd niet gevonden of is al geannuleerd.');
+    }
+    const gevonden = sessies.map((id) => zoekSessie(id));
+    const codes = gevonden.filter((g) => g?.s.uniek && g.s.code).map((g) => g!.s.code);
+    if (new Set(codes).size !== codes.length) throw new ApiFout('ZELFDE_ONDERDEEL_DUBBEL', 'Je koos twee keer hetzelfde onderdeel. Kies iets anders.');
+    for (const g of gevonden) {
+      if (!g || !r.dagdelen.includes(g.dd.id)) throw new ApiFout('ONGELDIGE_SESSIEKEUZE', 'Een gekozen onderdeel is niet meer beschikbaar.');
+      if (!r.sessies.includes(g.s.id) && g.s.capaciteit !== null && (st.bezetting[g.s.id] ?? 0) >= g.s.capaciteit) {
+        throw new ApiFout('SESSIE_VOLZET', `Een gekozen onderdeel is intussen volzet. Kies een ander onderdeel. (${g.s.titel})`, undefined, g.s.id);
+      }
+    }
+    for (const id of r.sessies) if (!sessies.includes(id)) st.bezetting[id] = Math.max((st.bezetting[id] ?? 1) - 1, 0);
+    for (const id of sessies) if (!r.sessies.includes(id)) st.bezetting[id] = (st.bezetting[id] ?? 0) + 1;
+    r.sessies = sessies;
+    r.overzicht.keuzes = gevonden.map((g) => ({
+      sessieId: g!.s.id, tijdsblokId: g!.tb.id, titel: g!.s.titel, tijdsblok: g!.tb.naam, startUur: g!.tb.startUur, locatie: g!.s.locatie, status: 'bevestigd',
+    }));
+    schrijf(st);
+    return metWijzigen(r);
   },
 
   async annuleer(t) {
@@ -190,6 +218,20 @@ export const demoApi: Api = {
     return { referentie: 'DEMO' };
   },
 };
+
+/** Zoals de Worker: de eigen dagdelen met vrije plaatsen en de huidige keuze per keuzeblok. */
+function metWijzigen(r: DemoRegistratie): RegistratieOverzicht {
+  if (r.overzicht.status !== 'actief') return { ...r.overzicht, wijzigen: null };
+  const ev = metBezetting();
+  const dagen = ev.dagen.flatMap((d) => d.dagdelen.filter((dd) => r.dagdelen.includes(dd.id)).map((dagdeel) => ({ dagNaam: d.naam, dagdeel })));
+  const keuzes: Record<string, string> = {};
+  for (const { dagdeel } of dagen) {
+    for (const tb of dagdeel.tijdsblokken) {
+      if (tb.type === 'keuze') keuzes[tb.id] = tb.sessies.find((s) => r.sessies.includes(s.id))?.id ?? '';
+    }
+  }
+  return { ...r.overzicht, wijzigen: { doelgroepId: r.doelgroepId ?? '', dagen, keuzes } };
+}
 
 export function resetDemo() {
   geheugen = { bezetting: startBezetting(), registraties: {} };

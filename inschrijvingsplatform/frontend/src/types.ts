@@ -65,6 +65,7 @@ export interface Evenement {
   privacyTekst: string | null;
   bewaartermijnDagen: number;
   logo: string | null;
+  logoHoogte?: number | null;
   afbeelding: string | null;
   kleurPrimair?: string | null;
   kleurAccent?: string | null;
@@ -106,6 +107,7 @@ export interface RegistratieAanvraag {
 }
 
 export interface Moment {
+  dagdeelId?: string;
   dag: string;
   dagdeel: string;
   startUur: string;
@@ -114,6 +116,8 @@ export interface Moment {
 }
 
 export interface Keuze {
+  sessieId?: string;
+  tijdsblokId?: string;
   titel: string;
   tijdsblok: string;
   startUur: string;
@@ -141,6 +145,15 @@ export interface RegistratieOverzicht {
   annuleerbaar: boolean;
   momenten: Moment[];
   keuzes: Keuze[];
+  /** Lesjes wijzigen via de persoonlijke link; null als dat niet (meer) kan. */
+  wijzigen?: KeuzeWijziging | null;
+}
+
+export interface KeuzeWijziging {
+  doelgroepId: string;
+  dagen: { dagNaam: string; dagdeel: Dagdeel }[];
+  /** Huidige keuze per keuzeblok (tijdsblok-id → sessie-id, '' = geen). */
+  keuzes: Record<string, string>;
 }
 
 /** "Probleem of idee melden": wat de gebruiker schrijft + technische context voor debugging. */

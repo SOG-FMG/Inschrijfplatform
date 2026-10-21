@@ -246,7 +246,7 @@ export function InschrijfPagina({ slug }: { slug: string }) {
 
   const kop = (
     <header className="kop">
-      {evenement.logo && <img src={evenement.logo} alt="" className="kop__logo" />}
+      {evenement.logo && <img src={evenement.logo} alt="" className="kop__logo" style={{ height: evenement.logoHoogte ?? 135 }} />}
       {evenement.organisator && <p className="kop__organisator">{evenement.organisator}</p>}
       <h1>{evenement.titel}</h1>
       {isDemo && (

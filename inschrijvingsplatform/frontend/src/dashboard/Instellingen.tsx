@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { instellingenApi, type InstellingSoort, type InstellingVeld } from '../services/beheerApi';
+import { instellingenApi, kopieerApi, type InstellingSoort, type InstellingVeld } from '../services/beheerApi';
 import { ApiFout } from '../types';
-import { Link, STATUSNAAM } from './ui';
+import { etiketUrl } from './Etiketten';
+import { rapportUrl } from './Rapporten';
+import { foutTekst, Link, Melding, STATUSNAAM, Venster } from './ui';
 
 /**
  * Instellingen van één evenement (/dashboard/evenementen/<id>).
@@ -97,7 +99,7 @@ function Veld({ v, waarde, onWijzig, fout, opties, alleenLezen, id, evenementId,
     }
     default: {
       const type = { datum: 'date', uur: 'time', datumtijd: 'datetime-local', getal: 'number', email: 'email' }[v.type as string] ?? 'text';
-      invoer = <input {...gemeen} type={type} value={String(waarde)} onChange={(e) => onWijzig(e.target.value)} />;
+      invoer = <input {...gemeen} type={type} min={v.min} max={v.max} value={String(waarde)} onChange={(e) => onWijzig(e.target.value)} />;
     }
   }
   return (
@@ -181,10 +183,12 @@ interface RecordProps {
   open?: boolean;
   onKlaar: () => void;
   onAnnuleer?: () => void;
+  /** Extra knoppen naast Opslaan (bv. kopiëren). */
+  acties?: ReactNode;
   children?: ReactNode;
 }
 
-function Record({ soort, rij, ouderId, schema, opties, kanSchrijven, titel, info, open, onKlaar, onAnnuleer, children }: RecordProps) {
+function Record({ soort, rij, ouderId, schema, opties, kanSchrijven, titel, info, open, onKlaar, onAnnuleer, acties, children }: RecordProps) {
   const velden = schema[soort];
   const begin = beginWaarden(velden, rij);
   const [waarden, setWaarden] = useState<Record<string, unknown>>(begin);
@@ -268,6 +272,7 @@ function Record({ soort, rij, ouderId, schema, opties, kanSchrijven, titel, info
               <button type="button" className="d-knop d-knop--secundair" onClick={() => setWaarden(begin)}>Wijzigingen ongedaan maken</button>
             )}
             {!id && onAnnuleer && <button type="button" className="d-knop d-knop--secundair" onClick={onAnnuleer}>Annuleren</button>}
+            {id && acties}
             {id && soort !== 'evenement' && <button type="button" className="d-knop d-knop--gevaar rec__weg" onClick={verwijderen}>Verwijderen</button>}
             {melding && <span className={`rec__melding rec__melding--${melding.soort}`} role="status">{melding.tekst}</span>}
           </div>
@@ -304,9 +309,110 @@ const telling = (t: { bevestigd: number; wachtlijst: number }, capaciteit: numbe
   `${t.bevestigd}${capaciteit != null ? ` / ${capaciteit}` : ''} ingeschreven${t.wachtlijst ? `, ${t.wachtlijst} wachtlijst` : ''}`;
 
 // ---------------------------------------------------------------------------
+// Kopiëren naar andere momenten
+// ---------------------------------------------------------------------------
+type Kopie = { soort: 'sessies'; tijdsblok: any; dagdeel: any; dag: any } | { soort: 'dagdeel'; dagdeel: any; dag: any };
+
+function Vinkjes({ items, gekozen, onWijzig }: { items: { id: string; label: ReactNode; uit?: boolean }[]; gekozen: string[]; onWijzig: (ids: string[]) => void }) {
+  return (
+    <div className="kopie__lijst">
+      {items.map((i) => (
+        <label key={i.id} className={`d-keuze${i.uit ? ' kopie__uit' : ''}`}>
+          <input
+            type="checkbox"
+            disabled={i.uit}
+            checked={gekozen.includes(i.id)}
+            onChange={(e) => onWijzig(e.target.checked ? [...gekozen, i.id] : gekozen.filter((x) => x !== i.id))}
+          />
+          <span>{i.label}</span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function KopieerVenster({ kopie, dagen, onSluit, onKlaar }: { kopie: Kopie; dagen: any[]; onSluit: () => void; onKlaar: () => void }) {
+  const isSessies = kopie.soort === 'sessies';
+  const [bron, setBron] = useState<string[]>(isSessies ? kopie.tijdsblok.sessies.map((s: any) => s.sessie_id) : [kopie.dagdeel.dagdeel_id]);
+  const [naar, setNaar] = useState<string[]>([]);
+  const [fout, setFout] = useState<string | null>(null);
+  const [resultaat, setResultaat] = useState<ReactNode>(null);
+  const [bezig, setBezig] = useState(false);
+
+  // Doelen: alle keuzeblokken van het evenement (behalve dit), of alle andere dagen
+  const doelen = isSessies
+    ? dagen.flatMap((d: any) =>
+        d.dagdelen.flatMap((dd: any) =>
+          dd.tijdsblokken
+            .filter((t: any) => t.type === 'keuze' && t.tijdsblok_id !== kopie.tijdsblok.tijdsblok_id)
+            .map((t: any) => ({ id: t.tijdsblok_id, label: <>{d.naam} – {dd.naam} – <strong>{t.naam}</strong> <span className="d-klein">({t.start_uur}–{t.eind_uur}, {t.sessies.length} lesje(s))</span></> })),
+        ),
+      )
+    : dagen.filter((d: any) => d.dag_id !== kopie.dag.dag_id).map((d: any) => ({ id: d.dag_id, label: <><strong>{d.naam}</strong> <span className="d-klein">({d.datum})</span></> }));
+
+  const kopieer = async () => {
+    setBezig(true);
+    setFout(null);
+    try {
+      if (kopie.soort === 'sessies') {
+        const r = await kopieerApi.sessies(bron, naar);
+        setResultaat(
+          <>
+            {r.gekopieerd} lesje(s) gekopieerd.
+            {r.overgeslagen.length > 0 && <> Overgeslagen (stond er al): {r.overgeslagen.map((o) => `${o.titel} (${o.tijdsblok})`).join(', ')}.</>}
+          </>,
+        );
+      } else {
+        await kopieerApi.dagdeel(kopie.dagdeel.dagdeel_id, naar);
+        setResultaat(<>“{kopie.dagdeel.naam}” is gekopieerd naar {naar.length} dag(en), met alle tijdsblokken en lesjes.</>);
+      }
+      onKlaar();
+    } catch (e) {
+      setFout(foutTekst(e, 'Kopiëren mislukt.'));
+    } finally {
+      setBezig(false);
+    }
+  };
+
+  return (
+    <Venster titel={isSessies ? `Lesjes kopiëren uit ${kopie.tijdsblok.naam}` : `${kopie.dagdeel.naam} kopiëren naar een andere dag`} onSluit={onSluit} breed>
+      {resultaat ? (
+        <>
+          <Melding soort="ok">{resultaat}</Melding>
+          <div className="d-knoppen"><button type="button" className="d-knop" onClick={onSluit}>Sluiten</button></div>
+        </>
+      ) : (
+        <>
+          {fout && <Melding soort="fout">{fout}</Melding>}
+          {isSessies ? (
+            <>
+              <h3>Welke lesjes?</h3>
+              <Vinkjes items={kopie.tijdsblok.sessies.map((s: any) => ({ id: s.sessie_id, label: s.titel }))} gekozen={bron} onWijzig={setBron} />
+              <h3>Naar welke momenten?</h3>
+              <p className="d-klein">Alle gegevens gaan mee (lokaal, leerkracht, maximum, doelgroep, …), de inschrijvingen niet. Een lesje met dezelfde code of titel dat er al staat, wordt overgeslagen.</p>
+            </>
+          ) : (
+            <>
+              <p>Maakt op de gekozen dag(en) een nieuw moment <strong>{kopie.dagdeel.naam}</strong> ({kopie.dagdeel.start_uur}–{kopie.dagdeel.eind_uur}) met dezelfde tijdsblokken en lesjes, zonder inschrijvingen.</p>
+              <h3>Naar welke dag?</h3>
+            </>
+          )}
+          {doelen.length ? <Vinkjes items={doelen} gekozen={naar} onWijzig={setNaar} /> : <Melding>Er is nog geen ander {isSessies ? 'keuzeblok' : 'dag'}. Voeg die eerst toe.</Melding>}
+          <div className="d-knoppen">
+            <button type="button" className="d-knop d-knop--secundair" onClick={onSluit}>Annuleren</button>
+            <button type="button" className="d-knop" disabled={bezig || !bron.length || !naar.length} onClick={kopieer}>{bezig ? 'Bezig…' : 'Kopiëren'}</button>
+          </div>
+        </>
+      )}
+    </Venster>
+  );
+}
+
+// ---------------------------------------------------------------------------
 export function Instellingen({ evenementId, naVerandering }: { evenementId: string; naVerandering: () => void }) {
   const [data, setData] = useState<any>(null);
   const [fout, setFout] = useState<string | null>(null);
+  const [kopie, setKopie] = useState<Kopie | null>(null);
 
   const laad = useCallback(() => {
     instellingenApi
@@ -349,7 +455,11 @@ export function Instellingen({ evenementId, naVerandering }: { evenementId: stri
           </h1>
           {!data.kanSchrijven && <p className="d-sub">Je kan deze instellingen enkel bekijken.</p>}
         </div>
-        <a className="d-knop d-knop--secundair" href={`/${ev.slug}`} target="_blank" rel="noreferrer">Formulier bekijken ↗</a>
+        <span className="d-knoppen d-knoppen--links">
+          <Link href={rapportUrl(ev.evenement_id)} className="d-knop">Rapporten</Link>
+          <Link href={etiketUrl(ev.evenement_id)} className="d-knop d-knop--secundair">Etiketten</Link>
+          <a className="d-knop d-knop--secundair" href={`/${ev.slug}`} target="_blank" rel="noreferrer">Formulier bekijken ↗</a>
+        </span>
       </header>
 
       <section className="inst-blok">
@@ -372,9 +482,11 @@ export function Instellingen({ evenementId, naVerandering }: { evenementId: stri
           <Record key={dag.dag_id} {...gemeen} soort="dag" rij={dag} titel={dag.naam} info={`${dag.datum} · ${dag.start_uur}–${dag.eind_uur}${dag.status !== 'actief' ? ` · ${dag.status}` : ''}`}>
             {dag.dagdelen.map((dd: any) => (
               <Record key={dd.dagdeel_id} {...gemeen} soort="dagdeel" rij={dd} titel={dd.naam}
+                acties={<button type="button" className="d-knop d-knop--secundair" onClick={() => setKopie({ soort: 'dagdeel', dagdeel: dd, dag })}>Kopiëren naar andere dag…</button>}
                 info={`${dd.start_uur}–${dd.eind_uur} · ${telling(dd.ingeschreven, dd.capaciteit)}${dd.status !== 'actief' ? ` · ${dd.status}` : ''}`}>
                 {dd.tijdsblokken.map((t: any) => (
                   <Record key={t.tijdsblok_id} {...gemeen} soort="tijdsblok" rij={t} titel={t.naam}
+                    acties={t.sessies.length > 0 && <button type="button" className="d-knop d-knop--secundair" onClick={() => setKopie({ soort: 'sessies', tijdsblok: t, dagdeel: dd, dag })}>Lesjes kopiëren naar…</button>}
                     info={`${t.start_uur}–${t.eind_uur} · ${t.type === 'keuze' ? `keuze uit ${t.sessies.length} lesje(s)` : 'programma'}`}>
                     {t.sessies.map((s: any) => (
                       <Record key={s.sessie_id} {...gemeen} soort="sessie" rij={s} titel={s.titel}
@@ -391,6 +503,7 @@ export function Instellingen({ evenementId, naVerandering }: { evenementId: stri
         ))}
         <Nieuw {...gemeen} soort="dag" ouderId={ev.evenement_id} label="Dag toevoegen" />
       </section>
+      {kopie && <KopieerVenster kopie={kopie} dagen={data.dagen} onSluit={() => setKopie(null)} onKlaar={herlaad} />}
     </div>
   );
 }

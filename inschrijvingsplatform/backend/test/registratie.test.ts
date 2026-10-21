@@ -198,6 +198,57 @@ describe('registreren', () => {
 
 let wachtToken: string;
 
+describe('keuzes wijzigen via de persoonlijke link', () => {
+  let t: string;
+  const wijzig = (sessies: string[]) => api('PATCH', `/api/registraties/${t}`, { sessies });
+  const bevestigd = async (id: string) => (await een(`select bevestigd from v_sessie_bezetting where sessie_id = ?`, id)).bevestigd as number;
+
+  test('overzicht toont de huidige keuzes en wat er te kiezen valt', async () => {
+    const r = await registreer(deelnemer({ naam: 'Wissel', voornaam: 'Wout' }), [vm1.id], [sessie(k1, 'kunst').id, sessie(k2, 'wiskunde').id]);
+    t = token(r);
+    const o = (await api('GET', `/api/registraties/${t}`)).data;
+    expect(o.wijzigen.keuzes).toEqual({ [k1.id]: sessie(k1, 'kunst').id, [k2.id]: sessie(k2, 'wiskunde').id });
+    expect(o.wijzigen.dagen).toHaveLength(1);
+    expect(o.wijzigen.dagen[0].dagdeel.id).toBe(vm1.id);
+  });
+
+  test('ander lesje kiezen: oude plaats komt vrij, nieuwe wordt bezet, ongewijzigd blok blijft', async () => {
+    const [kunst, wet, wis] = [sessie(k1, 'kunst').id, sessie(k1, 'wetenschappen').id, sessie(k2, 'wiskunde').id];
+    const voor = { kunst: await bevestigd(kunst), wet: await bevestigd(wet), wis: await bevestigd(wis) };
+    const r = await wijzig([wet, wis]);
+    expect(r.status).toBe(200);
+    expect(r.data.keuzes.map((k: any) => k.titel)).toEqual(['Domein Wetenschappen', 'Lesje Wiskunde']);
+    expect(await bevestigd(kunst)).toBe(voor.kunst - 1);
+    expect(await bevestigd(wet)).toBe(voor.wet + 1);
+    expect(await bevestigd(wis)).toBe(voor.wis);
+  });
+
+  test('zelfde regels als bij inschrijven: dubbel, volzet, ander dagdeel', async () => {
+    expect((await wijzig([sessie(k1, 'kunst').id, sessie(k2, 'kunst').id])).data.fout).toBe('ZELFDE_ONDERDEEL_DUBBEL');
+    const vol = await wijzig([sessie(k1, 'latijn').id, sessie(k2, 'wiskunde').id]);
+    expect(vol.data).toMatchObject({ fout: 'SESSIE_VOLZET', id: sessie(k1, 'latijn').id });
+    expect((await wijzig([nm1.tijdsblokken[1].sessies[0].id])).data.fout).toBe('ONGELDIGE_SESSIEKEUZE');
+    // Niets veranderd na een geweigerde wijziging
+    const o = (await api('GET', `/api/registraties/${t}`)).data;
+    expect(o.keuzes.map((k: any) => k.titel)).toEqual(['Domein Wetenschappen', 'Lesje Wiskunde']);
+  });
+
+  test('geen lesje meer en na annuleren niet meer wijzigbaar', async () => {
+    expect((await wijzig([])).data.keuzes).toEqual([]);
+    await api('DELETE', `/api/registraties/${t}`);
+    expect((await api('GET', `/api/registraties/${t}`)).data.wijzigen).toBeNull();
+    expect((await wijzig([sessie(k1, 'kunst').id])).data.fout).toBe('REGISTRATIE_NIET_GEVONDEN');
+  });
+
+  test('na de inschrijfperiode niet meer wijzigbaar', async () => {
+    const r = await registreer(deelnemer(), [vm1.id], [sessie(k1, 'kunst').id]);
+    await sql(`update evenementen set inschrijving_tot = ? where slug = ?`, new Date(Date.now() - 1000).toISOString(), SLUG);
+    expect((await api('GET', `/api/registraties/${token(r)}`)).data.wijzigen).toBeNull();
+    expect((await api('PATCH', `/api/registraties/${token(r)}`, { sessies: [] })).data.fout).toBe('NIET_MEER_WIJZIGBAAR');
+    await sql(`update evenementen set inschrijving_tot = null where slug = ?`, SLUG);
+  });
+});
+
 describe('beheer', () => {
   let wachtId: string;
 
@@ -234,6 +285,85 @@ describe('beheer', () => {
     expect(t.data.status).toBe('bevestigd');
     expect((await api('POST', `/api/beheer/deelnemers/${wachtId}/sessie`, { sessieId: sessie(k1, 'kunst').id })).data.fout).toBe('EERST_DAGDEEL_VERPLAATSEN');
     expect((await een(`select count(*) as n from audit_log where record_id = ?`, wachtId)).n).toBe(2);
+  });
+
+  test('rapporten: lesjes met aantallen en namen (ontsleuteld), gelogd', async () => {
+    const r = await api('GET', `/api/beheer/evenementen/${ev.evenementId}/rapport`);
+    expect(r.status).toBe(200);
+    expect(r.data.kanSchrijven).toBe(true);
+    const dd = r.data.dagen[0].dagdelen.find((d: any) => d.id === vm1.id);
+    expect(dd.tijdsblokken.map((t: any) => t.naam)).toEqual(['Keuzelesje 1', 'Keuzelesje 2']); // enkel keuzeblokken
+    const ned = dd.tijdsblokken[0].sessies.find((s: any) => s.titel.startsWith('Nederlands'));
+    expect(ned.bevestigd).toBe((await een(`select bevestigd from v_sessie_bezetting where sessie_id = ?`, ned.id)).bevestigd);
+    expect(ned.deelnemers).toHaveLength(ned.bevestigd + ned.wachtlijst);
+    expect(ned.deelnemers[0]).toMatchObject({ naam: 'Test', leerjaar: '6de leerjaar', status: 'bevestigd' });
+    expect(JSON.stringify(r.data)).not.toContain('v1.');
+    expect((await een(`select count(*) as n from audit_log where actie = 'RAPPORT'`)).n).toBe(1);
+  });
+
+  test('rapportteksten aanpassen en terugzetten', async () => {
+    const pad = `/api/beheer/evenementen/${ev.evenementId}/rapport/teksten`;
+    expect((await api('PATCH', pad, { teksten: { 'r1.titel': '  Overzicht   DAG 1 ' } })).data.teksten).toEqual({ 'r1.titel': 'Overzicht DAG 1' });
+    expect((await api('PATCH', pad, { teksten: { 'r1.titel': '' } })).data.teksten).toEqual({});
+    expect((await api('PATCH', pad, { teksten: { '<script>': 'x' } })).status).toBe(400);
+  });
+
+  test('etiketten: deelnemers met lesjes, opmaak bewaren, verdieping per lokaal', async () => {
+    const pad = `/api/beheer/evenementen/${ev.evenementId}/etiketten`;
+    const r = await api('GET', pad);
+    expect(r.status).toBe(200);
+    expect(r.data.instellingen).toBeNull(); // standaard
+    const d = r.data.deelnemers.find((x: any) => x.naam === 'Test' && x.lesjes.length);
+    expect(d.lesjes.length).toBeGreaterThan(0);
+    expect(d.lesjes[0]).toHaveProperty('titel');
+    expect(JSON.stringify(r.data)).not.toContain('v1.');
+
+    const opmaak = {
+      blad: { breedte: 210, hoogte: 297 }, kolommen: 3, rijen: 8, marge: { boven: 0, onder: 0, links: 0, rechts: 0 },
+      tussen: { horizontaal: 0, verticaal: 0 }, binnen: 3, regels: [{ tekst: '{voornaam} {achternaam}', pt: 20, vet: false, passend: true, perLesje: false }],
+    };
+    expect((await api('PATCH', `${pad}/instellingen`, { instellingen: opmaak })).data.instellingen).toEqual(opmaak);
+    expect((await api('PATCH', `${pad}/instellingen`, { instellingen: { ...opmaak, kolommen: 0 } })).status).toBe(400);
+    expect((await api('PATCH', `${pad}/instellingen`, { instellingen: { ...opmaak, marge: { ...opmaak.marge, links: 100, rechts: 100 } } })).status).toBe(400);
+    expect((await api('GET', pad)).data.instellingen).toEqual(opmaak);
+    expect((await api('PATCH', `${pad}/instellingen`, { instellingen: null })).data.instellingen).toBeNull();
+
+    const lokaal = r.data.lokalen[0];
+    expect((await api('PATCH', `${pad}/lokalen/${lokaal.id}`, { verdieping: '  verdieping 1 ' })).data.verdieping).toBe('verdieping 1');
+    expect((await api('GET', pad)).data.lokalen.find((l: any) => l.id === lokaal.id).verdieping).toBe('verdieping 1');
+    expect((await api('PATCH', `${pad}/lokalen/bestaat-niet`, { verdieping: 'x' })).data.fout).toBe('GEEN_TOEGANG');
+  });
+
+  test('leerkracht: enkel eigen domein; klaslijst mailen', async () => {
+    const ned = sessie(k1, 'nederlands').id;
+    const fout = await api('PATCH', `/api/beheer/instellingen/sessie/${ned}`, { waarden: { lesgever_email: 'juf@gmail.com' } });
+    expect(fout.data.velden.lesgever_email).toContain('onderwijs.gent.be');
+    await api('PATCH', `/api/beheer/instellingen/sessie/${ned}`, { waarden: { lesgever: 'Juf Kelly', lesgever_email: 'kelly@onderwijs.gent.be' } });
+    const m = await api('POST', `/api/beheer/evenementen/${ev.evenementId}/rapport/mail`, { sessieIds: [ned, sessie(k1, 'kunst').id] });
+    expect(m.data).toEqual({ verzonden: 1, zonderAdres: ['Domein Kunst'], mislukt: [] });
+    expect((await een(`select nieuwe_waarde from audit_log where actie = 'MAIL_KLASLIJSTEN'`)).nieuwe_waarde).not.toContain('@');
+  });
+
+  test('lesjes en momenten kopiëren', async () => {
+    // Zelfde code staat al in het doelblok: overgeslagen
+    const dubbel = await api('POST', '/api/beheer/kopieer', { soort: 'sessies', ids: [sessie(k1, 'kunst').id], naar: [k2.id] });
+    expect(dubbel.data).toMatchObject({ gekopieerd: 0, overgeslagen: [{ titel: 'Domein Kunst' }] });
+    // Nieuw blok: alles mee, inclusief leerkracht en capaciteit, zonder inschrijvingen
+    const { data: blok } = await api('POST', '/api/beheer/instellingen/tijdsblok', { ouderId: vm1.id, waarden: { naam: 'Keuzelesje 3', start_uur: '12:10', eind_uur: '12:40' } });
+    const ids = k1.sessies.map((s: any) => s.id);
+    const ok = await api('POST', '/api/beheer/kopieer', { soort: 'sessies', ids, naar: [blok.id] });
+    expect(ok.data.gekopieerd).toBe(ids.length);
+    const kopie = await een(`select capaciteit, lesgever, code from sessies where tijdsblok_id = ? and code = 'nederlands'`, blok.id);
+    expect(kopie).toEqual({ capaciteit: 8, lesgever: 'Juf Kelly', code: 'nederlands' });
+    expect((await een(`select count(*) as n from inschrijvingen i join sessies s on s.sessie_id = i.sessie_id where s.tijdsblok_id = ?`, blok.id)).n).toBe(0);
+    // Heel moment naar de tweede dag
+    const dag2 = ev.dagen[1].id;
+    const voor = (await een(`select count(*) as n from dagdelen where dag_id = ?`, dag2)).n;
+    expect((await api('POST', '/api/beheer/kopieer', { soort: 'dagdeel', ids: [vm1.id], naar: [dag2] })).data.gekopieerd).toBe(1);
+    expect((await een(`select count(*) as n from dagdelen where dag_id = ?`, dag2)).n).toBe(voor + 1);
+    // Onbekend record: geweigerd
+    expect((await api('POST', '/api/beheer/kopieer', { soort: 'sessies', ids: [crypto.randomUUID()], naar: [k2.id] })).data.fout).toBe('GEEN_TOEGANG');
+    await sql(`delete from tijdsblokken where tijdsblok_id = ?`, blok.id);
   });
 
   test('CSV-export: ontsleuteld, gesorteerd, gelogd', async () => {

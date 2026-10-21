@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { Overzicht } from '../components/Overzicht';
+import { SessieKiezer } from '../components/SessieKiezer';
 import { api } from '../services/api';
-import { ApiFout, type RegistratieOverzicht } from '../types';
+import { ApiFout, type KeuzeWijziging, type RegistratieOverzicht } from '../types';
 
-/** Zelfbeheer via de persoonlijke link uit de bevestigingsmail. */
+/** Zelfbeheer via de persoonlijke link uit de bevestigingsmail: bekijken, lesjes wijzigen of annuleren. */
 export function BeheerPagina({ token }: { token: string }) {
   const [r, setR] = useState<RegistratieOverzicht | null>(null);
   const [fout, setFout] = useState<string | null>(null);
   const [bevestigen, setBevestigen] = useState(false);
+  const [wijzigen, setWijzigen] = useState(false);
+  const [melding, setMelding] = useState<string | null>(null);
   const [bezig, setBezig] = useState(false);
   const kopRef = useRef<HTMLHeadingElement>(null);
 
@@ -21,6 +24,7 @@ export function BeheerPagina({ token }: { token: string }) {
     try {
       setR(await api.annuleer(token));
       setBevestigen(false);
+      setMelding(null);
       kopRef.current?.focus();
     } catch (e) {
       setFout(e instanceof ApiFout ? e.message : 'Annuleren is mislukt.');
@@ -54,23 +58,50 @@ export function BeheerPagina({ token }: { token: string }) {
           {r.status === 'geannuleerd' ? 'Deze inschrijving is geannuleerd' : <>Inschrijving van <span className="pii">{r.voornaam ?? ''} {r.naam ?? ''}</span></>}
         </h2>
         <p>Referentie: <strong>{r.referentie}</strong></p>
-        <Overzicht momenten={r.momenten} keuzes={r.keuzes} />
+        {melding && <div className="melding melding--succes" role="status">{melding}</div>}
 
-        {r.status === 'actief' && r.annuleerbaar && (
-          <div className="annuleren">
-            {!bevestigen ? (
-              <button type="button" className="knop knop--gevaar" onClick={() => setBevestigen(true)}>Inschrijving annuleren</button>
-            ) : (
-              <div className="melding melding--waarschuwing" role="alertdialog" aria-labelledby="annuleer-vraag">
-                <p id="annuleer-vraag"><strong>Zeker dat je wil annuleren?</strong> Je plaats in de gekozen onderdelen komt vrij voor iemand anders.</p>
-                <div className="knoppen">
-                  <button type="button" className="knop knop--secundair" onClick={() => setBevestigen(false)} disabled={bezig}>Nee, behouden</button>
-                  <button type="button" className="knop knop--gevaar" onClick={annuleer} disabled={bezig}>
-                    {bezig ? 'Bezig…' : 'Ja, annuleren'}
+        {wijzigen && r.wijzigen ? (
+          <KeuzesWijzigen
+            token={token}
+            w={r.wijzigen}
+            onKlaar={(nieuw, tekst) => {
+              setR(nieuw);
+              setWijzigen(false);
+              setMelding(tekst);
+              kopRef.current?.focus();
+            }}
+            onVernieuw={setR}
+            onAnnuleer={() => setWijzigen(false)}
+          />
+        ) : (
+          <>
+            <Overzicht momenten={r.momenten} keuzes={r.keuzes} />
+            {r.status === 'actief' && (r.wijzigen || r.annuleerbaar) && !bevestigen && (
+              <div className="knoppen knoppen--links">
+                {r.wijzigen && (
+                  <button type="button" className="knop" onClick={() => { setWijzigen(true); setMelding(null); }}>
+                    Ander lesje kiezen
                   </button>
-                </div>
+                )}
+                {r.annuleerbaar && (
+                  <button type="button" className="knop knop--gevaar" onClick={() => setBevestigen(true)}>Inschrijving annuleren</button>
+                )}
               </div>
             )}
+          </>
+        )}
+
+        {r.status === 'actief' && r.annuleerbaar && bevestigen && (
+          <div className="annuleren">
+            <div className="melding melding--waarschuwing" role="alertdialog" aria-labelledby="annuleer-vraag">
+              <p id="annuleer-vraag"><strong>Zeker dat je wil annuleren?</strong> Je plaats in de gekozen onderdelen komt vrij voor iemand anders.</p>
+              <div className="knoppen">
+                <button type="button" className="knop knop--secundair" onClick={() => setBevestigen(false)} disabled={bezig}>Nee, behouden</button>
+                <button type="button" className="knop knop--gevaar" onClick={annuleer} disabled={bezig}>
+                  {bezig ? 'Bezig…' : 'Ja, annuleren'}
+                </button>
+              </div>
+            </div>
           </div>
         )}
         {r.status === 'geannuleerd' && (
@@ -80,10 +111,73 @@ export function BeheerPagina({ token }: { token: string }) {
         )}
         {r.contactEmail && (
           <p className="info">
-            Iets wijzigen, zoals een ander moment of lesje? Mail naar <a href={`mailto:${r.contactEmail}`}>{r.contactEmail}</a> met je referentie.
+            {r.status === 'actief' ? 'Een ander moment nodig of nog vragen?' : 'Vragen?'} Mail naar <a href={`mailto:${r.contactEmail}`}>{r.contactEmail}</a> met je referentie.
           </p>
         )}
       </section>
     </main>
+  );
+}
+
+/** Zelfde keuzescherm als op het formulier, met de huidige keuzes al aangeduid. */
+function KeuzesWijzigen({ token, w, onKlaar, onVernieuw, onAnnuleer }: {
+  token: string;
+  w: KeuzeWijziging;
+  onKlaar: (r: RegistratieOverzicht, melding: string) => void;
+  onVernieuw: (r: RegistratieOverzicht) => void;
+  onAnnuleer: () => void;
+}) {
+  const [keuzes, setKeuzes] = useState<Record<string, string>>(w.keuzes);
+  const [fout, setFout] = useState<string | null>(null);
+  const [volzet, setVolzet] = useState<string | undefined>();
+  const [bezig, setBezig] = useState(false);
+  const gewijzigd = Object.keys(keuzes).some((k) => keuzes[k] !== w.keuzes[k]);
+
+  const bewaar = async () => {
+    setBezig(true);
+    setFout(null);
+    try {
+      const nieuw = await api.wijzigKeuzes(token, Object.values(keuzes).filter(Boolean));
+      onKlaar(nieuw, 'Je keuze is gewijzigd. Je krijgt een mail met het nieuwe overzicht.');
+    } catch (e) {
+      setFout(e instanceof ApiFout ? e.message : 'Wijzigen is mislukt.');
+      if (e instanceof ApiFout && e.code === 'SESSIE_VOLZET') {
+        setVolzet(e.id);
+        // Vrije plaatsen opnieuw ophalen, zodat het volzette lesje meteen uitgeschakeld is
+        api.haalRegistratie(token).then(onVernieuw).catch(() => undefined);
+      }
+    } finally {
+      setBezig(false);
+    }
+  };
+
+  return (
+    <form
+      className="wijzigen"
+      onSubmit={(e) => {
+        e.preventDefault();
+        bewaar();
+      }}
+    >
+      <p>Kies een ander lesje en klik op <strong>Wijziging bewaren</strong>. Je huidige plaats blijft behouden tot je bewaart.</p>
+      {w.dagen.map(({ dagNaam, dagdeel }) => (
+        <SessieKiezer
+          key={dagdeel.id}
+          dagNaam={dagNaam}
+          dagdeel={dagdeel}
+          doelgroepId={w.doelgroepId}
+          sessiekeuze
+          keuzes={keuzes}
+          onKies={(tb, s) => setKeuzes((oud) => ({ ...oud, [tb]: s }))}
+          fouten={{}}
+          volzetGemeld={volzet}
+        />
+      ))}
+      {fout && <div className="melding melding--fout" role="alert">{fout}</div>}
+      <div className="knoppen">
+        <button type="button" className="knop knop--secundair" onClick={onAnnuleer} disabled={bezig}>Annuleren</button>
+        <button type="submit" className="knop" disabled={bezig || !gewijzigd}>{bezig ? 'Bezig…' : 'Wijziging bewaren'}</button>
+      </div>
+    </form>
   );
 }

@@ -1,4 +1,4 @@
-import type { Env, RegistratieResultaat } from './types';
+import type { Env, Keuze, RegistratieResultaat } from './types';
 
 export interface Mail {
   aan: string;
@@ -36,10 +36,79 @@ export function bevestigingsmail(r: RegistratieResultaat, aan: string, voornaam:
 <ul>${momenten}</ul>
 ${keuzes}
 <p>Referentie: <strong>${esc(r.referentie)}</strong></p>
-<p>Wil je je inschrijving bekijken of annuleren? Gebruik <a href="${esc(beheerUrl)}">deze persoonlijke link</a>.
+<p>Wil je je inschrijving bekijken, een ander lesje kiezen of annuleren? Gebruik <a href="${esc(beheerUrl)}">deze persoonlijke link</a>.
 Deel deze link niet met anderen.</p>
 ${r.contactEmail ? `<p>Vragen? Mail naar <a href="mailto:${esc(r.contactEmail)}">${esc(r.contactEmail)}</a>.</p>` : ''}
 <p>Tot dan!</p>`,
+  };
+}
+
+/** Na het wijzigen van de lesjes via de persoonlijke link: het nieuwe overzicht. */
+export function wijzigingsmail(p: {
+  aan: string; voornaam: string; evenement: string; referentie: string; keuzes: Keuze[]; beheerUrl: string; contactEmail: string | null;
+}): Mail {
+  const keuzes = p.keuzes
+    .map(
+      (k) =>
+        `<li>${esc(k.startUur)} – ${esc(k.titel)}${k.locatie ? ` (lokaal ${esc(k.locatie)})` : ''}${
+          k.status === 'wachtlijst' ? ' – <em>op de wachtlijst</em>' : ''
+        }</li>`,
+    )
+    .join('');
+  return {
+    aan: p.aan,
+    type: 'wijziging',
+    referentie: p.referentie,
+    onderwerp: `Keuze gewijzigd: ${p.evenement} (${p.referentie})`,
+    html: `<p>Beste,</p>
+<p>De keuzes van <strong>${esc(p.voornaam)}</strong> voor <strong>${esc(p.evenement)}</strong> zijn gewijzigd. Dit is het nieuwe overzicht:</p>
+${keuzes ? `<ul>${keuzes}</ul>` : '<p>Geen lesjes gekozen.</p>'}
+<p>Referentie: <strong>${esc(p.referentie)}</strong></p>
+<p>Opnieuw iets aanpassen of annuleren? Gebruik <a href="${esc(p.beheerUrl)}">je persoonlijke link</a>. Deel deze link niet met anderen.</p>
+${p.contactEmail ? `<p>Vragen? Mail naar <a href="mailto:${esc(p.contactEmail)}">${esc(p.contactEmail)}</a>.</p>` : ''}`,
+  };
+}
+
+/** Klaslijst(en) voor een leerkracht: wie er in het lesje zit, met school en leerjaar. */
+export function klaslijstmail(p: {
+  aan: string;
+  evenement: string;
+  afzender: string;
+  lijsten: { titel: string; moment: string; uur: string; lokaal: string | null; capaciteit: number | null;
+    deelnemers: { voornaam: string; naam: string; school: string; leerjaar: string; status: string }[] }[];
+}): Mail {
+  const cel = 'style="border:1px solid #cfd6df;padding:3px 8px;text-align:left"';
+  const lijsten = p.lijsten
+    .map((l) => {
+      const rijen = l.deelnemers
+        .map(
+          (d, i) =>
+            `<tr><td ${cel}>${i + 1}</td><td ${cel}>${esc(d.voornaam)}</td><td ${cel}>${esc(d.naam)}</td><td ${cel}>${esc(d.school)}</td><td ${cel}>${esc(d.leerjaar)}</td><td ${cel}>${
+              d.status === 'wachtlijst' ? 'wachtlijst' : ''
+            }</td></tr>`,
+        )
+        .join('');
+      return `<h3 style="margin:18px 0 4px">${esc(l.titel)}</h3>
+<p style="margin:0 0 6px">${esc(l.moment)} · ${esc(l.uur)}${l.lokaal ? ` · lokaal ${esc(l.lokaal)}` : ''} · <strong>${l.deelnemers.filter((d) => d.status !== 'wachtlijst').length}${
+        l.capaciteit != null ? ` / ${l.capaciteit}` : ''
+      }</strong> ingeschreven</p>
+${
+  rijen
+    ? `<table style="border-collapse:collapse"><tr><th ${cel}>#</th><th ${cel}>Voornaam</th><th ${cel}>Achternaam</th><th ${cel}>School</th><th ${cel}>Leerjaar</th><th ${cel}></th></tr>${rijen}</table>`
+    : '<p><em>Nog niemand ingeschreven.</em></p>'
+}`;
+    })
+    .join('');
+  return {
+    aan: p.aan,
+    type: 'klaslijst',
+    onderwerp: `Klaslijst ${p.evenement}${p.lijsten.length === 1 ? `: ${p.lijsten[0].titel}` : ` (${p.lijsten.length} lesjes)`}`,
+    html: `<p>Beste,</p>
+<p>Hieronder de klaslijst${p.lijsten.length > 1 ? 'en' : ''} voor <strong>${esc(p.evenement)}</strong>, stand van ${esc(
+      new Date().toLocaleString('nl-BE', { timeZone: 'Europe/Brussels' }),
+    )}.</p>
+${lijsten}
+<p style="color:#545c66;margin-top:18px">Verstuurd door ${esc(p.afzender)} via het Inschrijvingsplatform. Deze lijst bevat persoonsgegevens van leerlingen: enkel gebruiken voor deze activiteit en niet verder delen.</p>`,
   };
 }
 

@@ -28,9 +28,10 @@ Vervang `<account>` door de accountnaam in de Worker-URL (bv. `freinetmiddenscho
 | Wat | Adres | Voor wie |
 | --- | --- | --- |
 | Inschrijfformulier | `/` of `/fmg-infodagen-2027` (de slug van het evenement) | ouders en leerlingen |
-| Zelfbeheer van een inschrijving (bekijken, annuleren) | `/beheer/<persoonlijk-token>` (staat in de bevestiging op het scherm) | de ouder |
+| Zelfbeheer van een inschrijving (bekijken, ander lesje kiezen, annuleren) | `/beheer/<persoonlijk-token>` (staat in de bevestiging op het scherm) | de ouder |
 | **Beheer (dashboard)** | `/dashboard` | medewerkers |
 | Instellingen van een evenement | `/dashboard/evenementen/<id>` (via *Instellingen* op `/dashboard`) | organisatoren en beheerders |
+| Rapporten (overzichten, klaslijsten) | `/dashboard/evenementen/<id>/rapporten` (via *Rapporten*) | organisatoren, beheerders, onthaal (lezen) |
 | **Account activeren** (eerste keer) | `/dashboard/activeren` | nieuwe medewerkers, met hun uitnodigingscode |
 | API | `https://inschrijvingsplatform-api.<account>.workers.dev` (de frontend stuurt `/api/*` zelf door) | enkel technisch, niet delen |
 
@@ -81,7 +82,9 @@ Zonder `VITE_API_URL` draait het formulier volledig in de browser met de infodag
    - Een lesje dat je al koos in het andere blok wordt uitgeschakeld.
    - Je ziet enkel het aanbod van je eigen stroom.
 4. **Controleren.** Samenvatting, opmerkingen, privacyverklaring en verzenden.
-5. **Bevestiging.** Je krijgt een referentie en een mail met een persoonlijke link om de inschrijving te bekijken of te annuleren. Bij annulatie schuift de wachtlijst automatisch door.
+5. **Bevestiging.** Je krijgt een referentie en een mail met een persoonlijke link om de inschrijving te bekijken, een ander lesje te kiezen of te annuleren. Bij annulatie of wijziging schuift de wachtlijst automatisch door.
+
+**Ander lesje kiezen via de persoonlijke link.** Zelfde keuzescherm en regels als op het formulier (capaciteit, doelgroep, niet twee keer hetzelfde lesje, verplichte blokken). Enkel blokken die veranderen worden aangepast, in één atomische batch; daarna volgt een mail met het nieuwe overzicht. Kan zolang de inschrijfperiode loopt, *Lesjes kiezen tot* van die dag niet voorbij is en de dag nog niet begonnen is. Een ander moment (dagdeel) kiezen kan niet zelf: daarvoor mailt de ouder naar het *E-mailadres voor vragen* van het evenement (instelling bij *Algemeen*).
 
 De labels passen zich aan het evenement aan: "Kies een *proeflesje*" voor een infodag, "Kies een *sessie*" of "*workshop*" voor een congres. Bij `deelnemer_type = 'volwassene'` (personeel, congres) verdwijnen de oudervelden en wordt naar de functie gevraagd.
 
@@ -135,7 +138,7 @@ npx wrangler d1 execute DB --local --command "insert into gebruikers (naam, voor
 
 ```bash
 cd backend
-npm test        # migraties + seed in een lokale D1, 22 scenario's via de volledige Worker
+npm test        # migraties + seed in een lokale D1, 52 tests via de volledige Worker
 npm run typecheck
 
 cd ../frontend
@@ -149,6 +152,8 @@ De backendtests dekken onder meer:
 - capaciteit en atomiciteit
 - **10 gelijktijdige inschrijvingen op 3 plaatsen** (er komen er exact 3 binnen)
 - wachtlijst en doorschuiven
+- lesje wijzigen via de persoonlijke link
+- rapporten, rapportteksten, klaslijsten mailen en kopiëren
 - versleuteling in de database
 - domeinbeperking en rechten
 - CSV-export
@@ -198,6 +203,14 @@ Elke actie komt in `audit_log`.
 - **Rechten.** Gebruikers voeg je toe in `/dashboard` (zie *Wie kan gebruikers aanmaken?*). Het koppelen aan evenementen kan daar bij het aanmaken; achteraf kan het nog met een rij in `evenement_beheerders` via `wrangler d1 execute DB --remote --command "…"`.
 - **Evenement instellen.** Op `/dashboard` → *Instellingen* bij een evenement (`/dashboard/evenementen/<id>`): algemene gegevens, inschrijfperiode, doelgroepen, dagen, momenten (dagdelen), tijdsblokken en lesjes met lokaal en capaciteit. Wijzigen kan voor platformbeheerders, organisatoren van dat evenement en schoolbeheerders van de school; onthaal kan enkel kijken. Een nieuw evenement maakt een platformbeheerder aan (start als concept). Een onderdeel met inschrijvingen kan je niet verwijderen: zet het op gesloten of geannuleerd.
 - **Export.** `GET /api/beheer/evenementen/<id>/deelnemers.csv` levert een ontsleutelde CSV in Excel-formaat. De export zelf wordt gelogd.
+- **Rapporten** (`/dashboard/evenementen/<id>/rapporten`), elk af te drukken (één rapport per blad, met onderaan versie, wie afdrukte en wanneer), te exporteren naar Excel (.xlsx, één tabblad per dagdeel/moment/lesje) en als klaslijst te mailen naar de leerkrachten:
+  1. *Overzicht per dagdeel*: per keuzeblok de lesjes met lokaal, leerkracht, maximum, ingeschreven, wachtlijst en beschikbaar. Titel, lokaal, leerkracht en maximum zijn hier rechtstreeks aan te passen.
+  2. *Inschrijvingen per moment*: elk lesje een kolom, daaronder het aantal en de namen (plus wie geen lesje koos).
+  3. *Klaslijst per lesje*: voornaam, achternaam, huidige school en leerjaar, genummerd tot het maximum; wachtlijst apart.
+
+  Titels en kolomkoppen zijn aanklikbaar om te wijzigen; met *Bewaren* worden ze per evenement onthouden (leeg maken = standaardtekst). Het openen van een rapport wordt gelogd (`RAPPORT`).
+- **Leerkracht per lesje.** Velden *Leerkracht* en *E-mail leerkracht* bij het lesje. Klaslijsten gaan enkel naar adressen `@onderwijs.gent.be` (ze bevatten namen van leerlingen); elke leerkracht krijgt één mail met al zijn lesjes. In het auditlog staan enkel aantallen.
+- **Kopiëren naar andere momenten.** Bij een tijdsblok: *Lesjes kopiëren naar…* (andere keuzeblokken, ook op een andere dag; een lesje met dezelfde code of titel wordt overgeslagen). Bij een moment: *Kopiëren naar andere dag…* (het dagdeel met alle tijdsblokken en lesjes). Inschrijvingen gaan nooit mee.
 - **Verplaatsen.**
   - Naar een ander dagdeel: `POST /api/beheer/deelnemers/<id>/dagdeel` met `{"van": "<dagdeel>", "naar": "<dagdeel>"}`.
   - Daarna een sessie toekennen: `POST /api/beheer/deelnemers/<id>/sessie` met `{"sessieId": "<sessie>"}`.
@@ -208,7 +221,7 @@ Persoonsgegevens staan versleuteld in D1. Rechtstreeks met SQL in de database ki
 
 ## Nog te bouwen
 
-- Beheerdashboard: deelnemerslijst op het scherm, verplaatsen, etiketten en klaslijsten per lesje, meldingen opvolgen.
+- Beheerdashboard: deelnemerslijst op het scherm, verplaatsen, etiketten, meldingen opvolgen.
 - Herinneringsmail en mail bij doorschuiven van de wachtlijst.
 - QR-check-in op de dag zelf (fase 2). De velden `aanwezig` en `checkin_datum` bestaan al.
 - Officiële lijst van Belgische gemeenten (NIS-codes).

@@ -1,4 +1,4 @@
-import { controleerToegang, type Gebruiker } from '../middleware/toegang';
+import { controleerToegang, isToegelatenEmail, TOEGELATEN_DOMEIN, type Gebruiker } from '../middleware/toegang';
 import type { Env } from '../types';
 import { ValidatieFout } from '../validatie';
 import { audit } from './beheer';
@@ -24,7 +24,10 @@ export interface Veld {
   opties?: { waarde: string; label: string }[];
   ref?: 'doelgroep' | 'soort' | 'locatie';
   min?: number;
+  max?: number;
   hulp?: string;
+  /** E-mailadres moet van het eigen domein zijn (er gaan persoonsgegevens naartoe). */
+  intern?: boolean;
   /** Waarde voor een nieuw record. */
   standaard?: unknown;
 }
@@ -66,10 +69,12 @@ export const SCHEMA: Record<Soort, Definitie> = {
         opties: opties(['leerling', 'Leerlingen (met ouder als contact)'], ['volwassene', 'Volwassenen']) },
       { naam: 'leerjaar_opties', label: 'Keuzes voor leerjaar', type: 'lijst', standaard: [], hulp: 'Gescheiden door komma’s, bv. 5de leerjaar, 6de leerjaar' },
       { naam: 'max_dagdelen', label: 'Max. aantal momenten per inschrijving', type: 'getal', min: 1, verplicht: true, standaard: 1 },
-      { naam: 'contact_email', label: 'Contactadres', type: 'email' },
+      { naam: 'contact_email', label: 'E-mailadres voor vragen', type: 'email',
+        hulp: 'Voor extra info. Staat op het formulier, in de bevestigingsmail en op de persoonlijke pagina van de inschrijver.' },
       { naam: 'privacy_tekst', label: 'Privacytekst', type: 'lang' },
       { naam: 'bewaartermijn_dagen', label: 'Bewaartermijn (dagen na het evenement)', type: 'getal', min: 0, verplicht: true, standaard: 30 },
       { naam: 'logo', label: 'Logo', type: 'logo', hulp: 'PNG, JPG of WebP, max. 500 kB. Verschijnt bovenaan het formulier.' },
+      { naam: 'logo_hoogte', label: 'Hoogte logo (pixels)', type: 'getal', min: 20, max: 400, hulp: 'Leeg = 135. De breedte past zich automatisch aan.' },
       { naam: 'kleur_primair', label: 'Hoofdkleur', type: 'kleur', hulp: 'Knoppen, titels en links. Leeg = standaard blauw.' },
       { naam: 'kleur_accent', label: 'Accentkleur', type: 'kleur', hulp: 'Markeringen en focus. Leeg = standaard.' },
       { naam: 'opmerkingen', label: 'Interne opmerkingen', type: 'lang' },
@@ -145,6 +150,8 @@ export const SCHEMA: Record<Soort, Definitie> = {
       { naam: 'doelgroep_id', label: 'Doelgroep', type: 'ref', ref: 'doelgroep', hulp: 'Leeg = iedereen' },
       { naam: 'locatie_id', label: 'Lokaal', type: 'ref', ref: 'locatie' },
       { naam: 'capaciteit', label: 'Max. deelnemers', type: 'getal', min: 0, hulp: 'Leeg = onbeperkt' },
+      { naam: 'lesgever', label: 'Leerkracht', type: 'tekst', hulp: 'Verschijnt op de rapporten' },
+      { naam: 'lesgever_email', label: 'E-mail leerkracht', type: 'email', intern: true, hulp: 'Enkel @onderwijs.gent.be. Krijgt de klaslijst via "Mailen".' },
       { naam: 'status', label: 'Status', type: 'keuze', verplicht: true, standaard: 'open',
         opties: opties(['open', 'Open'], ['gesloten', 'Gesloten'], ['geannuleerd', 'Geannuleerd']) },
       { naam: 'zichtbaar', label: 'Zichtbaar', type: 'jaNee', standaard: true },
@@ -222,6 +229,7 @@ function zetOm(v: Veld, waarde: unknown): unknown {
       const n = Number(s);
       if (!Number.isInteger(n) || n > 1_000_000) throw fout('Geef een geheel getal.');
       if (v.min !== undefined && n < v.min) throw fout(`Minstens ${v.min}.`);
+      if (v.max !== undefined && n > v.max) throw fout(`Hoogstens ${v.max}.`);
       return n;
     }
     case 'keuze':
@@ -235,6 +243,7 @@ function zetOm(v: Veld, waarde: unknown): unknown {
       return s.toLowerCase();
     case 'email':
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s) || s.length > 254) throw fout('Geef een geldig e-mailadres.');
+      if (v.intern && !isToegelatenEmail(s)) throw fout(`Enkel een adres @${TOEGELATEN_DOMEIN}.`);
       return s.toLowerCase();
   }
   return s;
@@ -464,4 +473,99 @@ export async function verwijderLogo(env: Env, g: Gebruiker, evenementId: string,
     audit(env, g, 'evenementen', evenementId, 'LOGO_VERWIJDERD', undefined, ip),
   ]);
   return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Kopiëren naar andere momenten
+// ---------------------------------------------------------------------------
+/** Kolommen van een lesje die mee gekopieerd worden (alles uit het schema, zonder id's en tellingen). */
+const SESSIE_KOLOMMEN = SCHEMA.sessie.velden.map((v) => v.naam);
+
+/** Alle records moeten bij één evenement horen, waarop de gebruiker schrijfrechten heeft. */
+async function zelfdeEvenement(env: Env, g: Gebruiker, delen: [Soort, string[]][]): Promise<string> {
+  const ids = await Promise.all(delen.flatMap(([soort, lijst]) => lijst.map((id) => evenementVan(env, soort, id))));
+  const evenementId = ids[0];
+  if (!evenementId || ids.some((e) => e !== evenementId)) throw new DbFout('GEEN_TOEGANG');
+  await controleerToegang(env, g, evenementId, true);
+  return evenementId;
+}
+
+/**
+ * Kopieert lesjes naar andere tijdsblokken (bv. Keuzelesje 1 → Keuzelesje 2, of naar de tweede dag).
+ * Een lesje met dezelfde code of titel in het doelblok wordt overgeslagen, zodat opnieuw kopiëren geen dubbels geeft.
+ */
+export async function kopieerSessies(env: Env, g: Gebruiker, sessieIds: string[], naarTijdsblokIds: string[], ip: string | null) {
+  await zelfdeEvenement(env, g, [['sessie', sessieIds], ['tijdsblok', naarTijdsblokIds]]);
+  const db = env.DB;
+  const lijst = (n: number) => Array(n).fill('?').join(', ');
+  const [bron, doel] = await db.batch<any>([
+    db.prepare(`select sessie_id, tijdsblok_id, code, titel from sessies where sessie_id in (${lijst(sessieIds.length)})`).bind(...sessieIds),
+    db.prepare(
+      `select t.tijdsblok_id, t.naam, s.code, s.titel from tijdsblokken t left join sessies s on s.tijdsblok_id = t.tijdsblok_id
+       where t.tijdsblok_id in (${lijst(naarTijdsblokIds.length)})`,
+    ).bind(...naarTijdsblokIds),
+  ]);
+  const gelijk = (a: string | null, b: string | null) => !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
+  const stmts: D1PreparedStatement[] = [];
+  const overgeslagen: { titel: string; tijdsblok: string }[] = [];
+  for (const t of naarTijdsblokIds) {
+    const bestaand = doel.results.filter((r: any) => r.tijdsblok_id === t);
+    for (const s of bron.results as any[]) {
+      if (s.tijdsblok_id === t) continue;
+      if (bestaand.some((b: any) => gelijk(b.code, s.code) || gelijk(b.titel, s.titel))) {
+        overgeslagen.push({ titel: s.titel, tijdsblok: bestaand[0]?.naam ?? '' });
+        continue;
+      }
+      const id = crypto.randomUUID();
+      stmts.push(
+        db.prepare(
+          `insert into sessies (sessie_id, tijdsblok_id, created_by, ${SESSIE_KOLOMMEN.join(', ')})
+           select ?, ?, ?, ${SESSIE_KOLOMMEN.join(', ')} from sessies where sessie_id = ?`,
+        ).bind(id, t, g.gebruikerId, s.sessie_id),
+        audit(env, g, 'sessies', id, 'KOPIEREN', { van: s.sessie_id, naar: t }, ip),
+      );
+    }
+  }
+  if (stmts.length) await db.batch(stmts);
+  return { gekopieerd: stmts.length / 2, overgeslagen };
+}
+
+/** Kopieert een moment (dagdeel) met al zijn tijdsblokken en lesjes naar andere dagen. */
+export async function kopieerDagdeel(env: Env, g: Gebruiker, dagdeelId: string, naarDagIds: string[], ip: string | null) {
+  await zelfdeEvenement(env, g, [['dagdeel', [dagdeelId]], ['dag', naarDagIds]]);
+  const db = env.DB;
+  const [blokken, sessies] = await db.batch<any>([
+    db.prepare(`select tijdsblok_id from tijdsblokken where dagdeel_id = ?`).bind(dagdeelId),
+    db.prepare(`select s.sessie_id, s.tijdsblok_id from sessies s join tijdsblokken t on t.tijdsblok_id = s.tijdsblok_id where t.dagdeel_id = ?`).bind(dagdeelId),
+  ]);
+  const stmts: D1PreparedStatement[] = [];
+  for (const dag of naarDagIds) {
+    const nieuwDagdeel = crypto.randomUUID();
+    stmts.push(
+      db.prepare(
+        `insert into dagdelen (dagdeel_id, dag_id, naam, start_uur, eind_uur, capaciteit, volgorde, status)
+         select ?, ?, naam, start_uur, eind_uur, capaciteit, volgorde, status from dagdelen where dagdeel_id = ?`,
+      ).bind(nieuwDagdeel, dag, dagdeelId),
+      audit(env, g, 'dagdelen', nieuwDagdeel, 'KOPIEREN', { van: dagdeelId, naar: dag }, ip),
+    );
+    for (const t of blokken.results as { tijdsblok_id: string }[]) {
+      const nieuwBlok = crypto.randomUUID();
+      stmts.push(
+        db.prepare(
+          `insert into tijdsblokken (tijdsblok_id, dagdeel_id, naam, omschrijving, start_uur, eind_uur, volgorde, type, verplicht)
+           select ?, ?, naam, omschrijving, start_uur, eind_uur, volgorde, type, verplicht from tijdsblokken where tijdsblok_id = ?`,
+        ).bind(nieuwBlok, nieuwDagdeel, t.tijdsblok_id),
+      );
+      for (const s of (sessies.results as { sessie_id: string; tijdsblok_id: string }[]).filter((x) => x.tijdsblok_id === t.tijdsblok_id)) {
+        stmts.push(
+          db.prepare(
+            `insert into sessies (sessie_id, tijdsblok_id, created_by, ${SESSIE_KOLOMMEN.join(', ')})
+             select ?, ?, ?, ${SESSIE_KOLOMMEN.join(', ')} from sessies where sessie_id = ?`,
+          ).bind(crypto.randomUUID(), nieuwBlok, g.gebruikerId, s.sessie_id),
+        );
+      }
+    }
+  }
+  await db.batch(stmts);
+  return { gekopieerd: naarDagIds.length };
 }

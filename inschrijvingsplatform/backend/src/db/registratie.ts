@@ -1,7 +1,7 @@
 import { blindeIndex, ontsleutel, versleutel } from '../crypto/versleuteling';
 import type { Env, Keuze, Moment, RegistratieInvoer, RegistratieResultaat } from '../types';
 import { plaatshouders, promoveerWachtlijst, referentie, STATUS_DAGDEEL, STATUS_SESSIE, vandaag } from './capaciteit';
-import { binnen } from './evenement';
+import { binnen, publiekEvenement } from './evenement';
 import { DbFout, schrijf } from './fouten';
 
 /**
@@ -195,18 +195,24 @@ export async function registratieViaToken(env: Env, tokenHash: string) {
   const db = env.DB;
   const dn = await db
     .prepare(
-      `select dn.deelnemer_id, dn.status, dn.naam_enc, dn.voornaam_enc, e.titel, e.slug, e.contact_email
+      `select dn.deelnemer_id, dn.status, dn.naam_enc, dn.voornaam_enc, dn.doelgroep_id, e.titel, e.slug, e.contact_email,
+              e.status as evenement_status, e.inschrijving_vanaf, e.inschrijving_tot, coalesce(gr.sessiekeuze, 1) as sessiekeuze
        from deelnemers dn join evenementen e on e.evenement_id = dn.evenement_id
+       left join doelgroepen gr on gr.doelgroep_id = dn.doelgroep_id
        where dn.beheer_token_hash = ? and dn.geanonimiseerd_op is null`,
     )
     .bind(tokenHash)
-    .first<{ deelnemer_id: string; status: 'actief' | 'geannuleerd'; naam_enc: string; voornaam_enc: string; titel: string; slug: string; contact_email: string | null }>();
+    .first<{
+      deelnemer_id: string; status: 'actief' | 'geannuleerd'; naam_enc: string; voornaam_enc: string; doelgroep_id: string | null;
+      titel: string; slug: string; contact_email: string | null;
+      evenement_status: string; inschrijving_vanaf: string | null; inschrijving_tot: string | null; sessiekeuze: number;
+    }>();
   if (!dn) return null;
 
   const [momenten, keuzes, voorbij] = await db.batch<any>([
     db
       .prepare(
-        `select d.naam as dag, dd.naam as dagdeel, dd.start_uur as startUur, dd.eind_uur as eindUur, i.status
+        `select dd.dagdeel_id as dagdeelId, d.naam as dag, dd.naam as dagdeel, dd.start_uur as startUur, dd.eind_uur as eindUur, i.status
          from inschrijvingen i join dagdelen dd on dd.dagdeel_id = i.dagdeel_id join evenement_dagen d on d.dag_id = i.dag_id
          where i.deelnemer_id = ? and i.sessie_id is null
          order by d.datum, dd.start_uur`,
@@ -214,7 +220,8 @@ export async function registratieViaToken(env: Env, tokenHash: string) {
       .bind(dn.deelnemer_id),
     db
       .prepare(
-        `select s.titel, t.naam as tijdsblok, t.start_uur as startUur, l.naam as locatie, i.status
+        `select s.sessie_id as sessieId, i.tijdsblok_id as tijdsblokId, s.titel, t.naam as tijdsblok, t.start_uur as startUur,
+                l.naam as locatie, i.status
          from inschrijvingen i join sessies s on s.sessie_id = i.sessie_id join tijdsblokken t on t.tijdsblok_id = i.tijdsblok_id
          left join locaties l on l.locatie_id = s.locatie_id
          where i.deelnemer_id = ?
@@ -224,6 +231,15 @@ export async function registratieViaToken(env: Env, tokenHash: string) {
     heeftVoorbijeDag(db, dn.deelnemer_id),
   ]);
 
+  const actief = dn.status === 'actief' && voorbij.results[0].n === 0;
+  const alleKeuzes = keuzes.results as (Keuze & { tijdsblokId: string })[];
+  // Een gewijzigde keuze laat een geannuleerde rij achter: toon enkel de huidige (tenzij alles geannuleerd is).
+  const zichtbareKeuzes = dn.status === 'geannuleerd' ? alleKeuzes : alleKeuzes.filter((k) => k.status !== 'geannuleerd');
+  const wijzigen =
+    actief && dn.sessiekeuze === 1 && dn.evenement_status === 'gepubliceerd' && binnen(Date.now(), dn.inschrijving_vanaf, dn.inschrijving_tot)
+      ? await keuzeOpties(env, dn.slug, momenten.results as Moment[], zichtbareKeuzes, dn.doelgroep_id)
+      : null;
+
   return {
     referentie: referentie(dn.deelnemer_id),
     evenement: dn.titel,
@@ -232,10 +248,135 @@ export async function registratieViaToken(env: Env, tokenHash: string) {
     status: dn.status,
     voornaam: await ontsleutel(env, dn.voornaam_enc),
     naam: await ontsleutel(env, dn.naam_enc),
-    annuleerbaar: dn.status === 'actief' && voorbij.results[0].n === 0,
+    annuleerbaar: actief,
     momenten: momenten.results as Moment[],
-    keuzes: keuzes.results as Keuze[],
+    keuzes: zichtbareKeuzes,
+    wijzigen,
   };
+}
+
+/**
+ * Wat de inschrijver nog kan kiezen: de eigen dagdelen (zoals op het formulier, met vrije plaatsen)
+ * en de huidige keuze per tijdsblok. Null als er niets (meer) te kiezen valt.
+ */
+async function keuzeOpties(env: Env, slug: string, momenten: Moment[], keuzes: (Keuze & { tijdsblokId: string })[], doelgroepId: string | null) {
+  const ev = await publiekEvenement(env, slug);
+  if (!ev) return null;
+  const eigen = new Set(momenten.filter((m) => m.status !== 'geannuleerd').map((m) => m.dagdeelId));
+  const dagen = ev.dagen
+    .filter((d) => d.sessiekeuzeOpen)
+    .flatMap((d) => d.dagdelen.filter((dd) => eigen.has(dd.id)).map((dagdeel) => ({ dagNaam: d.naam, dagdeel })))
+    .filter((x) => x.dagdeel.tijdsblokken.some((t) => t.type === 'keuze'));
+  if (!dagen.length) return null;
+  const huidig: Record<string, string> = {};
+  for (const x of dagen) for (const t of x.dagdeel.tijdsblokken) if (t.type === 'keuze') huidig[t.id] = '';
+  for (const k of keuzes) if (k.tijdsblokId in huidig) huidig[k.tijdsblokId] = k.sessieId!;
+  return { doelgroepId: doelgroepId ?? '', dagen, keuzes: huidig };
+}
+
+/**
+ * Lesjes wijzigen via de persoonlijke link. Enkel blokken waarin iets verandert worden aangeraakt:
+ * de oude keuze wordt geannuleerd (en de wachtlijst schuift door), de nieuwe ingevoegd met dezelfde
+ * capaciteitscontrole als bij inschrijven, alles in één batch. `sessies` = de gewenste keuzes in de
+ * dagdelen waar kiezen nog open is; keuzes in andere dagdelen blijven ongewijzigd.
+ */
+export async function wijzigKeuzesViaToken(env: Env, tokenHash: string, sessies: string[]) {
+  const db = env.DB;
+  const dn = await db
+    .prepare(
+      `select dn.deelnemer_id, dn.doelgroep_id, e.status as evenement_status, e.inschrijving_vanaf, e.inschrijving_tot,
+              coalesce(gr.sessiekeuze, 1) as sessiekeuze
+       from deelnemers dn join evenementen e on e.evenement_id = dn.evenement_id
+       left join doelgroepen gr on gr.doelgroep_id = dn.doelgroep_id
+       where dn.beheer_token_hash = ? and dn.status = 'actief' and dn.geanonimiseerd_op is null`,
+    )
+    .bind(tokenHash)
+    .first<{ deelnemer_id: string; doelgroep_id: string | null; evenement_status: string; inschrijving_vanaf: string | null; inschrijving_tot: string | null; sessiekeuze: number }>();
+  if (!dn) throw new DbFout('REGISTRATIE_NIET_GEVONDEN');
+  const id = dn.deelnemer_id;
+  const nu = Date.now();
+  if (dn.evenement_status !== 'gepubliceerd' || !binnen(nu, dn.inschrijving_vanaf, dn.inschrijving_tot) || !dn.sessiekeuze) {
+    throw new DbFout('NIET_MEER_WIJZIGBAAR');
+  }
+  if (new Set(sessies).size !== sessies.length) throw new DbFout('ONGELDIGE_SESSIEKEUZE');
+
+  const [voorbij, dagdelenR, huidigR, gekozenR] = await db.batch<any>([
+    heeftVoorbijeDag(db, id),
+    db
+      .prepare(
+        `select i.dagdeel_id, d.sessiekeuze_tot from inschrijvingen i join evenement_dagen d on d.dag_id = i.dag_id
+         where i.deelnemer_id = ? and i.sessie_id is null and i.status <> 'geannuleerd'`,
+      )
+      .bind(id),
+    db
+      .prepare(`select inschrijving_id, sessie_id, dagdeel_id from inschrijvingen where deelnemer_id = ? and sessie_id is not null and status <> 'geannuleerd'`)
+      .bind(id),
+    db
+      .prepare(
+        `select s.sessie_id, s.tijdsblok_id, s.code, s.doelgroep_id, s.uniek_per_deelnemer, s.status, s.zichtbaar, t.type, t.dagdeel_id
+         from sessies s join tijdsblokken t on t.tijdsblok_id = s.tijdsblok_id
+         where s.sessie_id in (${plaatshouders(Math.max(sessies.length, 1))})`,
+      )
+      .bind(...(sessies.length ? sessies : [''])),
+  ]);
+  if (voorbij.results[0].n > 0) throw new DbFout('NIET_MEER_WIJZIGBAAR');
+
+  const keuzeOpen = new Map<string, boolean>(
+    dagdelenR.results.map((dd: any) => [dd.dagdeel_id, dd.sessiekeuze_tot == null || nu <= Date.parse(dd.sessiekeuze_tot)]),
+  );
+  const huidig = huidigR.results as { inschrijving_id: string; sessie_id: string; dagdeel_id: string }[];
+  const gekozen = gekozenR.results as any[];
+  const alGekozen = new Set(huidig.map((h) => h.sessie_id));
+
+  // Elke gevraagde keuze: in een eigen dagdeel waar kiezen nog open is en voor de juiste doelgroep;
+  // een nieuw lesje moet bovendien open en zichtbaar zijn (een huidig lesje mag blijven).
+  const geldig = gekozen.filter(
+    (s) =>
+      s.type === 'keuze' &&
+      keuzeOpen.get(s.dagdeel_id) === true &&
+      (s.doelgroep_id == null || s.doelgroep_id === dn.doelgroep_id) &&
+      (alGekozen.has(s.sessie_id) || (s.status === 'open' && s.zichtbaar === 1)),
+  );
+  if (geldig.length !== sessies.length) throw new DbFout('ONGELDIGE_SESSIEKEUZE');
+  if (new Set(gekozen.map((s) => s.tijdsblok_id)).size !== gekozen.length) throw new DbFout('MEERDERE_SESSIES_IN_TIJDSBLOK');
+  const codes = gekozen.filter((s) => s.uniek_per_deelnemer === 1 && s.code != null).map((s) => s.code);
+  if (new Set(codes).size !== codes.length) throw new DbFout('ZELFDE_ONDERDEEL_DUBBEL');
+
+  const open = [...keuzeOpen.entries()].filter(([, o]) => o).map(([dd]) => dd);
+  if (open.length) {
+    const verplicht = await db
+      .prepare(`select tijdsblok_id from tijdsblokken where type = 'keuze' and verplicht = 1 and dagdeel_id in (${plaatshouders(open.length)})`)
+      .bind(...open)
+      .all<{ tijdsblok_id: string }>();
+    if (verplicht.results.some((t) => !gekozen.some((s) => s.tijdsblok_id === t.tijdsblok_id))) throw new DbFout('VERPLICHT_TIJDSBLOK_ONTBREEKT');
+  }
+
+  const weg = huidig.filter((h) => keuzeOpen.get(h.dagdeel_id) && !sessies.includes(h.sessie_id));
+  const erbij = gekozen.filter((s) => !alGekozen.has(s.sessie_id));
+  if (!weg.length && !erbij.length) return { gewijzigd: false };
+
+  try {
+    await schrijf(db, [
+      // Eerst de oude keuzes vrijgeven, zodat de unieke index (één keuze per tijdsblok) de nieuwe toelaat
+      ...weg.map((h) => db.prepare(`update inschrijvingen set status = 'geannuleerd' where inschrijving_id = ?`).bind(h.inschrijving_id)),
+      ...erbij.map((s) =>
+        db
+          .prepare(
+            `insert into inschrijvingen (inschrijving_id, deelnemer_id, evenement_id, dag_id, dagdeel_id, tijdsblok_id, sessie_id, status)
+             select ?1, ?2, d.evenement_id, dd.dag_id, dd.dagdeel_id, s.tijdsblok_id, s.sessie_id, ${STATUS_SESSIE}
+             from sessies s join tijdsblokken t on t.tijdsblok_id = s.tijdsblok_id join dagdelen dd on dd.dagdeel_id = t.dagdeel_id
+             join evenement_dagen d on d.dag_id = dd.dag_id
+             where s.sessie_id = ?3`,
+          )
+          .bind(crypto.randomUUID(), id, s.sessie_id),
+      ),
+      ...weg.map((h) => promoveerWachtlijst(db, h.sessie_id)),
+    ]);
+  } catch (fout) {
+    if (fout instanceof DbFout) await welkeIsVolzet(env, fout, [], erbij.map((s) => s.sessie_id));
+    throw fout;
+  }
+  return { gewijzigd: true };
 }
 
 /** Gegevens voor de annulatiemail; op te halen vóór het annuleren. */

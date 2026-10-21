@@ -113,6 +113,8 @@ export interface InstellingVeld {
   verplicht?: boolean;
   opties?: { waarde: string; label: string }[];
   ref?: 'doelgroep' | 'soort' | 'locatie';
+  min?: number;
+  max?: number;
   hulp?: string;
   standaard?: unknown;
 }
@@ -128,4 +130,145 @@ export const instellingenApi = {
   uploadLogo: (evenementId: string, bestand: File) =>
     call<{ logo: string }>(`/api/beheer/evenementen/${encodeURIComponent(evenementId)}/logo`, { method: 'POST', ruw: { data: bestand, type: bestand.type } }),
   verwijderLogo: (evenementId: string) => call<{ ok: true }>(`/api/beheer/evenementen/${encodeURIComponent(evenementId)}/logo`, { method: 'DELETE' }),
+};
+
+export const kopieerApi = {
+  /** Lesjes naar andere tijdsblokken; een lesje dat er al staat (zelfde code of titel) wordt overgeslagen. */
+  sessies: (ids: string[], naar: string[]) =>
+    post<{ gekopieerd: number; overgeslagen: { titel: string; tijdsblok: string }[] }>('/api/beheer/kopieer', { soort: 'sessies', ids, naar }),
+  /** Een moment (dagdeel) met tijdsblokken en lesjes naar andere dagen. */
+  dagdeel: (id: string, naar: string[]) => post<{ gekopieerd: number }>('/api/beheer/kopieer', { soort: 'dagdeel', ids: [id], naar }),
+};
+
+// ---------------------------------------------------------------------------
+// Rapporten
+// ---------------------------------------------------------------------------
+export interface RapportDeelnemer {
+  voornaam: string;
+  naam: string;
+  school: string;
+  leerjaar: string;
+  status: 'bevestigd' | 'wachtlijst';
+}
+
+export interface RapportSessie {
+  id: string;
+  titel: string;
+  locatieId: string | null;
+  lokaal: string | null;
+  lesgever: string | null;
+  lesgeverEmail: string | null;
+  capaciteit: number | null;
+  status: string;
+  zichtbaar: boolean;
+  bevestigd: number;
+  wachtlijst: number;
+  deelnemers: RapportDeelnemer[];
+}
+
+export interface RapportTijdsblok {
+  id: string;
+  naam: string;
+  startUur: string;
+  eindUur: string;
+  sessies: RapportSessie[];
+  zonderKeuze: RapportDeelnemer[];
+}
+
+export interface RapportDagdeel {
+  id: string;
+  naam: string;
+  startUur: string;
+  eindUur: string;
+  capaciteit: number | null;
+  status: string;
+  ingeschreven: number;
+  tijdsblokken: RapportTijdsblok[];
+}
+
+export interface Rapport {
+  kanSchrijven: boolean;
+  evenement: { id: string; titel: string; slug: string };
+  teksten: Record<string, string>;
+  locaties: { waarde: string; label: string }[];
+  dagen: { id: string; naam: string; datum: string; dagdelen: RapportDagdeel[] }[];
+}
+
+const rapportPad = (id: string) => `/api/beheer/evenementen/${encodeURIComponent(id)}/rapport`;
+
+export const rapportApi = {
+  lees: (evenementId: string) => call<Rapport>(rapportPad(evenementId)),
+  bewaarTeksten: (evenementId: string, teksten: Record<string, string>) =>
+    call<{ teksten: Record<string, string> }>(`${rapportPad(evenementId)}/teksten`, { method: 'PATCH', body: { teksten } }),
+  mail: (evenementId: string, sessieIds: string[]) =>
+    post<{ verzonden: number; zonderAdres: string[]; mislukt: string[] }>(`${rapportPad(evenementId)}/mail`, { sessieIds }),
+};
+
+// ---------------------------------------------------------------------------
+// Etiketten
+// ---------------------------------------------------------------------------
+export interface EtiketRegel {
+  tekst: string;
+  pt: number;
+  vet: boolean;
+  /** Op één lijn, zo groot mogelijk tot `pt`. */
+  passend: boolean;
+  /** Herhaald voor elk lesje van de deelnemer. */
+  perLesje: boolean;
+}
+
+export interface EtiketInstellingen {
+  blad: { breedte: number; hoogte: number };
+  kolommen: number;
+  rijen: number;
+  marge: { boven: number; onder: number; links: number; rechts: number };
+  tussen: { horizontaal: number; verticaal: number };
+  binnen: number;
+  regels: EtiketRegel[];
+}
+
+export interface EtiketLesje {
+  titel: string;
+  locatieId: string | null;
+  dagdeelId: string;
+  moment: string;
+  startUur: string;
+  eindUur: string;
+}
+
+export interface EtiketDeelnemer {
+  voornaam: string;
+  naam: string;
+  school: string;
+  leerjaar: string;
+  doelgroep: string;
+  dagdelen: string[];
+  lesjes: EtiketLesje[];
+}
+
+export interface EtiketLokaal {
+  id: string;
+  naam: string;
+  lokaal: string | null;
+  gebouw: string | null;
+  verdieping: string | null;
+}
+
+export interface Etiketten {
+  kanSchrijven: boolean;
+  evenement: { id: string; titel: string; slug: string };
+  instellingen: EtiketInstellingen | null;
+  dagdelen: { id: string; naam: string }[];
+  lokalen: EtiketLokaal[];
+  deelnemers: EtiketDeelnemer[];
+}
+
+const etiketPad = (id: string) => `/api/beheer/evenementen/${encodeURIComponent(id)}/etiketten`;
+
+export const etiketApi = {
+  lees: (evenementId: string) => call<Etiketten>(etiketPad(evenementId)),
+  bewaar: (evenementId: string, instellingen: EtiketInstellingen | null) =>
+    call<{ instellingen: EtiketInstellingen | null }>(`${etiketPad(evenementId)}/instellingen`, { method: 'PATCH', body: { instellingen } }),
+  zetVerdieping: (evenementId: string, locatieId: string, verdieping: string) =>
+    call<{ verdieping: string | null }>(`${etiketPad(evenementId)}/lokalen/${encodeURIComponent(locatieId)}`, { method: 'PATCH', body: { verdieping } }),
 };

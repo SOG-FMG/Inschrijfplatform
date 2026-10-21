@@ -14,6 +14,7 @@ interface EvenementRij {
   privacy_tekst: string | null;
   bewaartermijn_dagen: number;
   logo: string | null;
+  logo_hoogte: number | null;
   afbeelding: string | null;
   kleur_primair: string | null;
   kleur_accent: string | null;
@@ -90,6 +91,7 @@ export async function publiekEvenement(env: Env, slug: string) {
     privacyTekst: e.privacy_tekst,
     bewaartermijnDagen: e.bewaartermijn_dagen,
     logo: e.logo,
+    logoHoogte: e.logo_hoogte,
     afbeelding: e.afbeelding,
     kleurPrimair: e.kleur_primair,
     kleurAccent: e.kleur_accent,

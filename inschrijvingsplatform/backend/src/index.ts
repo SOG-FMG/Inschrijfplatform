@@ -4,11 +4,13 @@ import { sha256 } from './crypto/versleuteling';
 import { anonimiseerEvenement, anonimiseerVerlopenEvenementen, audit, deelnemerslijst, kenSessieToe, verplaatsDagdeel } from './db/beheer';
 import { publiekEvenement, scholen } from './db/evenement';
 import { DbFout } from './db/fouten';
-import { bewaarLogo, instellingen, isSoort, maak, verwijder, verwijderLogo, wijzig } from './db/instellingen';
+import { bewaarLogo, instellingen, isSoort, kopieerDagdeel, kopieerSessies, maak, verwijder, verwijderLogo, wijzig } from './db/instellingen';
 import { bewaarMelding, lijstMeldingen, MeldingFout, ruimMeldingenOp, zetStatusMelding } from './db/meldingen';
-import { annulatieGegevens, annuleerViaToken, registratieViaToken, registreer } from './db/registratie';
-import { annulatiemail, bevestigingsmail, meldingsmail, type Mail, testmail, verstuur } from './mail';
-import { huidigeGebruiker, isToegelatenEmail } from './middleware/toegang';
+import { bewaarEtiketInstellingen, etiketten, zetVerdieping } from './db/etiketten';
+import { bewaarTeksten, klaslijstenPerLeerkracht, rapport } from './db/rapporten';
+import { annulatieGegevens, annuleerViaToken, registratieViaToken, registreer, wijzigKeuzesViaToken } from './db/registratie';
+import { annulatiemail, bevestigingsmail, klaslijstmail, meldingsmail, type Mail, testmail, verstuur, wijzigingsmail } from './mail';
+import { type Gebruiker, huidigeGebruiker, isToegelatenEmail } from './middleware/toegang';
 import type { Env } from './types';
 import { isUuid, ValidatieFout, valideerRegistratie } from './validatie';
 
@@ -31,6 +33,7 @@ const MELDINGEN: Record<string, [number, string]> = {
   SESSIE_VOLZET: [409, 'Een gekozen onderdeel is intussen volzet. Kies een ander onderdeel.'],
   REGISTRATIE_NIET_GEVONDEN: [404, 'Deze inschrijving werd niet gevonden of is al geannuleerd.'],
   NIET_MEER_ANNULEERBAAR: [409, 'Deze inschrijving kan niet meer geannuleerd worden.'],
+  NIET_MEER_WIJZIGBAAR: [409, 'Je keuzes kunnen niet meer gewijzigd worden. Neem contact op met de organisatie.'],
   NIET_AANGEMELD: [401, 'Meld je aan om verder te gaan.'],
   AANMELDEN_MISLUKT: [401, 'Aanmelden mislukt. Controleer je gegevens en probeer opnieuw.'],
   ONGELDIGE_UITNODIGING: [400, 'Deze uitnodiging is ongeldig of verlopen.'],
@@ -161,6 +164,33 @@ function csv(rijen: Record<string, unknown>[], kolommen: string[], bestandsnaam:
   });
 }
 
+/** Mailt elke leerkracht de klaslijst(en) van zijn of haar lesjes. Enkel naar adressen van het eigen domein. */
+async function mailKlaslijsten(env: Env, g: Gebruiker, evenementId: string, body: any, ip: string | null) {
+  const sessieIds = Array.isArray(body?.sessieIds) ? body.sessieIds.filter((i: unknown) => typeof i === 'string').slice(0, 500) : [];
+  if (!sessieIds.length) throw new ValidatieFout({ sessieIds: 'Kies minstens één lesje.' });
+  const { evenement, perAdres, zonderAdres, afzender } = await klaslijstenPerLeerkracht(env, g, evenementId, sessieIds, ip);
+  const mislukt: string[] = [];
+  let verzonden = 0;
+  for (const [aan, lijsten] of perAdres) {
+    const mail = klaslijstmail({
+      aan,
+      evenement,
+      afzender,
+      lijsten: lijsten.map((l) => ({ titel: l.sessie.titel, moment: l.moment, uur: l.uur, lokaal: l.sessie.lokaal, capaciteit: l.sessie.capaciteit, deelnemers: l.sessie.deelnemers })),
+    });
+    try {
+      await verstuur(env, mail);
+      verzonden++;
+    } catch (e) {
+      console.error('klaslijstmail', String(e).slice(0, 200));
+      mislukt.push(...lijsten.map((l) => l.sessie.titel));
+    }
+  }
+  // Geen adressen of namen in het auditlog: enkel aantallen.
+  await audit(env, g, 'evenementen', evenementId, 'MAIL_KLASLIJSTEN', { lesjes: sessieIds.length, mails: verzonden, mislukt: mislukt.length }, ip).run();
+  return { verzonden, zonderAdres, mislukt };
+}
+
 async function beheerRoute(request: Request, env: Env, pad: string, m: string): Promise<Response> {
   const g = await huidigeGebruiker(request, env);
   const ip = request.headers.get('CF-Connecting-IP');
@@ -195,6 +225,31 @@ async function beheerRoute(request: Request, env: Env, pad: string, m: string): 
     }
     if (m === 'PATCH' && p[2]) return json(await wijzig(env, g, p[1], p[2], ((await leesJson(request, 64 * 1024)) as any)?.waarden ?? {}, ip));
     if (m === 'DELETE' && p[2]) return json(await verwijder(env, g, p[1], p[2], ip));
+  }
+
+  // Lesjes of een heel moment kopiëren naar andere momenten
+  if (m === 'POST' && pad === '/kopieer') {
+    const body = (await leesJson(request, 64 * 1024)) as any;
+    const ids = (x: unknown) => (Array.isArray(x) && x.length >= 1 && x.length <= 200 && x.every((i) => typeof i === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(i)) ? (x as string[]) : null);
+    const [bron, naar] = [ids(body?.ids), ids(body?.naar)];
+    if (!bron || !naar) throw new ValidatieFout({ kopieer: 'Kies wat je wil kopiëren en waarheen.' });
+    if (body.soort === 'sessies') return json(await kopieerSessies(env, g, bron, naar, ip));
+    if (body.soort === 'dagdeel' && bron.length === 1) return json(await kopieerDagdeel(env, g, bron[0], naar, ip));
+    throw new ValidatieFout({ kopieer: 'Onbekende soort.' });
+  }
+
+  // Rapporten: overzicht per dagdeel, per moment en klaslijsten per lesje
+  if ((p = pad.match(/^\/evenementen\/([A-Za-z0-9-]{1,64})\/rapport(?:\/(teksten|mail))?$/))) {
+    if (m === 'GET' && !p[2]) return json(await rapport(env, g, p[1], ip));
+    if (m === 'PATCH' && p[2] === 'teksten') return json(await bewaarTeksten(env, g, p[1], ((await leesJson(request, 64 * 1024)) as any)?.teksten, ip));
+    if (m === 'POST' && p[2] === 'mail') return json(await mailKlaslijsten(env, g, p[1], (await leesJson(request, 64 * 1024)) as any, ip));
+  }
+
+  // Etiketten: opmaak per evenement, verdieping per lokaal
+  if ((p = pad.match(/^\/evenementen\/([A-Za-z0-9-]{1,64})\/etiketten(?:\/(instellingen)|\/lokalen\/([A-Za-z0-9-]{1,64}))?$/))) {
+    if (m === 'GET' && !p[2] && !p[3]) return json(await etiketten(env, g, p[1], ip));
+    if (m === 'PATCH' && p[2]) return json(await bewaarEtiketInstellingen(env, g, p[1], ((await leesJson(request, 16 * 1024)) as any)?.instellingen, ip));
+    if (m === 'PATCH' && p[3]) return json(await zetVerdieping(env, g, p[1], p[3], ((await leesJson(request, 1024)) as any)?.verdieping, ip));
   }
 
   if (m === 'GET' && (p = pad.match(/^\/evenementen\/([0-9a-f-]{36})\/deelnemers\.csv$/)) && isUuid(p[1])) {
@@ -272,6 +327,21 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     if (m === 'GET') {
       const r = await registratieViaToken(env, hash);
       return r ? json(r) : json({ fout: 'REGISTRATIE_NIET_GEVONDEN', melding: MELDINGEN.REGISTRATIE_NIET_GEVONDEN[1] }, 404);
+    }
+    if (m === 'PATCH') {
+      if (await teSnel(env.RL_REGISTRATIE, request)) return teVeelAanvragen();
+      const sessies = ((await leesJson(request, 8 * 1024)) as any)?.sessies;
+      if (!Array.isArray(sessies) || sessies.length > 30 || !sessies.every((i) => typeof i === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(i))) {
+        throw new ValidatieFout({ sessies: 'Ongeldige keuze.' });
+      }
+      const { gewijzigd } = await wijzigKeuzesViaToken(env, hash, sessies);
+      const overzicht = await registratieViaToken(env, hash);
+      const gegevens = gewijzigd ? await annulatieGegevens(env, hash) : null;
+      if (gegevens?.email && overzicht) {
+        const beheerUrl = `${env.PUBLIC_APP_URL.replace(/\/$/, '')}/beheer/${p[1]}`;
+        stuurEnLog(env, ctx, gegevens.deelnemerId, wijzigingsmail({ ...gegevens, aan: gegevens.email, keuzes: overzicht.keuzes, beheerUrl }));
+      }
+      return json(overzicht);
     }
     if (m === 'DELETE') {
       const gegevens = await annulatieGegevens(env, hash);

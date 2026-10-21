@@ -4,16 +4,20 @@ import { beheerApi, type Profiel } from '../services/beheerApi';
 import { Account } from './Account';
 import { Aanmelden, Activeren, WachtwoordInstellen } from './Aanmelden';
 import './dashboard.css';
+import { Etiketten } from './Etiketten';
 import { Evenementen } from './Evenementen';
 import { Instellingen } from './Instellingen';
 import { Medewerkers } from './Medewerkers';
 import { Privacy } from './Privacy';
+import { Rapporten } from './Rapporten';
 import { Link, Melding, ROLNAAM, usePad } from './ui';
 
 /**
  * Beheer op /dashboard (desktop-eerst, werkt ook op een smartphone).
  *   /dashboard                     evenementen
  *   /dashboard/evenementen/<id>    instellingen van een evenement
+ *   /dashboard/evenementen/<id>/rapporten   overzichten en klaslijsten (afdrukken, Excel, mailen)
+ *   /dashboard/evenementen/<id>/etiketten   naametiketten met de lesjes (opmaak instelbaar)
  *   /dashboard/medewerkers         medewerkers (platformbeheer)
  *   /dashboard/account             eigen wachtwoord, authenticator en passkeys
  *   /dashboard/privacy             privacy per evenement
@@ -61,6 +65,8 @@ export function Dashboard() {
   let ev: RegExpMatchArray | null;
   if (pad === '/dashboard' || pad === '/dashboard/activeren') inhoud = <Evenementen profiel={profiel} naVerandering={laad} />;
   else if ((ev = pad.match(/^\/dashboard\/evenementen\/([A-Za-z0-9-]{1,64})$/))) inhoud = <Instellingen evenementId={ev[1]} naVerandering={laad} />;
+  else if ((ev = pad.match(/^\/dashboard\/evenementen\/([A-Za-z0-9-]{1,64})\/rapporten$/))) inhoud = <Rapporten key={ev[1]} evenementId={ev[1]} profiel={profiel} />;
+  else if ((ev = pad.match(/^\/dashboard\/evenementen\/([A-Za-z0-9-]{1,64})\/etiketten$/))) inhoud = <Etiketten key={ev[1]} evenementId={ev[1]} />;
   else if (pad === '/dashboard/medewerkers') inhoud = isBeheer ? <Medewerkers profiel={profiel} /> : <Melding soort="fout">Enkel voor platformbeheerders.</Melding>;
   else if (pad === '/dashboard/account') inhoud = <Account profiel={profiel} naVerandering={laad} />;
   else if (pad === '/dashboard/privacy') inhoud = <Privacy profiel={profiel} />;
