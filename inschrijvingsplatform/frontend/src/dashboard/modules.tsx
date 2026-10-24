@@ -4,6 +4,7 @@ import { Account } from './Account';
 import { Etiketten } from './Etiketten';
 import { Evenementen } from './Evenementen';
 import { Instellingen } from './Instellingen';
+import { Mailteksten } from './Mailteksten';
 import { Medewerkers } from './Medewerkers';
 import { Meldingen } from './Meldingen';
 import { Privacy } from './Privacy';
@@ -90,5 +91,10 @@ export const DASHBOARD_MODULES: DashboardModule[] = [
     id: 'voorinschrijvingen',
     menu: [{ href: '/dashboard/voorinschrijvingen', label: 'Voorinschrijvingen', volgorde: 15, recht: 'voorinschrijvingen.beheren', actief: (p) => p.startsWith('/dashboard/voorinschrijvingen') }],
     paginas: [{ patroon: /^\/dashboard\/voorinschrijvingen$/, recht: 'voorinschrijvingen.beheren', toon: (_m, c) => <Voorinschrijvingen profiel={c.profiel} /> }],
+  },
+  {
+    id: 'mailsjablonen',
+    menu: [{ href: '/dashboard/mailteksten', label: 'Mailteksten', volgorde: 40, recht: 'mailsjablonen.beheren', actief: (p) => p.startsWith('/dashboard/mailteksten') }],
+    paginas: [{ patroon: /^\/dashboard\/mailteksten$/, recht: 'mailsjablonen.beheren', toon: () => <Mailteksten /> }],
   },
 ];

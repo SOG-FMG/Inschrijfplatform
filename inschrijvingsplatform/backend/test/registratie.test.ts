@@ -1099,3 +1099,124 @@ describe('contacten, personen en uitnodigingen', () => {
     expect(await een(`select count(*) as n from personen where contact_id = ?`, gezin)).toEqual({ n: 3 });
   });
 });
+
+describe('mailteksten aanpassen (module mailsjablonen)', () => {
+  const URL_FLOW = 'https://prod-12.westeurope.logic.azure.com:443/workflows/abc/triggers/manual/paths/invoke?sig=geheim';
+  const echteFetch = globalThis.fetch;
+  let mails: any[] = [];
+
+  beforeAll(() => {
+    env.DEV_BEHEER_EMAIL = 'import.test@onderwijs.gent.be'; // platformbeheerder
+    env.MAIL_PROVIDER = 'webhook';
+    env.MAIL_WEBHOOK_URL = URL_FLOW;
+    env.MAIL_WEBHOOK_SLEUTEL = 'testsleutel-123';
+    globalThis.fetch = (async (url: any, init?: any) => {
+      if (String(url).startsWith('https://prod-12.westeurope.logic.azure.com')) {
+        mails.push(JSON.parse(init.body));
+        return new Response(null, { status: 202 });
+      }
+      return echteFetch(url, init);
+    }) as typeof fetch;
+  });
+  afterAll(async () => {
+    await sql(`delete from mailsjablonen`);
+    await sql(`delete from mailopmaak`);
+    globalThis.fetch = echteFetch;
+    env.MAIL_PROVIDER = 'log';
+  });
+
+  test('lijst met sjablonen, velden en standaardtekst; enkel met het recht', async () => {
+    const r = await api('GET', '/api/beheer/mailsjablonen');
+    expect(r.data.map((s: any) => s.sleutel)).toEqual(['bevestiging', 'wijziging', 'annulatie', 'uitnodiging', 'herinnering', 'klaslijst']);
+    const b = r.data[0];
+    expect(b).toMatchObject({ module: 'Evenementen en inschrijvingen', aangepast: null });
+    expect(b.velden.map((v: any) => v.naam)).toContain('beheerlink');
+    expect(b.standaard.tekst).toContain('{{beheerlink}}');
+
+    env.DEV_BEHEER_EMAIL = BEHEERDER;
+    await sql(`update gebruikers set rol_id = (select rol_id from rollen where code = 'organisator') where email = ?`, BEHEERDER);
+    expect((await api('GET', '/api/beheer/mailsjablonen')).status).toBe(403);
+    await sql(`update gebruikers set rol_id = (select rol_id from rollen where code = 'platformbeheerder') where email = ?`, BEHEERDER);
+    env.DEV_BEHEER_EMAIL = 'import.test@onderwijs.gent.be';
+  });
+
+  test('aanpassen: controle op velden, voorbeeld, testmail; de echte mail gebruikt de nieuwe tekst', async () => {
+    const pad = '/api/beheer/mailsjablonen/bevestiging';
+    const fout = await api('PATCH', pad, { onderwerp: 'Ingeschreven: {{evenement}}', tekst: 'Dag {{ouder}}' });
+    expect(fout.data.velden.tekst).toContain('Onbekend veld {{ouder}}.');
+
+    const tekst = 'Hallo,\n\n**{{voornaam}}** is ingeschreven voor {{evenement}}.\n\n{{momenten}}\n\nWijzigen? {{beheerlink}}.';
+    const v = await api('POST', `${pad}/voorbeeld`, { onderwerp: 'Ingeschreven: {{evenement}}', tekst });
+    expect(v.data).toMatchObject({ onderwerp: 'Ingeschreven: Infodagen 2027', fouten: { onderwerp: [], tekst: [] } });
+    expect(v.data.html).toContain('<strong>Lotte</strong>');
+
+    mails = [];
+    expect((await api('POST', `${pad}/test`, { onderwerp: 'Ingeschreven: {{evenement}}', tekst })).data).toEqual({ ok: true, aan: 'import.test@onderwijs.gent.be' });
+    expect(mails[0].onderwerp).toBe('[Test] Ingeschreven: Infodagen 2027');
+
+    expect((await api('PATCH', pad, { onderwerp: 'Ingeschreven: {{evenement}}', tekst })).data).toEqual({ ok: true });
+    expect((await api('GET', '/api/beheer/mailsjablonen')).data[0].aangepast).toMatchObject({ onderwerp: 'Ingeschreven: {{evenement}}', gewijzigdDoor: 'T I' });
+
+    mails = [];
+    const r = await registreer(deelnemer({ voornaam: 'Sjabloon', email: 'sjabloon@example.org' }), [vm1.id], []);
+    expect(r.status).toBe(201);
+    await Promise.allSettled(wachtend.splice(0));
+    const m = mails.find((x) => x.aan === 'sjabloon@example.org');
+    expect(m.onderwerp).toMatch(/^Ingeschreven: /);
+    expect(m.html).toContain('<strong>Sjabloon</strong> is ingeschreven');
+    expect(m.html).toContain(r.data.beheerUrl); // de persoonlijke link blijft erin
+
+    // Standaardtekst terug.
+    expect((await api('DELETE', pad)).data).toEqual({ ok: true });
+    mails = [];
+    await registreer(deelnemer({ voornaam: 'Standaard', email: 'standaard@example.org' }), [vm1.id], []);
+    await Promise.allSettled(wachtend.splice(0));
+    expect(mails.find((x) => x.aan === 'standaard@example.org').onderwerp).toMatch(/^Bevestiging inschrijving /);
+    expect((await api('PATCH', '/api/beheer/mailsjablonen/bestaatniet', { onderwerp: 'x', tekst: 'y' })).status).toBe(404);
+  });
+
+  /** Enkel de kop van een PNG (de afmetingen); genoeg voor de controle bij het opladen. */
+  const png = (b: number, h: number) => {
+    const d = new Uint8Array(64);
+    d.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+    new DataView(d.buffer).setUint32(16, b);
+    new DataView(d.buffer).setUint32(20, h);
+    return d;
+  };
+  const oplaad = (plaats: string, data: Uint8Array, type = 'image/png') =>
+    worker.fetch(new Request(`http://localhost/api/beheer/mailsjablonen/opmaak/${plaats}`, { method: 'POST', headers: { 'Content-Type': type }, body: data }), env, ctx)
+      .then(async (r) => ({ status: r.status, data: (await r.json()) as any }));
+
+  test('banners: afmetingen gecontroleerd; elke mail krijgt banner, voettekst en de regel wie en waarom', async () => {
+    expect((await oplaad('kop', png(400, 100))).data.velden.banner).toContain('minstens 600 px');
+    expect((await oplaad('kop', png(1200, 900))).data.velden.banner).toContain('Aanbevolen: 1200 × 300 px');
+    expect((await oplaad('kop', new Uint8Array(64))).data.velden.banner).toContain('PNG- of JPG');
+    expect((await oplaad('zijkant', png(1200, 300))).status).toBe(404);
+    expect((await oplaad('kop', png(1200, 300))).data).toMatchObject({ ok: true, afmetingen: { breedte: 1200, hoogte: 300 } });
+
+    const o = (await api('GET', '/api/beheer/mailsjablonen/opmaak')).data;
+    expect(o.kopBanner).toMatch(/^http:\/\/localhost:5173\/api\/mailbeelden\/kop-[0-9a-f]{8}$/);
+    expect(o.banners.kop).toMatchObject({ breedte: 1200, hoogte: 300 });
+    const beeld = await worker.fetch(new Request(o.kopBanner.replace('http://localhost:5173', 'http://localhost')), env, ctx);
+    expect(beeld.headers.get('Content-Type')).toBe('image/png');
+
+    expect((await api('PATCH', '/api/beheer/mailsjablonen/opmaak', { voettekst: '{{organisatie}} · {{straat}}' })).data.velden.voettekst).toContain('{{straat}}');
+    expect((await api('PATCH', '/api/beheer/mailsjablonen/opmaak', { voettekst: '**{{organisatie}}** · Voorbeeldstraat 1, 9000 Gent' })).data).toEqual({ ok: true });
+
+    mails = [];
+    await registreer(deelnemer({ voornaam: 'Opmaak', email: 'opmaak@example.org' }), [vm1.id], []);
+    await Promise.allSettled(wachtend.splice(0));
+    const html = mails.find((x) => x.aan === 'opmaak@example.org').html as string;
+    expect(html).toContain(`<img src="${o.kopBanner}"`);
+    expect(html).toContain('<strong>Stedelijk Onderwijs Gent</strong> · Voorbeeldstraat 1, 9000 Gent');
+    expect(html).toContain('Deze mail werd verstuurd door Stedelijk Onderwijs Gent via het inschrijvingsplatform');
+    expect(html).toMatch(/Je ontvangt ze omdat je een inschrijving deed voor [^<]+\./);
+    expect(html.indexOf('Opmaak')).toBeLessThan(html.indexOf('Je ontvangt ze omdat')); // de inhoud staat boven de voet
+
+    // Het voorbeeld in het dashboard toont dezelfde opmaak.
+    expect((await api('POST', '/api/beheer/mailsjablonen/klaslijst/voorbeeld', {})).data.html).toContain('omdat je als leerkracht een lesje geeft op Infodagen 2027');
+
+    expect((await api('DELETE', '/api/beheer/mailsjablonen/opmaak/kop')).data).toEqual({ ok: true });
+    expect((await api('GET', '/api/beheer/mailsjablonen/opmaak')).data.kopBanner).toBeNull();
+  });
+});

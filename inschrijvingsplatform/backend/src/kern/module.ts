@@ -1,5 +1,6 @@
 import type { Gebruiker } from './toegang';
 import type { Env } from '../types';
+import type { SjabloonDefinitie } from './sjablonen';
 
 /**
  * Het modulecontract (zie Plan_Modulair_Platform.md, hoofdstuk 4). Een module beschrijft zich met
@@ -21,6 +22,8 @@ export interface PubliekCtx {
   waitUntil(p: Promise<unknown>): void;
   /** JSON-body, met een maximale grootte in bytes. */
   leesJson<T = any>(maxBytes: number): Promise<T>;
+  /** De actieve modules van deze installatie (bv. om hun mailsjablonen op te zoeken). */
+  modules: Module[];
 }
 
 /** Beheerroutes: altijd met een aangemelde medewerker. */
@@ -84,6 +87,8 @@ export interface Module {
   taken?: Taak[];
   /** Waar deze module naar contacten/personen verwijst; zolang een rij verwijst, blijft het contact bestaan. */
   persoonsverwijzingen?: Persoonsverwijzing[];
+  /** Mails van deze module die beheerders kunnen nalezen en aanpassen (module mailsjablonen). */
+  mailsjablonen?: SjabloonDefinitie[];
 }
 
 export const defineModule = (m: Module): Module => m;

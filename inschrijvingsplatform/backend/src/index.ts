@@ -26,7 +26,7 @@ function huidigRegister(env: Env): Register {
   return register.r;
 }
 
-function publiekCtx(request: Request, env: Env, ctx: ExecutionContext, params: Record<string, string>): PubliekCtx {
+function publiekCtx(request: Request, env: Env, ctx: ExecutionContext, params: Record<string, string>, reg: Register): PubliekCtx {
   return {
     env,
     request,
@@ -34,6 +34,7 @@ function publiekCtx(request: Request, env: Env, ctx: ExecutionContext, params: R
     ip: request.headers.get('CF-Connecting-IP'),
     waitUntil: (p) => ctx.waitUntil(p),
     leesJson: (max) => leesJson(request, max) as Promise<any>,
+    modules: reg.actief,
   };
 }
 
@@ -51,7 +52,7 @@ async function beheerRoute(request: Request, env: Env, ctx: ExecutionContext, re
   if (!t || t.route.toegang !== 'beheer') return nietGevonden();
   if (t.route.recht && !gebruiker.rechten.includes(t.route.recht)) throw new DbFout('GEEN_TOEGANG');
   const beheer: BeheerCtx = {
-    ...publiekCtx(request, env, ctx, t.params),
+    ...publiekCtx(request, env, ctx, t.params, reg),
     gebruiker,
     heeftRecht: (recht) => gebruiker.rechten.includes(recht),
   };
@@ -72,7 +73,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
 
   if (pathname.startsWith('/api/')) {
     const t = reg.zoek('publiek', request.method, pathname.slice('/api'.length));
-    if (t && t.route.toegang === 'publiek') return naarResponse(await t.route.handler(publiekCtx(request, env, ctx, t.params)));
+    if (t && t.route.toegang === 'publiek') return naarResponse(await t.route.handler(publiekCtx(request, env, ctx, t.params, reg)));
   }
   return nietGevonden();
 }

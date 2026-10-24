@@ -335,3 +335,20 @@
 .m-log--waarschuwing .m-niveau { color: var(--d-nee); }
 .m-log--fout { background: color-mix(in srgb, #c62828 9%, transparent); }
 .m-log--fout .m-niveau { color: #b3261e; }
+
+/* ---------- Mailteksten ---------- */
+.mt-raster { display: grid; grid-template-columns: minmax(14em, 18em) minmax(0, 1fr); gap: 14px; align-items: start; }
+.mt-lijst { display: flex; flex-direction: column; gap: 4px; padding: 8px; }
+.mt-keuze { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; font: inherit; color: inherit; background: none; border: 1px solid transparent; border-radius: 5px; padding: 7px 9px; cursor: pointer; }
+.mt-keuze:hover { background: color-mix(in srgb, var(--primair-licht) 50%, transparent); }
+.mt-keuze.actief { background: var(--primair-licht); border-color: var(--d-rand); }
+.mt-velden { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 10px; }
+.mt-veldknop { font: .85em ui-monospace, Consolas, monospace; padding: 2px 7px; border: 1px solid var(--d-rand); border-radius: 4px; background: var(--vlak); color: inherit; cursor: pointer; }
+.mt-veldknop:hover { background: var(--primair-licht); }
+.mt-tekst { width: 100%; font: .95em/1.5 ui-monospace, Consolas, monospace; }
+.mt-voorbeeld { border: 1px solid var(--d-rand); border-radius: 6px; padding: 8px; background: var(--vlak); }
+.mt-onderwerp { margin: 0 0 6px; }
+.mt-iframe { width: 100%; height: 640px; border: 0; background: #fff; }
+.mt-banner { border-top: 1px solid var(--d-rand); padding-top: 10px; margin-top: 10px; }
+.mt-bannerbeeld { display: block; max-width: 600px; width: 100%; height: auto; border: 1px solid var(--d-rand); margin: 6px 0; }
+@media (max-width: 900px) { .mt-raster { grid-template-columns: 1fr; } }

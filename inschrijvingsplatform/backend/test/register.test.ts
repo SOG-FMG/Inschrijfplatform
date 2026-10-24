@@ -12,7 +12,7 @@ const gebruiker = (rol: Gebruiker['rol']) => ({ gebruikerId: 'x', email: 'x@y.be
 describe('de modules in deze code', () => {
   test('laden zonder fouten, kern altijd eerst', () => {
     const r = maakRegister(ALLE_MODULES);
-    expect(r.actief.map((m) => m.id)).toEqual(['kern', 'evenementen', 'onderwijs', 'rapporten', 'etiketten', 'meldingen', 'voorinschrijvingen']);
+    expect(r.actief.map((m) => m.id)).toEqual(['kern', 'evenementen', 'onderwijs', 'rapporten', 'etiketten', 'meldingen', 'voorinschrijvingen', 'mailsjablonen']);
   });
 
   test('MODULES kiest een deel; de kern blijft actief', () => {
@@ -67,7 +67,7 @@ describe('rechten', () => {
   });
 
   test('rechtenVan geeft enkel rechten van actieve modules', () => {
-    expect(r.rechtenVan(gebruiker('platformbeheerder'))).toEqual(['kern.mail.testen', 'kern.gebruikers.beheren', 'evenementen.aanmaken', 'meldingen.beheren', 'voorinschrijvingen.beheren']);
+    expect(r.rechtenVan(gebruiker('platformbeheerder'))).toEqual(['kern.mail.testen', 'kern.gebruikers.beheren', 'evenementen.aanmaken', 'meldingen.beheren', 'voorinschrijvingen.beheren', 'mailsjablonen.beheren']);
     expect(r.rechtenVan(gebruiker('organisator'))).toEqual([]);
     expect(maakRegister(ALLE_MODULES, 'evenementen').rechtenVan(gebruiker('platformbeheerder'))).not.toContain('meldingen.beheren');
   });

@@ -6,7 +6,8 @@ import { bewaarLogo, instellingen, isSoort, kopieerDagdeel, kopieerSessies, maak
 import { annulatieGegevens, annuleerViaToken, registratieViaToken, registreer, wijzigKeuzesViaToken } from './registratie';
 import { botcontroleMislukt, controleerTurnstile, csv, json, nietGevonden, nieuwToken, teSnel, teVeelAanvragen } from '../../kern/http';
 import { defineModule, type PubliekCtx } from '../../kern/module';
-import { annulatiemail, bevestigingsmail, type Mail, verstuur, wijzigingsmail } from '../../mail';
+import { type Mail, verstuur } from '../../mail';
+import { annulatiemail, bevestigingsmail, SJABLONEN, wijzigingsmail } from './mails';
 import type { Env } from '../../types';
 import { isUuid, ValidatieFout, valideerRegistratie } from '../../validatie';
 
@@ -295,4 +296,6 @@ export default defineModule({
   ],
 
   persoonsverwijzingen: [{ tabel: 'deelnemers', persoon: 'persoon_id', contact: 'contact_id' }],
+
+  mailsjablonen: SJABLONEN,
 });

@@ -1,7 +1,8 @@
 import { audit } from '../../kern/audit';
 import { bewaarTeksten, klaslijstenPerLeerkracht, rapport } from './db';
 import { defineModule } from '../../kern/module';
-import { klaslijstmail, verstuur } from '../../mail';
+import { verstuur } from '../../mail';
+import { klaslijstmail, SJABLONEN } from './mails';
 import type { Gebruiker } from '../../kern/toegang';
 import type { Env } from '../../types';
 import { ValidatieFout } from '../../validatie';
@@ -40,6 +41,7 @@ export default defineModule({
   versie: '1.0.0',
   vereistKern: '^1.0.0',
   afhankelijkVan: ['evenementen'],
+  mailsjablonen: SJABLONEN,
 
   routes: [
     {

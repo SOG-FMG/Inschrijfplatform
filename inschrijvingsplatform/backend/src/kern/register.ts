@@ -113,6 +113,14 @@ export function maakRegister(alle: Module[], keuze?: string): Register {
   const heeft = (g: Gebruiker, recht: string) =>
     actieveRechten.has(recht) && (g.rol === 'platformbeheerder' || (rechten.get(recht)?.rollen.includes(g.rol) ?? false));
 
+  const sjablonen = new Set<string>();
+  for (const m of alle) {
+    for (const s of m.mailsjablonen ?? []) {
+      if (sjablonen.has(s.sleutel)) throw new Error(`Mailsjabloon ${s.sleutel} bestaat al (module ${m.id}).`);
+      sjablonen.add(s.sleutel);
+    }
+  }
+
   const fouten: Record<string, [number, string]> = {};
   for (const m of alle) {
     for (const [code, waarde] of Object.entries(m.fouten ?? {})) {

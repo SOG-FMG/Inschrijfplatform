@@ -148,6 +148,24 @@ export interface ImportStatistiek {
   };
 }
 
+export interface Mailopmaak {
+  kopBanner: string | null;
+  voetBanner: string | null;
+  voettekst: string;
+  velden: { naam: string; omschrijving: string }[];
+  banners: Record<'kop' | 'voet', { breedte: number; hoogte: number; toon: string }>;
+}
+
+export interface Mailsjabloon {
+  sleutel: string;
+  naam: string;
+  omschrijving: string;
+  module: string;
+  velden: { naam: string; omschrijving: string }[];
+  standaard: { onderwerp: string; tekst: string };
+  aangepast: { onderwerp: string; tekst: string; gewijzigdOp: string; gewijzigdDoor: string | null } | null;
+}
+
 const post = <T>(pad: string, body: unknown = {}) => call<T>(pad, { method: 'POST', body });
 
 export const beheerApi = {
@@ -194,6 +212,22 @@ export const beheerApi = {
     post<{ verstuurd: number; mislukt: number; resterend: number }>(`/api/beheer/voorinschrijvingen/importen/${importId}/uitnodigingen/${evenementId}`, { soort }),
   anonimiseerImport: (id: string) => post<{ ok: true }>(`/api/beheer/voorinschrijvingen/importen/${id}/anonimiseer`),
   verwijderImport: (id: string) => call<{ ok: true }>(`/api/beheer/voorinschrijvingen/importen/${id}`, { method: 'DELETE' }),
+
+  // mailteksten (module mailsjablonen)
+  mailsjablonen: () => call<Mailsjabloon[]>('/api/beheer/mailsjablonen'),
+  bewaarSjabloon: (sleutel: string, onderwerp: string, tekst: string) =>
+    call<{ ok: true }>(`/api/beheer/mailsjablonen/${sleutel}`, { method: 'PATCH', body: { onderwerp, tekst } }),
+  standaardSjabloon: (sleutel: string) => call<{ ok: true }>(`/api/beheer/mailsjablonen/${sleutel}`, { method: 'DELETE' }),
+  voorbeeldSjabloon: (sleutel: string, onderwerp: string, tekst: string) =>
+    post<{ onderwerp: string; html: string; fouten: { onderwerp: string[]; tekst: string[] } }>(`/api/beheer/mailsjablonen/${sleutel}/voorbeeld`, { onderwerp, tekst }),
+  testSjabloon: (sleutel: string, onderwerp: string, tekst: string) =>
+    post<{ ok: boolean; aan?: string; fout?: string }>(`/api/beheer/mailsjablonen/${sleutel}/test`, { onderwerp, tekst }),
+
+  mailopmaak: () => call<Mailopmaak>('/api/beheer/mailsjablonen/opmaak'),
+  bewaarVoettekst: (voettekst: string) => call<{ ok: true }>('/api/beheer/mailsjablonen/opmaak', { method: 'PATCH', body: { voettekst } }),
+  uploadBanner: (plaats: 'kop' | 'voet', bestand: File) =>
+    call<{ ok: true; afmetingen: { breedte: number; hoogte: number } }>(`/api/beheer/mailsjablonen/opmaak/${plaats}`, { method: 'POST', ruw: { data: bestand, type: bestand.type } }),
+  verwijderBanner: (plaats: 'kop' | 'voet') => call<{ ok: true }>(`/api/beheer/mailsjablonen/opmaak/${plaats}`, { method: 'DELETE' }),
 
   csvUrl: (evenementId: string) => `${BASIS}/api/beheer/evenementen/${evenementId}/deelnemers.csv`,
 };
