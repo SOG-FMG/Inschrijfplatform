@@ -1127,7 +1127,7 @@ describe('mailteksten aanpassen (module mailsjablonen)', () => {
 
   test('lijst met sjablonen, velden en standaardtekst; enkel met het recht', async () => {
     const r = await api('GET', '/api/beheer/mailsjablonen');
-    expect(r.data.map((s: any) => s.sleutel)).toEqual(['bevestiging', 'wijziging', 'annulatie', 'uitnodiging', 'herinnering', 'klaslijst']);
+    expect(r.data.map((s: any) => s.sleutel)).toEqual(['bevestiging', 'wijziging', 'annulatie', 'uitnodiging', 'herinnering', 'klaslijst', 'voorinschrijving']);
     const b = r.data[0];
     expect(b).toMatchObject({ module: 'Evenementen en inschrijvingen', aangepast: null });
     expect(b.velden.map((v: any) => v.naam)).toContain('beheerlink');
@@ -1218,5 +1218,51 @@ describe('mailteksten aanpassen (module mailsjablonen)', () => {
 
     expect((await api('DELETE', '/api/beheer/mailsjablonen/opmaak/kop')).data).toEqual({ ok: true });
     expect((await api('GET', '/api/beheer/mailsjablonen/opmaak')).data.kopBanner).toBeNull();
+  });
+
+  test('voorinschrijvingsformulier: huisstijl van een evenement, gezin en kind gekoppeld, geen dubbels, bevestigingsmail', async () => {
+    const evId = (await een(`select evenement_id from evenementen where slug = ?`, SLUG)).evenement_id;
+    await sql(`update evenementen set logo = '/api/logo/x', organisator = 'Freinetmiddenschool Gent', kleur_primair = '#123456' where evenement_id = ?`, evId);
+    const fout = await api('POST', '/api/beheer/voorinschrijvingen/formulieren', { titel: '', slug: 'Ongeldig Adres' });
+    expect(Object.keys(fout.data.velden).sort()).toEqual(['slug', 'titel']);
+    const f = await api('POST', '/api/beheer/voorinschrijvingen/formulieren', {
+      titel: 'Voorinschrijving 2027-2028', slug: 'voorinschrijving-2027', schooljaar: 'Schooljaar 2027 - 2028',
+      leerjaarOpties: ['5de leerjaar', '6de leerjaar'], evenementId: evId, contactEmail: 'info@school.example',
+    });
+    expect(f.status).toBe(201);
+    expect((await api('POST', '/api/beheer/voorinschrijvingen/formulieren', { titel: 'X', slug: 'voorinschrijving-2027' })).data.velden.slug).toContain('al in gebruik');
+
+    const pub = await api('GET', '/api/voorinschrijven/voorinschrijving-2027');
+    expect(pub.data).toMatchObject({ titel: 'Voorinschrijving 2027-2028', open: true, logo: '/api/logo/x', organisator: 'Freinetmiddenschool Gent', kleurPrimair: '#123456', leerjaarOpties: ['5de leerjaar', '6de leerjaar'] });
+    expect((await api('GET', '/api/voorinschrijven/bestaat-niet')).status).toBe(404);
+
+    const schoolId = (await een(`select school_id from scholen limit 1`)).school_id;
+    const inzending = (extra: object) => api('POST', '/api/voorinschrijven/voorinschrijving-2027', {
+      ouderVoornaam: 'An', email: 'formulier@example.org', kindVoornaam: 'Noor', kindNaam: 'Proef', schoolId, klas: '5de leerjaar', privacyAkkoord: true, ...extra,
+    });
+    expect(Object.keys((await inzending({ email: 'geen', klas: '3de leerjaar', privacyAkkoord: false })).data.velden).sort()).toEqual(['email', 'klas', 'privacyAkkoord']);
+
+    mails = [];
+    expect((await inzending({})).data).toEqual({ ok: true, bijgewerkt: false });
+    await Promise.allSettled(wachtend.splice(0));
+    expect(mails[0]).toMatchObject({ aan: 'formulier@example.org', type: 'voorinschrijving', onderwerp: 'Voorinschrijving ontvangen: Noor Proef' });
+    expect(mails[0].html).toContain('Je ontvangt ze omdat je via ons formulier een voorinschrijving deed voor Noor Proef.');
+
+    // Zelfde kind opnieuw (andere schrijfwijze): bijgewerkt. Broer: nieuwe rij bij hetzelfde gezin.
+    expect((await inzending({ kindVoornaam: 'noor', kindNaam: 'PROEF', klas: '6de leerjaar' })).data).toEqual({ ok: true, bijgewerkt: true });
+    expect((await inzending({ kindVoornaam: 'Bas', schoolId: undefined, schoolAndere: 'School in Brugge' })).data.bijgewerkt).toBe(false);
+    const importId = f.data.importId;
+    expect((await een(`select aantal from voorinschrijvingen_importen where import_id = ?`, importId)).aantal).toBe(2);
+    expect(await een(`select count(distinct contact_id) as gezinnen, count(*) as rijen from voorinschrijvingen where import_id = ?`, importId)).toEqual({ gezinnen: 1, rijen: 2 });
+    expect(await een(`select klas from voorinschrijvingen v join personen p on p.persoon_id = v.persoon_id where v.import_id = ? and v.school_id is not null`, importId)).toEqual({ klas: '6de leerjaar' });
+
+    // De inzendingen staan als import bij Voorinschrijvingen (statistieken, uitnodigen).
+    const s = (await api('GET', '/api/beheer/voorinschrijvingen/statistieken')).data.find((x: any) => x.id === importId);
+    expect(s).toMatchObject({ aantal: 2, bestandsnaam: 'formulier', controle: { kinderen: 2, adressen: 1 } });
+
+    // Dicht: geen inzendingen meer.
+    expect((await api('PATCH', `/api/beheer/voorinschrijvingen/formulieren/${f.data.id}`, { open: false })).data).toEqual({ ok: true });
+    expect((await inzending({ kindVoornaam: 'Later' })).data.fout).toBe('FORMULIER_GESLOTEN');
+    expect((await api('GET', '/api/voorinschrijven/voorinschrijving-2027')).data.open).toBe(false);
   });
 });

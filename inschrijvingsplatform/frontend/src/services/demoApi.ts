@@ -119,6 +119,12 @@ export const demoApi: Api = {
   async meldAf() {
     throw new ApiFout('UITNODIGING_ONGELDIG', 'Deze link is ongeldig of verlopen.');
   },
+  async haalVoorinschrijfFormulier() {
+    throw new ApiFout('FORMULIER_NIET_GEVONDEN', 'Het voorinschrijvingsformulier werkt enkel met een echte API.');
+  },
+  async voorinschrijven() {
+    throw new ApiFout('FORMULIER_NIET_GEVONDEN', 'Het voorinschrijvingsformulier werkt enkel met een echte API.');
+  },
 
   async registreer(_slug, a: RegistratieAanvraag): Promise<RegistratieAntwoord> {
     await wacht(700);

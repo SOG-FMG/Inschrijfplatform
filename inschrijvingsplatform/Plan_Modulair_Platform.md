@@ -70,7 +70,7 @@ De kern bevat wat elke installatie nodig heeft, en niets dat specifiek is voor Ã
 | `evenementen` | kern | Evenement, datums, status, inschrijfperiode, publieke pagina | Bestaat (wordt module) |
 | `programma` | evenementen | Dagen, momenten, tijdsblokken, sessies, capaciteit, wachtlijst | Bestaat |
 | `mailsjablonen` | kern | Mailteksten nalezen en aanpassen (velden kiezen, voorbeeld, testmail, standaard terugzetten); opmaak van alle mails: kop- en voetbanner, voettekst, vaste regel wie en waarom. Modules melden hun mails in het manifest (`mailsjablonen`, met `reden`) | Klaar (oktober 2026) |
-| `voorinschrijvingen` | onderwijs | Import van voorinschrijvingen (CSV, bv. Microsoft Forms): kolommen en scholen koppelen, statistieken, controles (dubbels, ook ingeschreven voor een infodag, ook in een andere import), anonimiseren | Klaar (oktober 2026) |
+| `voorinschrijvingen` | onderwijs | Eigen voorinschrijvingsformulier (/voorinschrijven/<slug>, huisstijl van een evenement, bevestigingsmail, zelfde kind = bijwerken) en import van voorinschrijvingen (CSV, bv. Microsoft Forms): kolommen en scholen koppelen, statistieken, controles (dubbels, ook ingeschreven voor een infodag, ook in een andere import), anonimiseren | Klaar (oktober 2026) |
 | `onderwijs` | programma | Scholen, leerlingen met ouder als contact, leerjaar, schoolbeheerder, klaslijsten | Bestaat |
 | `rapporten` | evenementen | Overzichten, Excel, afdrukken | Bestaat |
 | `etiketten` | programma | Naametiketten | Bestaat |

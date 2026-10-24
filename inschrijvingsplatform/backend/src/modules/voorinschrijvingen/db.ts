@@ -257,6 +257,8 @@ export async function anonimiseer(env: Env, g: Gebruiker, importId: string, ip: 
        where import_id = ?`,
     ).bind(importId),
     env.DB.prepare(`delete from uitnodigingen where bron = ?`).bind(bron(importId)),
+    // Een formulier dat in deze import verzamelt, gaat dicht: nieuwe inzendingen zouden niet meer te koppelen zijn.
+    env.DB.prepare(`update voorinschrijvingen_formulieren set open = 0 where import_id = ?`).bind(importId),
     env.DB.prepare(`update voorinschrijvingen_importen set geanonimiseerd_op = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') where import_id = ?`).bind(importId),
     audit(env, g, 'voorinschrijvingen_importen', importId, 'ANONIMISEER', undefined, ip),
   ]);

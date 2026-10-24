@@ -352,3 +352,13 @@
 .mt-banner { border-top: 1px solid var(--d-rand); padding-top: 10px; margin-top: 10px; }
 .mt-bannerbeeld { display: block; max-width: 600px; width: 100%; height: auto; border: 1px solid var(--d-rand); margin: 6px 0; }
 @media (max-width: 900px) { .mt-raster { grid-template-columns: 1fr; } }
+
+/* ---------- Schakelaar (aan/uit) ---------- */
+.d-schakelaar { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+.d-schakelaar input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.d-schakelaar span { position: relative; width: 38px; height: 22px; border-radius: 11px; background: #b9c1cb; transition: background .15s; flex: none; }
+.d-schakelaar span::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: transform .15s; }
+.d-schakelaar input:checked + span { background: var(--d-ok); }
+.d-schakelaar input:checked + span::after { transform: translateX(16px); }
+.d-schakelaar input:focus-visible + span { outline: 3px solid var(--focus, #f0b400); outline-offset: 2px; }
+.d-schakelaar input:disabled + span { opacity: .5; }

@@ -148,6 +148,21 @@ export interface ImportStatistiek {
   };
 }
 
+export interface VoorinschrijfFormulierBeheer {
+  id: string;
+  importId: string;
+  slug: string;
+  titel: string;
+  intro: string | null;
+  schooljaar: string | null;
+  leerjaarOpties: string[];
+  evenementId: string | null;
+  privacyTekst: string | null;
+  contactEmail: string | null;
+  open: boolean;
+  aantal: number;
+}
+
 export interface Mailopmaak {
   kopBanner: string | null;
   voetBanner: string | null;
@@ -212,6 +227,11 @@ export const beheerApi = {
     post<{ verstuurd: number; mislukt: number; resterend: number }>(`/api/beheer/voorinschrijvingen/importen/${importId}/uitnodigingen/${evenementId}`, { soort }),
   anonimiseerImport: (id: string) => post<{ ok: true }>(`/api/beheer/voorinschrijvingen/importen/${id}/anonimiseer`),
   verwijderImport: (id: string) => call<{ ok: true }>(`/api/beheer/voorinschrijvingen/importen/${id}`, { method: 'DELETE' }),
+
+  voorinschrijfFormulieren: () => call<VoorinschrijfFormulierBeheer[]>('/api/beheer/voorinschrijvingen/formulieren'),
+  maakVoorinschrijfFormulier: (w: Partial<VoorinschrijfFormulierBeheer>) => post<{ id: string; importId: string }>('/api/beheer/voorinschrijvingen/formulieren', w),
+  wijzigVoorinschrijfFormulier: (id: string, w: Partial<VoorinschrijfFormulierBeheer>) =>
+    call<{ ok: true }>(`/api/beheer/voorinschrijvingen/formulieren/${id}`, { method: 'PATCH', body: w }),
 
   // mailteksten (module mailsjablonen)
   mailsjablonen: () => call<Mailsjabloon[]>('/api/beheer/mailsjablonen'),

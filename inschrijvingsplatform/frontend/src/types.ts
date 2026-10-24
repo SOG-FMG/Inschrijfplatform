@@ -108,6 +108,39 @@ export interface RegistratieAanvraag {
   website?: string;
 }
 
+/** Publiek voorinschrijvingsformulier, met de huisstijl van het gekozen evenement. */
+export interface VoorinschrijfFormulier {
+  slug: string;
+  titel: string;
+  intro: string | null;
+  schooljaar: string | null;
+  leerjaarOpties: string[];
+  privacyTekst: string | null;
+  contactEmail: string | null;
+  open: boolean;
+  organisator: string | null;
+  logo: string | null;
+  logoHoogte: number | null;
+  kleurPrimair: string | null;
+  kleurAccent: string | null;
+}
+
+export interface Voorinschrijving {
+  ouderVoornaam: string;
+  ouderNaam?: string;
+  email: string;
+  telefoon?: string;
+  kindVoornaam: string;
+  kindNaam: string;
+  schoolId?: string;
+  schoolAndere?: string;
+  klas?: string;
+  opmerkingen?: string;
+  privacyAkkoord: boolean;
+  turnstileToken?: string;
+  website?: string;
+}
+
 /** Wat het formulier vooraf invult vanuit een uitnodiging. Zonder contact = al gebruikt voor dit kind. */
 export interface Voorinvulling {
   slug: string;

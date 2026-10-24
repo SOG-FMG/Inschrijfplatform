@@ -8,6 +8,7 @@ import {
   type Datumvorm, type Koppeling, type Suggestie, type Zekerheid,
 } from './import/importlogica';
 import { datumTijd, foutTekst, Invoer, Melding } from './ui';
+import { VoorinschrijfFormulieren } from './VoorinschrijfFormulieren';
 
 /**
  * Voorinschrijvingen uit een extern bestand (bv. een export van Microsoft Forms) importeren, met statistieken
@@ -43,6 +44,7 @@ export function Voorinschrijvingen({ profiel }: { profiel: Profiel }) {
         {!nieuw && <button type="button" className="d-knop" onClick={() => setNieuw(true)}>+ Bestand importeren</button>}
       </header>
       {fout && <Melding soort="fout">{fout}</Melding>}
+      <VoorinschrijfFormulieren evenementen={profiel.evenementen} naVerandering={laad} />
       {nieuw && <NieuweImport onKlaar={() => { setNieuw(false); laad(); }} onAnnuleer={() => setNieuw(false)} />}
       {!lijst ? <p>Laden…</p> : !lijst.length && !nieuw ? <Melding>Nog geen imports.</Melding> : null}
       {lijst?.map((imp) => (
