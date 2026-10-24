@@ -83,9 +83,9 @@ switch ($Opdracht) {
     'nieuw' {
         if (-not $Naam -or $Naam -eq 'productie' -or $Naam -notmatch '^[a-z0-9-]+$') { Stop-Hier 'Geef een naam in kleine letters, bv.: .\installaties.ps1 nieuw meulestede' }
         Toon-Kop "Nieuwe installatie: $Naam"
-        Write-Host "Dit maakt in je Cloudflare-account aan: D1-database inschrijvingen-db-$Naam (West-Europa) en R2-bucket inschrijvingen-bestanden-$Naam (EU)."
+        Write-Host "Dit maakt in je Cloudflare-account aan: D1-database inschrijvingen-db-$Naam (jurisdictie EU) en R2-bucket inschrijvingen-bestanden-$Naam (EU)."
         if (-not (Vraag-JaNee 'Doorgaan?')) { exit 0 }
-        Voer-Uit $Backend "npx wrangler d1 create inschrijvingen-db-$Naam --location weur"
+        Voer-Uit $Backend "npx wrangler d1 create inschrijvingen-db-$Naam --jurisdiction eu"
         Voer-Uit $Backend "npx wrangler r2 bucket create inschrijvingen-bestanden-$Naam --jurisdiction eu"
         Write-Host ''
         Toon-Let-Op 'Nog te doen:'

@@ -90,7 +90,7 @@ preview_urls = false
 [[env.test.d1_databases]]
 binding = "DB"
 database_name = "inschrijvingen-db-test"
-database_id = "VUL-IN-NA-AANMAKEN"   # .\installaties.ps1 nieuw test  toont het id
+database_id = "203fb0ec-2009-49ab-90be-22c8f4788baf"
 migrations_dir = "migrations"
 
 [[env.test.r2_buckets]]
