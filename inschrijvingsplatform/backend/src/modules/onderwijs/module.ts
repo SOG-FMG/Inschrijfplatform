@@ -1,4 +1,4 @@
-import { scholen } from '../../db/evenement';
+import { scholen } from '../evenementen/evenement';
 import { json } from '../../kern/http';
 import { defineModule } from '../../kern/module';
 

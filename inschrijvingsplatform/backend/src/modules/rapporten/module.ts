@@ -1,8 +1,8 @@
-import { audit } from '../../db/beheer';
-import { bewaarTeksten, klaslijstenPerLeerkracht, rapport } from '../../db/rapporten';
+import { audit } from '../../kern/audit';
+import { bewaarTeksten, klaslijstenPerLeerkracht, rapport } from './db';
 import { defineModule } from '../../kern/module';
 import { klaslijstmail, verstuur } from '../../mail';
-import type { Gebruiker } from '../../middleware/toegang';
+import type { Gebruiker } from '../../kern/toegang';
 import type { Env } from '../../types';
 import { ValidatieFout } from '../../validatie';
 

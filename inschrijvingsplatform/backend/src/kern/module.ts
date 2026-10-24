@@ -1,4 +1,4 @@
-import type { Gebruiker } from '../middleware/toegang';
+import type { Gebruiker } from './toegang';
 import type { Env } from '../types';
 
 /**

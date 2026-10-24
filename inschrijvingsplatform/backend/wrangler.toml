@@ -74,3 +74,86 @@ MAIL_PROVIDER = "webhook"
 # GRAPH_CLIENT_ID = "<app-registratie-client-id>"
 # GRAPH_SENDER = "infodag@<school>.be"
 # MELDINGEN_MAIL = "<team>@onderwijs.gent.be"   # seintje bij een nieuwe melding
+
+# =====================================================================
+# Andere installaties (Plan_Modulair_Platform.md, hoofdstuk 2). Alles hierboven is de installatie van FMG.
+# Elke installatie heeft een eigen Worker, D1, R2, geheimen en waarden. Bindings en [vars] worden niet
+# overgeërfd: herhaal ze volledig. Aanmaken, geheimen en bijwerken: zie installaties.ps1 in de hoofdmap.
+# De Worker heet "<name>-<installatie>", bv. inschrijvingsplatform-api-test.
+# =====================================================================
+
+# ---- test: om nieuwe versies eerst na te kijken, met voorbeelddata, nooit echte gegevens ----
+[env.test]
+workers_dev = true
+preview_urls = false
+
+[[env.test.d1_databases]]
+binding = "DB"
+database_name = "inschrijvingen-db-test"
+database_id = "VUL-IN-NA-AANMAKEN"   # .\installaties.ps1 nieuw test  toont het id
+migrations_dir = "migrations"
+
+[[env.test.r2_buckets]]
+binding = "STORAGE"
+bucket_name = "inschrijvingen-bestanden-test"
+jurisdiction = "eu"
+
+[[env.test.ratelimits]]
+name = "RL_REGISTRATIE"
+namespace_id = "1101"
+simple = { limit = 10, period = 60 }
+
+[[env.test.ratelimits]]
+name = "RL_MELDING"
+namespace_id = "1102"
+simple = { limit = 5, period = 60 }
+
+[env.test.triggers]
+crons = ["15 3 * * *"]
+
+[env.test.observability]
+enabled = true
+
+[env.test.vars]
+ORGANISATIE_NAAM = "Testinstallatie"
+AANMELD_DOMEINEN = "onderwijs.gent.be"
+MODULES = "evenementen,onderwijs,rapporten,etiketten,meldingen"
+ALLOWED_ORIGINS = "https://fmg-inschrijfplatform-test.freinetmiddenschool-automatisatie.workers.dev"
+PUBLIC_APP_URL = "https://fmg-inschrijfplatform-test.freinetmiddenschool-automatisatie.workers.dev"
+HOOFDADMIN_EMAIL = "freinetmiddenschool.automatisatie@onderwijs.gent.be"
+# Geen echte mails vanuit test: enkel loggen.
+MAIL_PROVIDER = "log"
+
+# ---- sjabloon voor een nieuwe organisatie (kopieer, vervang <naam> en de waarden, haal de # weg) ----
+# [env.<naam>]
+# workers_dev = true
+# preview_urls = false
+# [[env.<naam>.d1_databases]]
+# binding = "DB"
+# database_name = "inschrijvingen-db-<naam>"
+# database_id = "VUL-IN-NA-AANMAKEN"
+# migrations_dir = "migrations"
+# [[env.<naam>.r2_buckets]]
+# binding = "STORAGE"
+# bucket_name = "inschrijvingen-bestanden-<naam>"
+# jurisdiction = "eu"
+# [[env.<naam>.ratelimits]]      # namespace_id: uniek per installatie (bv. 1201, 1202 voor de volgende)
+# name = "RL_REGISTRATIE"
+# namespace_id = "1201"
+# simple = { limit = 10, period = 60 }
+# [[env.<naam>.ratelimits]]
+# name = "RL_MELDING"
+# namespace_id = "1202"
+# simple = { limit = 5, period = 60 }
+# [env.<naam>.triggers]
+# crons = ["15 3 * * *"]
+# [env.<naam>.observability]
+# enabled = true
+# [env.<naam>.vars]
+# ORGANISATIE_NAAM = "Cultureel Centrum Meulestede"
+# AANMELD_DOMEINEN = "meulestede.gent"
+# MODULES = "evenementen,rapporten,meldingen"
+# ALLOWED_ORIGINS = "https://<frontend-url>"
+# PUBLIC_APP_URL = "https://<frontend-url>"
+# HOOFDADMIN_EMAIL = "<eerste beheerder>@meulestede.gent"
+# MAIL_PROVIDER = "log"

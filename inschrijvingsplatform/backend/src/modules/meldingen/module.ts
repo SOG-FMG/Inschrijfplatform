@@ -1,5 +1,5 @@
-import { audit } from '../../db/beheer';
-import { bewaarMelding, lijstMeldingen, ruimMeldingenOp, zetStatusMelding } from '../../db/meldingen';
+import { audit } from '../../kern/audit';
+import { bewaarMelding, lijstMeldingen, ruimMeldingenOp, zetStatusMelding } from './db';
 import { isToegelatenEmail } from '../../kern/installatie';
 import { botcontroleMislukt, controleerTurnstile, json, nietGevonden, teSnel, teVeelAanvragen } from '../../kern/http';
 import { defineModule } from '../../kern/module';

@@ -1,8 +1,8 @@
 import { sha256 } from '../../crypto/versleuteling';
-import { anonimiseerEvenement, anonimiseerVerlopenEvenementen, deelnemerslijst, kenSessieToe, verplaatsDagdeel } from '../../db/beheer';
-import { publiekEvenement } from '../../db/evenement';
-import { bewaarLogo, instellingen, isSoort, kopieerDagdeel, kopieerSessies, maak, verwijder, verwijderLogo, wijzig } from '../../db/instellingen';
-import { annulatieGegevens, annuleerViaToken, registratieViaToken, registreer, wijzigKeuzesViaToken } from '../../db/registratie';
+import { anonimiseerEvenement, anonimiseerVerlopenEvenementen, deelnemerslijst, kenSessieToe, verplaatsDagdeel } from './beheer';
+import { publiekEvenement } from './evenement';
+import { bewaarLogo, instellingen, isSoort, kopieerDagdeel, kopieerSessies, maak, verwijder, verwijderLogo, wijzig } from './instellingen';
+import { annulatieGegevens, annuleerViaToken, registratieViaToken, registreer, wijzigKeuzesViaToken } from './registratie';
 import { botcontroleMislukt, controleerTurnstile, csv, json, nietGevonden, nieuwToken, teSnel, teVeelAanvragen } from '../../kern/http';
 import { defineModule, type PubliekCtx } from '../../kern/module';
 import { annulatiemail, bevestigingsmail, type Mail, verstuur, wijzigingsmail } from '../../mail';

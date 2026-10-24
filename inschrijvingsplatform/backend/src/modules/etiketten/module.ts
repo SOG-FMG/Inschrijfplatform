@@ -1,4 +1,4 @@
-import { bewaarEtiketInstellingen, etiketten, zetVerdieping } from '../../db/etiketten';
+import { bewaarEtiketInstellingen, etiketten, zetVerdieping } from './db';
 import { defineModule } from '../../kern/module';
 
 /** Etiketten: naametiketten met de gekozen lesjes; opmaak per evenement, verdieping per lokaal. */

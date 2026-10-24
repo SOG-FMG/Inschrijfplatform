@@ -1,7 +1,7 @@
 import { ontsleutel, sha256, versleutel } from '../crypto/versleuteling';
-import { DbFout } from '../db/fouten';
+import { DbFout } from '../kern/fouten';
 import { isToegelatenEmail } from '../kern/installatie';
-import type { Gebruiker } from '../middleware/toegang';
+import type { Gebruiker } from '../kern/toegang';
 import type { Env } from '../types';
 import { isUuid } from '../validatie';
 import {

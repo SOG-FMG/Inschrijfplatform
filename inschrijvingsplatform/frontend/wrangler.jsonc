@@ -9,5 +9,13 @@
     "run_worker_first": ["/api/*"]
   },
   // De API-Worker (backend/wrangler.toml, name = "inschrijvingsplatform-api").
-  "services": [{ "binding": "API", "service": "inschrijvingsplatform-api" }]
+  "services": [{ "binding": "API", "service": "inschrijvingsplatform-api" }],
+
+  // Andere installaties (zie backend/wrangler.toml). De Worker heet dan "fmg-inschrijfplatform-<installatie>"
+  // en stuurt /api/* door naar de API-Worker van dezelfde installatie. Nieuwe organisatie: kopieer "test".
+  "env": {
+    "test": {
+      "services": [{ "binding": "API", "service": "inschrijvingsplatform-api-test" }]
+    }
+  }
 }

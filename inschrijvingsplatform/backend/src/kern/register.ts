@@ -1,4 +1,4 @@
-import type { Gebruiker } from '../middleware/toegang';
+import type { Gebruiker } from './toegang';
 import { isUuid } from '../validatie';
 import { KERN_VERSIE, type Module, type Recht, type Route, type Taak } from './module';
 

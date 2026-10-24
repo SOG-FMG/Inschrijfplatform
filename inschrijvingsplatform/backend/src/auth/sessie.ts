@@ -1,5 +1,5 @@
 import { sha256 } from '../crypto/versleuteling';
-import { DbFout } from '../db/fouten';
+import { DbFout } from '../kern/fouten';
 import type { Env } from '../types';
 
 /**

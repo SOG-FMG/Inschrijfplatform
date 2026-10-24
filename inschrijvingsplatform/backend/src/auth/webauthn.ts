@@ -1,4 +1,4 @@
-import { DbFout } from '../db/fouten';
+import { DbFout } from '../kern/fouten';
 import type { Env } from '../types';
 
 /**

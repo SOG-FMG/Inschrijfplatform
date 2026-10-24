@@ -2,7 +2,7 @@
 import { describe, expect, test } from 'vitest';
 import { defineModule, type Module } from '../src/kern/module';
 import { maakRegister } from '../src/kern/register';
-import type { Gebruiker } from '../src/middleware/toegang';
+import type { Gebruiker } from '../src/kern/toegang';
 import { ALLE_MODULES } from '../src/modules';
 
 const leeg = async () => ({});

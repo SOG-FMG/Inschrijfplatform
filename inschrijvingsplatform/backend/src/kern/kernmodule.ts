@@ -1,5 +1,5 @@
 import { ruimAanmeldingOp } from '../auth/sessie';
-import { audit } from '../db/beheer';
+import { audit } from './audit';
 import { testmail, verstuur } from '../mail';
 import { json } from './http';
 import { defineModule } from './module';

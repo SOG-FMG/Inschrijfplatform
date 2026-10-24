@@ -1,11 +1,11 @@
 import { aanmeldBeheerRoute, authRoute } from './auth/routes';
-import { DbFout } from './db/fouten';
-import { MeldingFout } from './db/meldingen';
+import { DbFout } from './kern/fouten';
+import { MeldingFout } from './modules/meldingen/db';
 import { cors, json, leesJson, nietGevonden } from './kern/http';
 import { installatie } from './kern/installatie';
 import type { BeheerCtx, PubliekCtx } from './kern/module';
 import { maakRegister, type Register } from './kern/register';
-import { huidigeGebruiker } from './middleware/toegang';
+import { huidigeGebruiker } from './kern/toegang';
 import { ALLE_MODULES } from './modules';
 import type { Env } from './types';
 import { ValidatieFout } from './validatie';
