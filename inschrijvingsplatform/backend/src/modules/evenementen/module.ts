@@ -37,6 +37,10 @@ export default defineModule({
   versie: '1.0.0',
   vereistKern: '^1.0.0',
 
+  rechten: {
+    'evenementen.aanmaken': { omschrijving: 'Een nieuw evenement aanmaken', rollen: [] },
+  },
+
   routes: [
     // ---- publiek ----
     {

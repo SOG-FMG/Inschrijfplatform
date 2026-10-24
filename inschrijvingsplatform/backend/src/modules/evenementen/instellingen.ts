@@ -1,5 +1,5 @@
 import { domeinTekst, isToegelatenEmail } from '../../kern/installatie';
-import { controleerToegang, type Gebruiker } from '../../kern/toegang';
+import { controleerToegang, heeftRecht, type Gebruiker } from '../../kern/toegang';
 import type { Env } from '../../types';
 import { ValidatieFout } from '../../validatie';
 import { audit } from '../../kern/audit';
@@ -399,8 +399,8 @@ export async function maak(env: Env, g: Gebruiker, soort: Soort, ouderId: string
     if (!ouderId) throw new ValidatieFout({ algemeen: 'Ontbrekend bovenliggend onderdeel.' });
     evenementId = await evenementVan(env, def.ouder.soort, ouderId);
     await controleerToegang(env, g, evenementId, true);
-  } else if (g.rol !== 'platformbeheerder') {
-    throw new DbFout('GEEN_TOEGANG'); // een nieuw evenement maakt enkel platformbeheer
+  } else if (!heeftRecht(g, 'evenementen.aanmaken')) {
+    throw new DbFout('GEEN_TOEGANG');
   }
   const waarden = await zetWaardenOm(env, def, invoer ?? {}, true, evenementId);
   const id = crypto.randomUUID();

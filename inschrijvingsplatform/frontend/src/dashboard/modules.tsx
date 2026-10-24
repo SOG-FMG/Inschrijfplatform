@@ -25,8 +25,8 @@ export interface PaginaContext {
 export interface DashboardPagina {
   /** Pad zonder slash op het einde; groepen in de regex komen als `m` mee naar `toon`. */
   patroon: RegExp;
-  /** Enkel voor de platformbeheerder van de organisatie. */
-  alleenBeheer?: boolean;
+  /** Recht dat nodig is (zie de manifesten in backend/src/modules); zonder = elke aangemelde medewerker. */
+  recht?: string;
   toon: (m: RegExpMatchArray, c: PaginaContext) => ReactNode;
 }
 
@@ -35,7 +35,7 @@ export interface MenuItem {
   label: string;
   /** Plaats in het menu (laag = bovenaan). */
   volgorde: number;
-  alleenBeheer?: boolean;
+  recht?: string;
   /** Is dit menu-item actief voor dit pad? */
   actief: (pad: string) => boolean;
 }
@@ -52,11 +52,11 @@ export const DASHBOARD_MODULES: DashboardModule[] = [
   {
     id: 'kern',
     menu: [
-      { href: '/dashboard/medewerkers', label: 'Medewerkers', volgorde: 20, alleenBeheer: true, actief: (p) => p.startsWith('/dashboard/medewerkers') },
+      { href: '/dashboard/medewerkers', label: 'Medewerkers', volgorde: 20, recht: 'kern.gebruikers.beheren', actief: (p) => p.startsWith('/dashboard/medewerkers') },
       { href: '/dashboard/account', label: 'Mijn account', volgorde: 90, actief: (p) => p.startsWith('/dashboard/account') },
     ],
     paginas: [
-      { patroon: /^\/dashboard\/medewerkers$/, alleenBeheer: true, toon: (_m, c) => <Medewerkers profiel={c.profiel} /> },
+      { patroon: /^\/dashboard\/medewerkers$/, recht: 'kern.gebruikers.beheren', toon: (_m, c) => <Medewerkers profiel={c.profiel} /> },
       { patroon: /^\/dashboard\/account$/, toon: (_m, c) => <Account profiel={c.profiel} naVerandering={c.naVerandering} /> },
     ],
   },
@@ -82,7 +82,7 @@ export const DASHBOARD_MODULES: DashboardModule[] = [
   },
   {
     id: 'meldingen',
-    menu: [{ href: '/dashboard/meldingen', label: 'Meldingen', volgorde: 30, alleenBeheer: true, actief: (p) => p.startsWith('/dashboard/meldingen') }],
-    paginas: [{ patroon: /^\/dashboard\/meldingen$/, alleenBeheer: true, toon: () => <Meldingen /> }],
+    menu: [{ href: '/dashboard/meldingen', label: 'Meldingen', volgorde: 30, recht: 'meldingen.beheren', actief: (p) => p.startsWith('/dashboard/meldingen') }],
+    paginas: [{ patroon: /^\/dashboard\/meldingen$/, recht: 'meldingen.beheren', toon: () => <Meldingen /> }],
   },
 ];

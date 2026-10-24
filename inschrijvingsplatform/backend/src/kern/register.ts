@@ -38,6 +38,8 @@ export interface Register {
   /** Foutcodes van alle modules (ook niet-actieve: een code blijft herkenbaar). */
   fouten: Record<string, [number, string]>;
   heeftRecht(g: Gebruiker, recht: string): boolean;
+  /** Alle rechten van deze gebruiker in de actieve modules. */
+  rechtenVan(g: Gebruiker): string[];
   taken: { module: Module; taak: Taak }[];
 }
 
@@ -106,6 +108,11 @@ export function maakRegister(alle: Module[], keuze?: string): Register {
     }
   }
 
+  // De platformbeheerder van een organisatie heeft alle rechten; andere rollen volgens het manifest (Recht.rollen).
+  const actieveRechten = new Set(actief.flatMap((m) => Object.keys(m.rechten ?? {})));
+  const heeft = (g: Gebruiker, recht: string) =>
+    actieveRechten.has(recht) && (g.rol === 'platformbeheerder' || (rechten.get(recht)?.rollen.includes(g.rol) ?? false));
+
   const fouten: Record<string, [number, string]> = {};
   for (const m of alle) {
     for (const [code, waarde] of Object.entries(m.fouten ?? {})) {
@@ -143,9 +150,10 @@ export function maakRegister(alle: Module[], keuze?: string): Register {
       return null;
     },
     heeftRecht(g, recht) {
-      // De platformbeheerder van een organisatie heeft alle rechten (zoals vroeger); andere rollen volgens het manifest.
-      if (g.rol === 'platformbeheerder') return true;
-      return rechten.get(recht)?.rollen.includes(g.rol) ?? false;
+      return heeft(g, recht);
+    },
+    rechtenVan(g) {
+      return [...actieveRechten].filter((r) => heeft(g, r));
     },
   };
 }

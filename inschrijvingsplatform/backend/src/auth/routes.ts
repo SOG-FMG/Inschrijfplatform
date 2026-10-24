@@ -1,7 +1,7 @@
 import { ontsleutel, sha256, versleutel } from '../crypto/versleuteling';
 import { DbFout } from '../kern/fouten';
 import { isToegelatenEmail } from '../kern/installatie';
-import type { Gebruiker } from '../kern/toegang';
+import { heeftRecht, type Gebruiker } from '../kern/toegang';
 import type { Env } from '../types';
 import { isUuid } from '../validatie';
 import {
@@ -260,6 +260,7 @@ async function profiel(env: Env, g: Gebruiker): Promise<Response> {
   return json({
     email: g.email,
     rol: g.rol,
+    rechten: g.rechten,
     voornaam: r.voornaam,
     naam: r.naam,
     heeftWachtwoord: !!r.heeftWachtwoord,
@@ -481,7 +482,7 @@ export async function aanmeldBeheerRoute(request: Request, env: Env, g: Gebruike
   }
 
   if (pad === '/gebruikers' || pad.startsWith('/gebruikers/')) {
-    if (g.rol !== 'platformbeheerder') throw new DbFout('GEEN_TOEGANG');
+    if (!heeftRecht(g, 'kern.gebruikers.beheren')) throw new DbFout('GEEN_TOEGANG');
     if (m === 'GET' && pad === '/gebruikers') return lijstGebruikers(env);
     if (m === 'POST' && pad === '/gebruikers') return maakGebruiker(env, request, g, await leesBody(request));
     if (m === 'POST' && (p = pad.match(/^\/gebruikers\/([0-9a-f-]{36})\/reset$/)) && isUuid(p[1])) return resetGebruiker(env, request, g, p[1]);

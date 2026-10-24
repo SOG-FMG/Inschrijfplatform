@@ -248,11 +248,20 @@ Uitgewerkt in [Beleid_Accounts_en_Aanmelden.md](Beleid_Accounts_en_Aanmelden.md)
 | 0.4 | **Module-register in de frontend**: dashboardmenu en pagina's per module, modules aan/uit per installatie (`frontend/src/dashboard/modules.tsx`, actieve modules via `GET /api/installatie`). Nog niet: het publieke formulier (bv. de schoolkiezer van `onderwijs`) houdt nog geen rekening met de modules | Klaar |
 | 0.5 | **Repo herindelen**: databasecode in de modulemappen (`backend/src/modules/<id>/`), `fouten`, `toegang` en `audit` in `backend/src/kern/`; migraties per module in `src/modules/<id>/migraties/`, samengevoegd met `npm run migraties` (controle vóór `npm test`). Nog niet: `auth/`, `crypto/`, `mail.ts`, `validatie.ts` naar de kern; de frontend in kern- en modulemappen | Klaar |
 | 0.6 | **Meerdere installaties**: `[env.test]` en een sjabloon in `backend/wrangler.toml` en `frontend/wrangler.jsonc`; `installaties.ps1` (lijst, nieuw, geheimen, deploy, deploy alle: test eerst, productie als laatste, met migraties). Nog te doen door Valentijn: de testinstallatie echt aanmaken (zie README) | Klaar (configuratie) |
-| 0.7 | **Rechten in plaats van rolnamen**: rollen worden sets van rechten uit de manifesten | |
+| 0.7 | **Rechten in plaats van rolnamen**: elke medewerker krijgt `rechten` uit de manifesten van de actieve modules (`kern/register.ts`), ook in het profiel voor de frontend. Medewerkers beheren, meldingen, testmail en evenement aanmaken controleren een recht; menu en pagina's in de frontend ook. De rol bepaalt enkel nog het bereik (welke evenementen). Nog niet: rollen zelf instelbaar per installatie (komt met fase 2), de accountroutes als routes van de kernmodule | Klaar |
 
 ---
 
-## 9. Open vragen
+## 9. Keuzes (oktober 2026)
+
+- **Doel nu**: tonen dat een tweede organisatie op dezelfde kern draait. Eerste demo: **Cultureel Centrum Meulestede**, niet dringend.
+- **Meulestede, stap 1**: theatertickets met rangen, **betalen aan de kassa** (reserveren). Online betalen pas na de demo.
+- **Website met CMS**: Valentijn werkt al met **Astro op Cloudflare Pages**. Voorstel: de website blijft een Astro-site (eigen opmaak, snel, goed vindbaar) en haalt agenda, voorstellingen en beschikbaarheid op uit de API van het platform. De ticketverkoop opent vanuit de site in het platform. Het CMS voor de teksten kiezen we bij fase 6 (bv. de inhoud in de repo van de site, of een headless CMS). Dat vervangt de eigen website-module uit hoofdstuk 7 voorlopig.
+- **Mailadressen en mailinglijst**: contacten met toestemming (opt-in, per doel) in de kern, met export of koppeling naar een mailingsysteem. Voorkeur voor een Europese dienst (bv. Brevo, Frankrijk) of open source die zelf gehost kan worden (bv. Listmonk); Mailchimp is Amerikaans (doorgifte buiten de EU). Komt met fase 3 (contacten).
+
+Volgorde die daaruit volgt: fase 3 (contacten en bestellingen) en 4 (tickets met rangen, reserveren) als demo voor Meulestede, dan de koppeling met de Astro-site, dan de mailinglijst. Fase 1 (talen) en 2 (aanmelden met SSO) zijn nodig vóór Meulestede echt in gebruik gaat.
+
+## 10. Open vragen
 
 1. Wat heeft Meulestede als eerste nodig, en tegen wanneer?
 2. Online betalen meteen, of eerst reserveren en betalen aan de kassa? Welke betaalprovider?

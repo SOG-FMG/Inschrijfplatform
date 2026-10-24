@@ -28,7 +28,7 @@ export function Evenementen({ profiel, naVerandering }: { profiel: Profiel; naVe
           <h1>Evenementen</h1>
           <p className="d-sub">{profiel.evenementen.length} evenement(en) waar je toegang toe hebt.</p>
         </div>
-        {profiel.rol === 'platformbeheerder' && (
+        {profiel.rechten.includes('evenementen.aanmaken') && (
           <button type="button" className="d-knop" onClick={() => setNieuw(true)}>+ Nieuw evenement</button>
         )}
       </header>

@@ -7,7 +7,7 @@ import { ALLE_MODULES } from '../src/modules';
 
 const leeg = async () => ({});
 const basis = (m: Partial<Module> & { id: string }): Module => defineModule({ naam: m.id, versie: '1.0.0', vereistKern: '^1.0.0', ...m });
-const gebruiker = (rol: Gebruiker['rol']) => ({ gebruikerId: 'x', email: 'x@y.be', rol, schoolId: null, moetWachtwoordInstellen: false }) as Gebruiker;
+const gebruiker = (rol: Gebruiker['rol']) => ({ gebruikerId: 'x', email: 'x@y.be', rol, schoolId: null, moetWachtwoordInstellen: false, rechten: [] }) as Gebruiker;
 
 describe('de modules in deze code', () => {
   test('laden zonder fouten, kern altijd eerst', () => {
@@ -64,6 +64,12 @@ describe('rechten', () => {
     expect(r.heeftRecht(gebruiker('platformbeheerder'), 'meldingen.beheren')).toBe(true);
     expect(r.heeftRecht(gebruiker('organisator'), 'meldingen.beheren')).toBe(false);
     expect(r.heeftRecht(gebruiker('onthaal'), 'kern.mail.testen')).toBe(false);
+  });
+
+  test('rechtenVan geeft enkel rechten van actieve modules', () => {
+    expect(r.rechtenVan(gebruiker('platformbeheerder'))).toEqual(['kern.mail.testen', 'kern.gebruikers.beheren', 'evenementen.aanmaken', 'meldingen.beheren']);
+    expect(r.rechtenVan(gebruiker('organisator'))).toEqual([]);
+    expect(maakRegister(ALLE_MODULES, 'evenementen').rechtenVan(gebruiker('platformbeheerder'))).not.toContain('meldingen.beheren');
   });
 });
 

@@ -20,7 +20,15 @@ export interface Gebruiker {
   schoolId: string | null;
   /** Aangemeld met een sessie maar nog zonder wachtwoord (account van vóór de wachtwoordstap): eerst instellen. */
   moetWachtwoordInstellen: boolean;
+  /**
+   * Rechten uit de manifesten van de actieve modules (kern/register.ts), ingevuld door index.ts.
+   * Rechten bepalen WAT iemand mag; de rol bepaalt daarnaast het BEREIK (welke evenementen, zie controleerToegang).
+   */
+  rechten: string[];
 }
+
+/** Mag deze gebruiker dit? Gebruik dit in plaats van rolnamen te vergelijken. */
+export const heeftRecht = (g: Gebruiker, recht: string) => g.rechten.includes(recht);
 
 export async function huidigeGebruiker(request: Request, env: Env): Promise<Gebruiker> {
   const { email, viaSessie } = await aangemeldEmail(request, env);
@@ -40,6 +48,7 @@ export async function huidigeGebruiker(request: Request, env: Env): Promise<Gebr
     rol: g.rol,
     schoolId: g.school_id,
     moetWachtwoordInstellen: viaSessie && !g.heeft_wachtwoord,
+    rechten: [],
   };
 }
 

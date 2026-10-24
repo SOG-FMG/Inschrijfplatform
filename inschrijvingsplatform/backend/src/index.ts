@@ -40,7 +40,8 @@ function publiekCtx(request: Request, env: Env, ctx: ExecutionContext, params: R
 const naarResponse = (a: unknown) => (a instanceof Response ? a : json(a));
 
 async function beheerRoute(request: Request, env: Env, ctx: ExecutionContext, reg: Register, pad: string): Promise<Response> {
-  const gebruiker = await huidigeGebruiker(request, env);
+  const aangemeld = await huidigeGebruiker(request, env);
+  const gebruiker = { ...aangemeld, rechten: reg.rechtenVan(aangemeld) };
 
   // Account, passkeys en medewerkers (kern). Daarna moet een account zonder wachtwoord er eerst één instellen.
   const kern = await aanmeldBeheerRoute(request, env, gebruiker, pad);
@@ -48,11 +49,11 @@ async function beheerRoute(request: Request, env: Env, ctx: ExecutionContext, re
 
   const t = reg.zoek('beheer', request.method, pad);
   if (!t || t.route.toegang !== 'beheer') return nietGevonden();
-  if (t.route.recht && !reg.heeftRecht(gebruiker, t.route.recht)) throw new DbFout('GEEN_TOEGANG');
+  if (t.route.recht && !gebruiker.rechten.includes(t.route.recht)) throw new DbFout('GEEN_TOEGANG');
   const beheer: BeheerCtx = {
     ...publiekCtx(request, env, ctx, t.params),
     gebruiker,
-    heeftRecht: (recht) => reg.heeftRecht(gebruiker, recht),
+    heeftRecht: (recht) => gebruiker.rechten.includes(recht),
   };
   return naarResponse(await t.route.handler(beheer));
 }

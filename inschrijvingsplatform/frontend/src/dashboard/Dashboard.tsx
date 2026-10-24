@@ -58,16 +58,16 @@ export function Dashboard() {
   if (!profiel) return pad === '/dashboard/activeren' ? <Activeren naKlaar={laad} /> : <Aanmelden naKlaar={laad} />;
   if (!profiel.heeftWachtwoord) return <WachtwoordInstellen naKlaar={laad} afmelden={afmelden} />;
 
-  const isBeheer = profiel.rol === 'platformbeheerder';
+  const mag = (recht?: string) => !recht || profiel.rechten.includes(recht);
   // Menu en pagina's van de actieve modules (zie modules.tsx).
   const modules = DASHBOARD_MODULES.filter((m) => isModuleActief(installatie, m.id));
-  const menu = modules.flatMap((m) => m.menu ?? []).filter((i) => isBeheer || !i.alleenBeheer).sort((a, b) => a.volgorde - b.volgorde);
+  const menu = modules.flatMap((m) => m.menu ?? []).filter((i) => mag(i.recht)).sort((a, b) => a.volgorde - b.volgorde);
   let inhoud: ReactNode = <Melding soort="fout">Deze pagina bestaat niet.</Melding>;
   for (const pagina of modules.flatMap((m) => m.paginas)) {
     const m = pad.match(pagina.patroon);
     if (!m) continue;
-    inhoud = pagina.alleenBeheer && !isBeheer
-      ? <Melding soort="fout">Enkel voor platformbeheerders.</Melding>
+    inhoud = !mag(pagina.recht)
+      ? <Melding soort="fout">Je hebt geen toegang tot deze pagina.</Melding>
       : pagina.toon(m, { profiel, naVerandering: laad });
     break;
   }

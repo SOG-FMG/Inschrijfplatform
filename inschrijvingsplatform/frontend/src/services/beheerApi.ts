@@ -39,6 +39,8 @@ export interface EvenementKort {
 export interface Profiel {
   email: string;
   rol: Rol;
+  /** Rechten uit de actieve modules (backend/src/kern/register.ts). Gebruik deze in plaats van de rolnaam. */
+  rechten: string[];
   voornaam: string;
   naam: string;
   heeftWachtwoord: boolean;
