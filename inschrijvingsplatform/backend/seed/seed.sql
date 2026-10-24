@@ -1,7 +1,7 @@
 -- Gegenereerd door tools/genereer_seed.py – niet manueel aanpassen.
 -- Voorbeeldevenement op basis van de infodagen 2026 van de Freinetmiddenschool Gent.
 
-insert into rollen (rol_id, code, naam, beschrijving) values
+insert or ignore into rollen (rol_id, code, naam, beschrijving) values
   ('e4352a1b-1be0-525c-867e-b07de9320e1f', 'platformbeheerder', 'Platformbeheerder', 'Volledige toegang tot alle scholen en evenementen'),
   ('1bbb3d62-2a74-55b8-8d6a-f2bd6e53243d', 'schoolbeheerder', 'Schoolbeheerder', 'Beheert alle evenementen van de eigen school'),
   ('f6bec0c7-6718-56ab-8155-22efdcdbc5e6', 'organisator', 'Organisator', 'Beheert de evenementen waaraan hij/zij gekoppeld is'),

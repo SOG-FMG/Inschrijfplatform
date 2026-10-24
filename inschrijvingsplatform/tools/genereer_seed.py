@@ -180,7 +180,7 @@ def lees_scholen(xlsx: Path):
 def seed_sql(dagen) -> str:
     out = ["-- Gegenereerd door tools/genereer_seed.py – niet manueel aanpassen.",
            "-- Voorbeeldevenement op basis van de infodagen 2026 van de Freinetmiddenschool Gent.", ""]
-    out.append("insert into rollen (rol_id, code, naam, beschrijving) values")
+    out.append("insert or ignore into rollen (rol_id, code, naam, beschrijving) values")
     out.append(",\n".join(f"  ({q(uid('rol', c))}, {q(c)}, {q(n)}, {q(b)})" for c, n, b in ROLLEN) + ";\n")
     out.append("insert into soorten_onderdelen (soort_id, naam, beschrijving) values")
     out.append(",\n".join(f"  ({q(uid('soort', n))}, {q(n)}, {q(b)})" for n, b in SOORTEN) + ";\n")
