@@ -1,17 +1,10 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { isDemo } from '../services/api';
 import { beheerApi, type Profiel } from '../services/beheerApi';
-import { useInstallatie } from '../services/installatie';
-import { Account } from './Account';
+import { isModuleActief, useInstallatie } from '../services/installatie';
 import { Aanmelden, Activeren, WachtwoordInstellen } from './Aanmelden';
 import './dashboard.css';
-import { Etiketten } from './Etiketten';
-import { Evenementen } from './Evenementen';
-import { Instellingen } from './Instellingen';
-import { Medewerkers } from './Medewerkers';
-import { Meldingen } from './Meldingen';
-import { Privacy } from './Privacy';
-import { Rapporten } from './Rapporten';
+import { DASHBOARD_MODULES } from './modules';
 import { Link, Melding, ROLNAAM, usePad } from './ui';
 
 /**
@@ -35,7 +28,8 @@ if (location.pathname.startsWith('/medewerkers')) {
 export function Dashboard() {
   const pad = usePad().replace(/\/$/, '') || '/dashboard';
   const [profiel, setProfiel] = useState<Profiel | null | 'laden'>('laden');
-  const { organisatie } = useInstallatie();
+  const installatie = useInstallatie();
+  const { organisatie } = installatie;
 
   const laad = useCallback(() => {
     beheerApi
@@ -65,20 +59,18 @@ export function Dashboard() {
   if (!profiel.heeftWachtwoord) return <WachtwoordInstellen naKlaar={laad} afmelden={afmelden} />;
 
   const isBeheer = profiel.rol === 'platformbeheerder';
-  let inhoud: ReactNode;
-  let ev: RegExpMatchArray | null;
-  if (pad === '/dashboard' || pad === '/dashboard/activeren') inhoud = <Evenementen profiel={profiel} naVerandering={laad} />;
-  else if ((ev = pad.match(/^\/dashboard\/evenementen\/([A-Za-z0-9-]{1,64})$/))) inhoud = <Instellingen evenementId={ev[1]} naVerandering={laad} />;
-  else if ((ev = pad.match(/^\/dashboard\/evenementen\/([A-Za-z0-9-]{1,64})\/rapporten$/))) inhoud = <Rapporten key={ev[1]} evenementId={ev[1]} profiel={profiel} />;
-  else if ((ev = pad.match(/^\/dashboard\/evenementen\/([A-Za-z0-9-]{1,64})\/etiketten$/))) inhoud = <Etiketten key={ev[1]} evenementId={ev[1]} />;
-  else if (pad === '/dashboard/medewerkers') inhoud = isBeheer ? <Medewerkers profiel={profiel} /> : <Melding soort="fout">Enkel voor platformbeheerders.</Melding>;
-  else if (pad === '/dashboard/meldingen') inhoud = isBeheer ? <Meldingen /> : <Melding soort="fout">Enkel voor platformbeheerders.</Melding>;
-  else if (pad === '/dashboard/account') inhoud = <Account profiel={profiel} naVerandering={laad} />;
-  else if (pad === '/dashboard/privacy') inhoud = <Privacy profiel={profiel} />;
-  else inhoud = <Melding soort="fout">Deze pagina bestaat niet.</Melding>;
-
-  const actief = (prefix: string, exact = false) => (exact ? pad === prefix : pad.startsWith(prefix)) ? 'actief' : undefined;
-  const evenementenActief = pad === '/dashboard' || pad.startsWith('/dashboard/evenementen') ? 'actief' : undefined;
+  // Menu en pagina's van de actieve modules (zie modules.tsx).
+  const modules = DASHBOARD_MODULES.filter((m) => isModuleActief(installatie, m.id));
+  const menu = modules.flatMap((m) => m.menu ?? []).filter((i) => isBeheer || !i.alleenBeheer).sort((a, b) => a.volgorde - b.volgorde);
+  let inhoud: ReactNode = <Melding soort="fout">Deze pagina bestaat niet.</Melding>;
+  for (const pagina of modules.flatMap((m) => m.paginas)) {
+    const m = pad.match(pagina.patroon);
+    if (!m) continue;
+    inhoud = pagina.alleenBeheer && !isBeheer
+      ? <Melding soort="fout">Enkel voor platformbeheerders.</Melding>
+      : pagina.toon(m, { profiel, naVerandering: laad });
+    break;
+  }
 
   return (
     <div className="dash">
@@ -87,11 +79,9 @@ export function Dashboard() {
           Inschrijvingsplatform <span>Beheer{organisatie && ` · ${organisatie}`}</span>
         </Link>
         <nav aria-label="Beheer">
-          <Link href="/dashboard" className={evenementenActief}>Evenementen</Link>
-          {isBeheer && <Link href="/dashboard/medewerkers" className={actief('/dashboard/medewerkers')}>Medewerkers</Link>}
-          {isBeheer && <Link href="/dashboard/meldingen" className={actief('/dashboard/meldingen')}>Meldingen</Link>}
-          <Link href="/dashboard/privacy" className={actief('/dashboard/privacy')}>Privacy</Link>
-          <Link href="/dashboard/account" className={actief('/dashboard/account')}>Mijn account</Link>
+          {menu.map((i) => (
+            <Link key={i.href} href={i.href} className={i.actief(pad) ? 'actief' : undefined}>{i.label}</Link>
+          ))}
         </nav>
         <div className="dash__gebruiker">
           <strong>{profiel.voornaam} {profiel.naam}</strong>

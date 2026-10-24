@@ -8,13 +8,15 @@ import { BASIS, isDemo } from './api';
 export interface Installatie {
   organisatie: string;
   aanmeldDomeinen: string[];
+  /** Actieve modules (backend/src/modules); leeg zolang het profiel laadt. */
+  modules: string[];
 }
 
-const LEEG: Installatie = { organisatie: '', aanmeldDomeinen: [] };
+const LEEG: Installatie = { organisatie: '', aanmeldDomeinen: [], modules: [] };
 let geladen: Promise<Installatie> | null = null;
 
 export function laadInstallatie(): Promise<Installatie> {
-  if (isDemo) return Promise.resolve({ organisatie: 'Demo', aanmeldDomeinen: ['*'] });
+  if (isDemo) return Promise.resolve({ organisatie: 'Demo', aanmeldDomeinen: ['*'], modules: [] });
   geladen ??= fetch(`${BASIS}/api/installatie`)
     .then((r) => (r.ok ? (r.json() as Promise<Installatie>) : LEEG))
     .catch(() => {
@@ -36,6 +38,9 @@ export function useInstallatie(): Installatie {
   }, []);
   return i;
 }
+
+/** Staat deze module aan? Zolang het profiel niet geladen is: ja (de API weigert toch wat uit staat). */
+export const isModuleActief = (i: Installatie, id: string) => !i.modules.length || i.modules.includes(id);
 
 const elkAdres = (i: Installatie) => !i.aanmeldDomeinen.length || i.aanmeldDomeinen.includes('*');
 

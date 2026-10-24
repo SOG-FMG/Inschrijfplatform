@@ -245,7 +245,7 @@ Uitgewerkt in [Beleid_Accounts_en_Aanmelden.md](Beleid_Accounts_en_Aanmelden.md)
 | 0.1 | Dit plan | Klaar (voorstel) |
 | 0.2 | **Installatieprofiel**: naam van de organisatie en aanmelddomeinen in de configuratie in plaats van vast in de code; publieke aanroep `GET /api/installatie` voor de frontend | Klaar |
 | 0.3 | **Module-register in de backend**: manifest, `ctx`, routes, rechten, foutcodes, taken, modules aan/uit (`MODULES`). De bestaande routes ingedeeld in `kern`, `evenementen`, `onderwijs`, `rapporten`, `etiketten`, `meldingen`. Nog niet: aanmelden en medewerkers als kernroutes via het register (stap 0.7), `programma` los van `evenementen` (fase 3), de databasecode in de modulemappen (0.5) | Klaar |
-| 0.4 | **Module-register in de frontend**: dashboardmenu en pagina's per module, modules aan/uit per installatie | |
+| 0.4 | **Module-register in de frontend**: dashboardmenu en pagina's per module, modules aan/uit per installatie (`frontend/src/dashboard/modules.tsx`, actieve modules via `GET /api/installatie`). Nog niet: het publieke formulier (bv. de schoolkiezer van `onderwijs`) houdt nog geen rekening met de modules | Klaar |
 | 0.5 | **Repo herindelen**: `kern/`, `modules/`, gedeelde types; migraties per module samengevoegd bij het bouwen | |
 | 0.6 | **Meerdere installaties**: omgevingen in `wrangler.toml`, een testinstallatie, één deployscript dat alle installaties bijwerkt en migreert | |
 | 0.7 | **Rechten in plaats van rolnamen**: rollen worden sets van rechten uit de manifesten | |

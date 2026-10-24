@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react';
 import { beheerApi, instellingenApi, type Profiel } from '../services/beheerApi';
+import { isModuleActief, useInstallatie } from '../services/installatie';
 import { etiketUrl } from './Etiketten';
 import { rapportUrl } from './Rapporten';
 import { datum, datumTijd, foutTekst, Invoer, Link, Melding, navigeer, STATUSNAAM, Venster } from './ui';
 
 /** Startpagina: alle evenementen waar je toegang toe hebt, in een tabel. */
 export function Evenementen({ profiel, naVerandering }: { profiel: Profiel; naVerandering: () => void }) {
+  const installatie = useInstallatie();
   const [zoek, setZoek] = useState('');
   const [status, setStatus] = useState('actief');
   const [nieuw, setNieuw] = useState(false);
@@ -80,8 +82,8 @@ export function Evenementen({ profiel, naVerandering }: { profiel: Profiel; naVe
                   </td>
                   <td className="d-acties">
                     <Link href={`/dashboard/evenementen/${e.id}`}>Instellingen</Link>
-                    <Link href={rapportUrl(e.id)}>Rapporten</Link>
-                    <Link href={etiketUrl(e.id)}>Etiketten</Link>
+                    {isModuleActief(installatie, 'rapporten') && <Link href={rapportUrl(e.id)}>Rapporten</Link>}
+                    {isModuleActief(installatie, 'etiketten') && <Link href={etiketUrl(e.id)}>Etiketten</Link>}
                     <a href={beheerApi.csvUrl(e.id)} download>Deelnemers (Excel)</a>
                     <a href={`/${e.slug}`} target="_blank" rel="noreferrer">Formulier ↗</a>
                   </td>
