@@ -61,6 +61,8 @@ export interface RegistratieInvoer {
   dagdelen: string[];
   sessies: string[];
   turnstileToken?: string;
+  /** Token van een uitnodiging (link uit een mail): koppelt de inschrijving aan dat contact en die persoon. */
+  uitnodiging?: string;
   /** Honeypot: echte gebruikers laten dit veld leeg. */
   website?: string;
 }

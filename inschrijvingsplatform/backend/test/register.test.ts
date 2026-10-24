@@ -23,9 +23,9 @@ describe('de modules in deze code', () => {
     expect(r.zoek('publiek', 'POST', '/meldingen')?.module.id).toBe('meldingen');
   });
 
-  test('de dagelijkse taken komen van de actieve modules', () => {
-    expect(maakRegister(ALLE_MODULES).taken.map((t) => t.module.id)).toEqual(['kern', 'evenementen', 'meldingen']);
-    expect(maakRegister(ALLE_MODULES, 'evenementen').taken.map((t) => t.module.id)).toEqual(['kern', 'evenementen']);
+  test('de dagelijkse taken komen van de actieve modules, die van de kern als laatste', () => {
+    expect(maakRegister(ALLE_MODULES).taken.map((t) => t.module.id)).toEqual(['evenementen', 'evenementen', 'meldingen', 'voorinschrijvingen', 'kern', 'kern']);
+    expect(maakRegister(ALLE_MODULES, 'evenementen').taken.map((t) => t.module.id)).toEqual(['evenementen', 'evenementen', 'kern', 'kern']);
   });
 
   test('een module zonder haar afhankelijkheid wordt geweigerd', () => {

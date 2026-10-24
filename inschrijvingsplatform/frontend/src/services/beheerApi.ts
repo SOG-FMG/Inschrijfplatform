@@ -105,10 +105,29 @@ export interface ImportRij {
   klas: string | null;
   schoolId: string | null;
   schoolAndere: string | null;
+  kindVoornaam: string | null;
   kindNaam: string | null;
   email: string | null;
   telefoon: string | null;
   opmerkingen: string | null;
+  /** Bij een twijfel: bestaande persoon, 'rij:<n>' (kind van een eerdere rij) of 'nieuw'. */
+  persoonKeuze?: string;
+}
+
+/** Nakijkstap: per rij nieuw of bestaand contact (gezin), en zelfde, twijfel of nieuw kind. */
+export interface PersoonControle {
+  contact: 'nieuw' | 'bestaand' | 'geen';
+  status: 'zelfde' | 'twijfel' | 'nieuw' | 'geen';
+  kandidaten: { id: string; naam: string }[];
+}
+
+export interface UitnodigingOverzicht {
+  nogNietIngeschreven: number;
+  contacten: number;
+  aangemaakt: number;
+  verstuurd: number;
+  gebruikt: number;
+  afgemeld: number;
 }
 
 /** Statistieken van één import (enkel aantallen, geen persoonsgegevens). */
@@ -123,7 +142,10 @@ export interface ImportStatistiek {
   klassen: { klas: string; aantal: number }[];
   maanden: { maand: string; aantal: number }[];
   schooljaren: { schooljaar: string; aantal: number }[];
-  controle: { zonderEmail: number; dubbeleAdressen: number; ookIngeschreven: number; ookInAndereImport: number; adressen: number };
+  controle: {
+    zonderEmail: number; dubbeleAdressen: number; ookIngeschreven: number; ookInAndereImport: number; adressen: number;
+    kinderen: number; kinderenIngeschreven: number;
+  };
 }
 
 const post = <T>(pad: string, body: unknown = {}) => call<T>(pad, { method: 'POST', body });
@@ -165,6 +187,11 @@ export const beheerApi = {
   voorinschrijvingenStatistieken: () => call<ImportStatistiek[]>('/api/beheer/voorinschrijvingen/statistieken'),
   importeerVoorinschrijvingen: (body: { naam: string; bestandsnaam: string; rijen: ImportRij[] }) =>
     post<{ importId: string; aantal: number }>('/api/beheer/voorinschrijvingen/importen', body),
+  controleerPersonen: (rijen: Pick<ImportRij, 'email' | 'kindVoornaam' | 'kindNaam'>[]) => post<PersoonControle[]>('/api/beheer/voorinschrijvingen/personen', { rijen }),
+  uitnodigingOverzicht: (importId: string, evenementId: string) =>
+    call<UitnodigingOverzicht>(`/api/beheer/voorinschrijvingen/importen/${importId}/uitnodigingen/${evenementId}`),
+  verstuurUitnodigingen: (importId: string, evenementId: string, soort: 'uitnodiging' | 'herinnering') =>
+    post<{ verstuurd: number; mislukt: number; resterend: number }>(`/api/beheer/voorinschrijvingen/importen/${importId}/uitnodigingen/${evenementId}`, { soort }),
   anonimiseerImport: (id: string) => post<{ ok: true }>(`/api/beheer/voorinschrijvingen/importen/${id}/anonimiseer`),
   verwijderImport: (id: string) => call<{ ok: true }>(`/api/beheer/voorinschrijvingen/importen/${id}`, { method: 'DELETE' }),
 

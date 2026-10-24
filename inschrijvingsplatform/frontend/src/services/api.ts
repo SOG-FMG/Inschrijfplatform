@@ -6,6 +6,7 @@ import {
   type RegistratieAntwoord,
   type RegistratieOverzicht,
   type School,
+  type Voorinvulling,
 } from '../types';
 import { demoApi } from './demoApi';
 import { log } from './logboek';
@@ -18,6 +19,8 @@ export interface Api {
   annuleer(token: string): Promise<RegistratieOverzicht>;
   wijzigKeuzes(token: string, sessies: string[]): Promise<RegistratieOverzicht>;
   meld(melding: Melding): Promise<{ referentie: string }>;
+  haalUitnodiging(token: string): Promise<Voorinvulling>;
+  meldAf(token: string): Promise<{ ok: true }>;
 }
 
 const RUW = import.meta.env.VITE_API_URL as string | undefined;
@@ -58,6 +61,8 @@ const echteApi: Api = {
   annuleer: (token) => call(`/api/registraties/${encodeURIComponent(token)}`, { method: 'DELETE' }),
   wijzigKeuzes: (token, sessies) => call(`/api/registraties/${encodeURIComponent(token)}`, { method: 'PATCH', body: JSON.stringify({ sessies }) }),
   meld: (melding) => call('/api/meldingen', { method: 'POST', body: JSON.stringify(melding) }),
+  haalUitnodiging: (token) => call(`/api/uitnodigingen/${encodeURIComponent(token)}`),
+  meldAf: (token) => call(`/api/uitnodigingen/${encodeURIComponent(token)}/afmelden`, { method: 'POST' }),
 };
 
 export const api: Api = isDemo ? demoApi : echteApi;

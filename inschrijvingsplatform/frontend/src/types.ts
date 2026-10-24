@@ -103,7 +103,21 @@ export interface RegistratieAanvraag {
   dagdelen: string[];
   sessies: string[];
   turnstileToken?: string;
+  /** Token van de uitnodiging (link uit een mail), zodat de inschrijving aan het juiste gezin en kind gekoppeld wordt. */
+  uitnodiging?: string;
   website?: string;
+}
+
+/** Wat het formulier vooraf invult vanuit een uitnodiging. Zonder contact = al gebruikt voor dit kind. */
+export interface Voorinvulling {
+  slug: string;
+  evenement: string;
+  status: 'aangemaakt' | 'verstuurd' | 'gebruikt' | 'afgemeld';
+  contact?: { email: string; voornaam: string | null; naam: string | null; telefoon: string | null };
+  persoon?: { voornaam: string | null; naam: string | null } | null;
+  school?: School | null;
+  schoolAndere?: string | null;
+  leerjaar?: string | null;
 }
 
 export interface Moment {

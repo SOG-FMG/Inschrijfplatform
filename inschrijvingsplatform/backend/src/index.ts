@@ -134,11 +134,19 @@ export default {
     return new Response(res.body, { status: res.status, headers });
   },
 
-  /** Dagelijks (wrangler.toml [triggers]): de taken van alle actieve modules. Eén mislukte taak houdt de andere niet tegen. */
+  /**
+   * Dagelijks (wrangler.toml [triggers]): de taken van alle actieve modules, na elkaar (de kern als laatste).
+   * Eén mislukte taak houdt de andere niet tegen.
+   */
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     const taken = huidigRegister(env).taken;
+    const naElkaar = async () => {
+      const uitkomsten: PromiseSettledResult<number | void>[] = [];
+      for (const { taak } of taken) uitkomsten.push(...(await Promise.allSettled([taak.uitvoeren(env, { modules: ALLE_MODULES })])));
+      return uitkomsten;
+    };
     ctx.waitUntil(
-      Promise.allSettled(taken.map(({ taak }) => taak.uitvoeren(env))).then((uitkomsten) =>
+      naElkaar().then((uitkomsten) =>
         console.log(
           JSON.stringify({
             taak: 'dagelijks',

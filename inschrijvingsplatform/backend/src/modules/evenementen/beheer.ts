@@ -3,6 +3,7 @@ import { controleerToegang, type Gebruiker } from '../../kern/toegang';
 import type { Env } from '../../types';
 import { promoveerWachtlijst, referentie, STATUS_SESSIE, vandaag } from './capaciteit';
 import { audit } from '../../kern/audit';
+import { koppelAanContact } from '../../kern/contacten';
 import { DbFout, schrijf } from '../../kern/fouten';
 
 async function evenementVanDeelnemer(env: Env, deelnemerId: string, enkelActief: boolean) {
@@ -192,10 +193,12 @@ async function anonimiseer(env: Env, evenementId: string): Promise<number> {
         `update deelnemers set
            naam_enc = null, voornaam_enc = null, email_enc = null, contact_voornaam_enc = null, contact_naam_enc = null,
            telefoon_enc = null, school_andere_enc = null, functie_enc = null, opmerkingen_enc = null,
-           email_hash = null, dubbel_hash = null, beheer_token_hash = null, geanonimiseerd_op = ?
+           email_hash = null, dubbel_hash = null, beheer_token_hash = null, contact_id = null, persoon_id = null, geanonimiseerd_op = ?
          where evenement_id = ? and geanonimiseerd_op is null`,
       )
       .bind(new Date().toISOString(), evenementId),
+    // Uitnodigingen bevatten een link en voor ingevulde gegevens; de contacten zelf ruimt de kern op (kern/contacten.ts).
+    db.prepare(`delete from uitnodigingen where evenement_id = ?`).bind(evenementId),
   ]);
   return res[2].meta.changes;
 }
@@ -224,4 +227,34 @@ export async function anonimiseerVerlopenEvenementen(env: Env): Promise<number> 
     totaal += aantal;
   }
   return totaal;
+}
+
+/**
+ * Dagelijks: inschrijvingen van vóór de contacten (of van een import zonder koppeling) aan een contact en een
+ * persoon koppelen. Per keer een beperkt aantal, zodat de taak binnen de limieten van een Worker blijft.
+ */
+export async function koppelBestaandeDeelnemers(env: Env, max = 200): Promise<number> {
+  const { results } = await env.DB.prepare(
+    `select d.deelnemer_id, e.deelnemer_type, d.email_enc, d.voornaam_enc, d.naam_enc, d.contact_voornaam_enc, d.contact_naam_enc, d.telefoon_enc
+     from deelnemers d join evenementen e on e.evenement_id = d.evenement_id
+     where d.contact_id is null and d.email_enc is not null and d.geanonimiseerd_op is null
+     order by d.created_at limit ?`,
+  )
+    .bind(max)
+    .all<Record<string, string | null>>();
+  for (const r of results) {
+    const o = (k: string) => ontsleutel(env, r[k]);
+    const [email, voornaam, naam, cVoornaam, cNaam, telefoon] = await Promise.all(
+      ['email_enc', 'voornaam_enc', 'naam_enc', 'contact_voornaam_enc', 'contact_naam_enc', 'telefoon_enc'].map(o),
+    );
+    if (!email) continue;
+    const volwassene = r.deelnemer_type === 'volwassene';
+    const k = await koppelAanContact(
+      env,
+      { email, voornaam: cVoornaam ?? (volwassene ? voornaam : null), naam: cNaam ?? (volwassene ? naam : null), telefoon },
+      { voornaam: voornaam ?? '', naam: naam ?? '' },
+    );
+    await env.DB.prepare(`update deelnemers set contact_id = ?, persoon_id = ? where deelnemer_id = ?`).bind(k.contactId, k.persoonId, r.deelnemer_id).run();
+  }
+  return results.length;
 }

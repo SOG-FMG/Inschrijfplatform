@@ -57,6 +57,7 @@ export function leesCsv(tekst: string): { kolommen: string[]; rijen: string[][] 
 export const VELDEN = [
   { veld: 'ingediendOp', label: 'Ingediend op', woorden: ['voltooien', 'ingediend', 'datum', 'tijd', 'begintijd'] },
   { veld: 'kindNaam', label: 'Naam van het kind', woorden: ['kind', 'leerling', 'naam'] },
+  { veld: 'kindVoornaam', label: 'Voornaam van het kind (als die apart staat)', woorden: ['voornaam kind', 'voornaam leerling'] },
   { veld: 'schooljaar', label: 'Schooljaar', woorden: ['gewenst voor', 'schooljaar'] },
   { veld: 'school', label: 'Huidige school', woorden: ['school'] },
   { veld: 'klas', label: 'Huidige klas', woorden: ['klas', 'leerjaar'] },
@@ -90,6 +91,18 @@ export function stelKoppelingVoor(kolommen: string[], rijen: string[][]): Koppel
     uit.kindNaam = j >= 0 ? j : null;
   }
   return uit;
+}
+
+/**
+ * Splitst een naam in voornaam en familienaam. Forms vraagt vaak "Naam + Voornaam": dan is het laatste woord de
+ * voornaam ("Van den Broeck Lotte"). Bij "voornaam naam" is het eerste woord de voornaam.
+ */
+export function splitsNaam(volledig: string, volgorde: 'naam-voornaam' | 'voornaam-naam'): { voornaam: string | null; naam: string | null } {
+  const w = volledig.trim().split(/\s+/).filter(Boolean);
+  if (w.length < 2) return { voornaam: null, naam: w[0] ?? null };
+  return volgorde === 'naam-voornaam'
+    ? { voornaam: w[w.length - 1], naam: w.slice(0, -1).join(' ') }
+    : { voornaam: w[0], naam: w.slice(1).join(' ') };
 }
 
 // ---------------------------------------------------------------------------

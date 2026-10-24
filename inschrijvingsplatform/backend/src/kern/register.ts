@@ -137,7 +137,8 @@ export function maakRegister(alle: Module[], keuze?: string): Register {
   return {
     actief,
     fouten,
-    taken: actief.flatMap((module) => (module.taken ?? []).map((taak) => ({ module, taak }))),
+    // Taken van de kern als laatste: eerst anonimiseren de modules, daarna ruimt de kern op wat niet meer gebruikt wordt.
+    taken: [...actief.filter((m) => m.id !== 'kern'), ...actief.filter((m) => m.id === 'kern')].flatMap((module) => (module.taken ?? []).map((taak) => ({ module, taak }))),
     zoek(toegang, methode, pad) {
       for (const c of routes[toegang]) {
         if (c.route.methode !== methode) continue;

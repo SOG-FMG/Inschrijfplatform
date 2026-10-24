@@ -112,6 +112,14 @@ export const demoApi: Api = {
     return mod.default as School[];
   },
 
+  // Uitnodigingen bestaan enkel met een echte API.
+  async haalUitnodiging() {
+    throw new ApiFout('UITNODIGING_ONGELDIG', 'Deze link is ongeldig of verlopen. Je kan je wel gewoon inschrijven via het formulier.');
+  },
+  async meldAf() {
+    throw new ApiFout('UITNODIGING_ONGELDIG', 'Deze link is ongeldig of verlopen.');
+  },
+
   async registreer(_slug, a: RegistratieAanvraag): Promise<RegistratieAntwoord> {
     await wacht(700);
     const st = staat();

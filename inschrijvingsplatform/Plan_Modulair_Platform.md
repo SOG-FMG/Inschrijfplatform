@@ -233,7 +233,7 @@ Uitgewerkt in [Beleid_Accounts_en_Aanmelden.md](Beleid_Accounts_en_Aanmelden.md)
 | **0. Fundament** | Zie hieronder | FMG werkt zoals nu, op een kern met modules |
 | **1. Talen en woorden** | Vertaalsysteem, inhoud per taal, eigen woorden | Publieke kant in NL, EN, FR |
 | **2. Aanmelden** | Operatorrol en noodaccount, levenscyclus van accounts, e-mailcontrole, jaarlijkse goedkeuring, SSO (zie het beleid, hoofdstuk 8) | Meulestede kan aanmelden met hun eigen accounts |
-| **3. Contacten en bestellingen** | Contacten in de kern; deelnemers worden bestelling + ticket | Eén model voor inschrijven en tickets |
+| **3. Contacten en bestellingen** | Contacten in de kern; deelnemers worden bestelling + ticket | Eén model voor inschrijven en tickets. **Deel 1 klaar (oktober 2026)**: contacten (één per e-mailadres) en personen (herkend aan de naam binnen het contact, twijfel = nakijken of "mogelijk dubbel") in de kern; inschrijvingen en voorinschrijvingen gekoppeld; uitnodigingen met een vooraf ingevuld formulier per kind, afmelden en herinneringen; opruimen van ongebruikte contacten. Nog te doen: samenvoegen van mogelijke dubbels in het dashboard, bestelling + ticket |
 | **4. Tickets** | Voorstellingen, rangen, tarieven, reserveren, betalen aan de kassa | Theater kan verkopen |
 | **5. Betalen en check-in** | Online betalen, terugbetalen, QR-ticket, scanner | Volledige ticketverkoop |
 | **6. Website** | Pagina's, agenda, blokken | Website rond het evenement |

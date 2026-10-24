@@ -53,8 +53,18 @@ export interface Recht {
 
 export interface Taak {
   naam: string;
-  /** Dagelijks (Cron Trigger). Geeft eventueel een aantal terug voor de logregel (bv. aantal verwijderde rijen). */
-  uitvoeren(env: Env): Promise<number | void>;
+  /**
+   * Dagelijks (Cron Trigger). Geeft eventueel een aantal terug voor de logregel (bv. aantal verwijderde rijen).
+   * `modules` = alle modules in de code (ook niet-actieve: hun tabellen bestaan in elke installatie).
+   */
+  uitvoeren(env: Env, ctx: { modules: Module[] }): Promise<number | void>;
+}
+
+/** Een kolom die naar een contact of persoon van de kern verwijst (zie kern/contacten.ts). */
+export interface Persoonsverwijzing {
+  tabel: string;
+  persoon?: string;
+  contact?: string;
 }
 
 export interface Module {
@@ -72,6 +82,8 @@ export interface Module {
   /** Foutcodes (DbFout) met HTTP-status en melding voor de gebruiker. */
   fouten?: Record<string, [number, string]>;
   taken?: Taak[];
+  /** Waar deze module naar contacten/personen verwijst; zolang een rij verwijst, blijft het contact bestaan. */
+  persoonsverwijzingen?: Persoonsverwijzing[];
 }
 
 export const defineModule = (m: Module): Module => m;

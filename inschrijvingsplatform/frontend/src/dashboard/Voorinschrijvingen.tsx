@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { schoolLabel } from '../components/SchoolKiezer';
 import { api } from '../services/api';
-import { beheerApi, type ImportRij, type ImportStatistiek } from '../services/beheerApi';
+import { beheerApi, type EvenementKort, type ImportRij, type ImportStatistiek, type PersoonControle, type Profiel, type UitnodigingOverzicht } from '../services/beheerApi';
 import type { School } from '../types';
 import {
-  decodeer, herkenDatumvorm, koppelSchool, leesCsv, leesDatum, stelKoppelingVoor, VELDEN,
+  decodeer, herkenDatumvorm, koppelSchool, leesCsv, leesDatum, splitsNaam, stelKoppelingVoor, VELDEN,
   type Datumvorm, type Koppeling, type Suggestie, type Zekerheid,
 } from './import/importlogica';
 import { datumTijd, foutTekst, Invoer, Melding } from './ui';
@@ -13,7 +13,7 @@ import { datumTijd, foutTekst, Invoer, Melding } from './ui';
  * Voorinschrijvingen uit een extern bestand (bv. een export van Microsoft Forms) importeren, met statistieken
  * en controles per import. Het bestand wordt in de browser gelezen; enkel de gekoppelde velden gaan naar de API.
  */
-export function Voorinschrijvingen() {
+export function Voorinschrijvingen({ profiel }: { profiel: Profiel }) {
   const [lijst, setLijst] = useState<ImportStatistiek[] | null>(null);
   const [fout, setFout] = useState<string | null>(null);
   const [nieuw, setNieuw] = useState(false);
@@ -46,7 +46,7 @@ export function Voorinschrijvingen() {
       {nieuw && <NieuweImport onKlaar={() => { setNieuw(false); laad(); }} onAnnuleer={() => setNieuw(false)} />}
       {!lijst ? <p>Laden…</p> : !lijst.length && !nieuw ? <Melding>Nog geen imports.</Melding> : null}
       {lijst?.map((imp) => (
-        <Import key={imp.id} imp={imp}
+        <Import key={imp.id} imp={imp} evenementen={profiel.evenementen}
           onAnonimiseer={() => confirm(`"${imp.naam}" anonimiseren?\n\nNamen, e-mailadressen, telefoonnummers en opmerkingen worden gewist. De statistieken blijven. Dit kan niet ongedaan gemaakt worden.`) && actie(() => beheerApi.anonimiseerImport(imp.id))}
           onVerwijder={() => confirm(`"${imp.naam}" volledig verwijderen, ook de statistieken?`) && actie(() => beheerApi.verwijderImport(imp.id))} />
       ))}
@@ -54,7 +54,9 @@ export function Voorinschrijvingen() {
   );
 }
 
-function Import({ imp, onAnonimiseer, onVerwijder }: { imp: ImportStatistiek; onAnonimiseer: () => void; onVerwijder: () => void }) {
+function Import({ imp, evenementen, onAnonimiseer, onVerwijder }: {
+  imp: ImportStatistiek; evenementen: EvenementKort[]; onAnonimiseer: () => void; onVerwijder: () => void;
+}) {
   const [alleScholen, setAlleScholen] = useState(false);
   const c = imp.controle;
   const scholen = alleScholen ? imp.scholen : imp.scholen.slice(0, 10);
@@ -74,13 +76,17 @@ function Import({ imp, onAnonimiseer, onVerwijder }: { imp: ImportStatistiek; on
 
       <div className="m-tellers">
         <Teller waarde={imp.aantal} label="Voorinschrijvingen" />
-        <Teller waarde={c.adressen} label="Verschillende e-mailadressen" />
+        <Teller waarde={c.adressen} label="Gezinnen (verschillende e-mailadressen)" />
+        <Teller waarde={c.kinderen} label="Kinderen" />
+        <Teller waarde={c.kinderenIngeschreven} label="Kinderen ingeschreven voor een infodag" />
         <Teller waarde={c.dubbeleAdressen} label="Adressen met meer dan één inschrijving" />
         <Teller waarde={c.ookIngeschreven} label="Adressen ook ingeschreven voor een infodag" />
         <Teller waarde={c.ookInAndereImport} label="Adressen ook in een andere import" />
         <Teller waarde={c.zonderEmail} label="Zonder geldig e-mailadres" />
       </div>
       {imp.geanonimiseerdOp && <p className="d-klein">Na het anonimiseren zijn de controles op e-mailadres niet meer mogelijk (ze tonen 0).</p>}
+
+      {!imp.geanonimiseerdOp && <Uitnodigen importId={imp.id} evenementen={evenementen} />}
 
       <div className="d-raster">
         <Tabel titel="Per school" kolom="School" rijen={scholen.map((s) => [s.soort === 'andere' ? `${s.school} (niet in de lijst)` : s.school, s.aantal])}>
@@ -97,6 +103,78 @@ function Import({ imp, onAnonimiseer, onVerwijder }: { imp: ImportStatistiek; on
         </div>
       </div>
     </section>
+  );
+}
+
+/**
+ * Kinderen uit deze import uitnodigen voor een evenement: één mail per gezin, met een link per kind naar het vooraf
+ * ingevulde formulier. Versturen gebeurt in delen (zie MAILS_PER_KEER in de backend) tot alles weg is.
+ */
+function Uitnodigen({ importId, evenementen }: { importId: string; evenementen: EvenementKort[] }) {
+  const open = evenementen.filter((e) => e.status === 'gepubliceerd');
+  const [evenementId, setEvenementId] = useState(open[0]?.id ?? '');
+  const [overzicht, setOverzicht] = useState<UitnodigingOverzicht | null>(null);
+  const [bezig, setBezig] = useState<string | null>(null);
+  const [melding, setMelding] = useState<{ soort: 'ok' | 'fout'; tekst: string } | null>(null);
+
+  const laad = useCallback(() => {
+    if (!evenementId) return;
+    beheerApi.uitnodigingOverzicht(importId, evenementId).then(setOverzicht).catch((e) => setMelding({ soort: 'fout', tekst: foutTekst(e) }));
+  }, [importId, evenementId]);
+  useEffect(laad, [laad]);
+
+  async function verstuur(soort: 'uitnodiging' | 'herinnering') {
+    const ev = open.find((e) => e.id === evenementId);
+    const vraag = soort === 'uitnodiging'
+      ? `Uitnodigingen versturen voor "${ev?.titel}" naar ${overzicht?.contacten ?? '?'} gezin(nen)?`
+      : `Een herinnering versturen voor "${ev?.titel}" aan wie nog niet reageerde?`;
+    if (!confirm(vraag)) return;
+    setMelding(null);
+    let totaal = 0;
+    try {
+      for (;;) {
+        setBezig(`${totaal} verstuurd…`);
+        const r = await beheerApi.verstuurUitnodigingen(importId, evenementId, soort);
+        totaal += r.verstuurd;
+        if (r.mislukt) {
+          setMelding({ soort: 'fout', tekst: `${totaal} verstuurd, ${r.mislukt} mislukt. Controleer de mailinstellingen (testmail onder Medewerkers) en probeer opnieuw.` });
+          break;
+        }
+        if (!r.resterend || !r.verstuurd) {
+          setMelding({ soort: 'ok', tekst: totaal ? `${totaal} mail(s) verstuurd.` : 'Er was niemand meer om te mailen.' });
+          break;
+        }
+      }
+    } catch (e) {
+      setMelding({ soort: 'fout', tekst: foutTekst(e) });
+    } finally {
+      setBezig(null);
+      laad();
+    }
+  }
+
+  if (!open.length) return <p className="d-klein">Uitnodigen kan zodra er een gepubliceerd evenement is.</p>;
+  return (
+    <div className="d-kaart">
+      <h3>Uitnodigen om in te schrijven</h3>
+      <p className="d-klein">Eén mail per gezin, met per kind een link naar het formulier waarin de gegevens al ingevuld zijn, een link om een ander kind in te schrijven, en een link "komt niet". Kinderen die al ingeschreven zijn, krijgen niets.</p>
+      <div className="d-werkbalk">
+        <select aria-label="Evenement" value={evenementId} onChange={(e) => setEvenementId(e.target.value)}>
+          {open.map((e) => <option key={e.id} value={e.id}>{e.titel}</option>)}
+        </select>
+        <button type="button" className="d-knop" disabled={!!bezig || !overzicht?.nogNietIngeschreven} onClick={() => verstuur('uitnodiging')}>Uitnodiging versturen</button>
+        <button type="button" className="d-knop d-knop--secundair" disabled={!!bezig || !overzicht?.verstuurd} onClick={() => verstuur('herinnering')}>Herinnering versturen</button>
+        {bezig && <span className="d-klein" role="status">{bezig}</span>}
+      </div>
+      {melding && <Melding soort={melding.soort}>{melding.tekst}</Melding>}
+      {overzicht && (
+        <p className="d-klein">
+          Nog niet ingeschreven: <strong>{overzicht.nogNietIngeschreven}</strong> kind(eren) in {overzicht.contacten} gezin(nen) ·
+          uitgenodigd, nog geen reactie: <strong>{overzicht.verstuurd}</strong> · ingeschreven via de link: <strong>{overzicht.gebruikt}</strong> ·
+          komt niet: <strong>{overzicht.afgemeld}</strong>
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -136,6 +214,8 @@ function NieuweImport({ onKlaar, onAnnuleer }: { onKlaar: () => void; onAnnuleer
   const [scholen, setScholen] = useState<School[]>([]);
   const [keuzes, setKeuzes] = useState<SchoolKeuze[]>([]);
   const [enkelNakijken, setEnkelNakijken] = useState(true);
+  const [naamVolgorde, setNaamVolgorde] = useState<'naam-voornaam' | 'voornaam-naam'>('naam-voornaam');
+  const [personen, setPersonen] = useState<(PersoonControle & { keuze: string })[] | null>(null);
   const [fout, setFout] = useState<string | null>(null);
   const [bezig, setBezig] = useState(false);
 
@@ -172,20 +252,43 @@ function NieuweImport({ onKlaar, onAnnuleer }: { onKlaar: () => void; onAnnuleer
   }, [bestand, scholen, koppeling?.school]);
 
   const openTwijfels = keuzes.filter((k) => !k.keuze).length;
+  const openPersonen = personen?.filter((p) => p.status === 'twijfel' && !p.keuze).length ?? 0;
+
+  // Naam en voornaam van het kind: uit twee kolommen, of gesplitst uit één kolom.
+  const kind = (r: string[]) => {
+    if (koppeling?.kindVoornaam != null) return { kindVoornaam: waarde(r, 'kindVoornaam').trim() || null, kindNaam: waarde(r, 'kindNaam').trim() || null };
+    const { voornaam, naam } = splitsNaam(waarde(r, 'kindNaam'), naamVolgorde);
+    return { kindVoornaam: voornaam, kindNaam: naam };
+  };
+
+  // Gewijzigde kolommen of naamvolgorde: de kinderen opnieuw nakijken.
+  useEffect(() => setPersonen(null), [bestand, koppeling, naamVolgorde]);
+
+  async function kijkKinderenNa() {
+    if (!bestand) return;
+    setFout(null);
+    try {
+      const r = await beheerApi.controleerPersonen(bestand.rijen.map((x) => ({ email: waarde(x, 'email').trim() || null, ...kind(x) })));
+      setPersonen(r.map((p) => ({ ...p, keuze: '' })));
+    } catch (e) {
+      setFout(foutTekst(e));
+    }
+  }
+
   const zichtbaar = enkelNakijken ? keuzes.filter((k) => k.zekerheid !== 'zeker') : keuzes;
   const ongeldigeDatums = useMemo(
     () => (bestand && koppeling?.ingediendOp != null && datumvorm ? bestand.rijen.filter((r) => waarde(r, 'ingediendOp') && !leesDatum(waarde(r, 'ingediendOp'), datumvorm)).length : 0),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [bestand, koppeling, datumvorm],
   );
-  const klaar = !!bestand && !!naam.trim() && openTwijfels === 0 && (koppeling?.ingediendOp == null || !!datumvorm);
+  const klaar = !!bestand && !!naam.trim() && openTwijfels === 0 && (koppeling?.ingediendOp == null || !!datumvorm) && !!personen && openPersonen === 0;
 
   async function importeer() {
     if (!bestand || !koppeling) return;
     setBezig(true);
     setFout(null);
     const perTekst = new Map(keuzes.map((k) => [k.tekst, k.keuze]));
-    const rijen: ImportRij[] = bestand.rijen.map((r) => {
+    const rijen: ImportRij[] = bestand.rijen.map((r, i) => {
       const school = waarde(r, 'school').trim();
       const keuze = school ? perTekst.get(school) : undefined;
       const leeg = (v: string) => v.trim() || null;
@@ -195,10 +298,11 @@ function NieuweImport({ onKlaar, onAnnuleer }: { onKlaar: () => void; onAnnuleer
         klas: leeg(waarde(r, 'klas')),
         schoolId: keuze && keuze !== ANDERE ? keuze : null,
         schoolAndere: keuze === ANDERE ? school : null,
-        kindNaam: leeg(waarde(r, 'kindNaam')),
+        ...kind(r),
         email: leeg(waarde(r, 'email')),
         telefoon: leeg(waarde(r, 'telefoon')),
         opmerkingen: leeg(waarde(r, 'opmerkingen')),
+        ...(personen?.[i]?.status === 'twijfel' ? { persoonKeuze: personen[i].keuze } : {}),
       };
     });
     try {
@@ -259,6 +363,19 @@ function NieuweImport({ onKlaar, onAnnuleer }: { onKlaar: () => void; onAnnuleer
             </div>
           )}
 
+          {koppeling.kindNaam != null && koppeling.kindVoornaam == null && (
+            <div className="d-veld">
+              <label htmlFor="import-naamvolgorde">Naam van het kind staat als</label>
+              <select id="import-naamvolgorde" value={naamVolgorde} onChange={(e) => setNaamVolgorde(e.target.value as typeof naamVolgorde)}>
+                <option value="naam-voornaam">naam voornaam (bv. "Van den Broeck Lotte")</option>
+                <option value="voornaam-naam">voornaam naam (bv. "Lotte Van den Broeck")</option>
+              </select>
+              {bestand.rijen[0] && (
+                <span className="d-veld__hulp pii">Eerste rij: voornaam "{kind(bestand.rijen[0]).kindVoornaam ?? '—'}", naam "{kind(bestand.rijen[0]).kindNaam ?? '—'}"</span>
+              )}
+            </div>
+          )}
+
           {koppeling.school != null && (
             <>
               <h3>3. Scholen koppelen aan de officiële lijst</h3>
@@ -299,6 +416,56 @@ function NieuweImport({ onKlaar, onAnnuleer }: { onKlaar: () => void; onAnnuleer
                   </tbody>
                 </table>
               </div>
+            </>
+          )}
+        </>
+      )}
+
+      {bestand && koppeling && (
+        <>
+          <h3>4. Kinderen en gezinnen</h3>
+          <p className="d-klein">
+            Eén gezin per e-mailadres. Een kind dat al bekend is (zelfde naam bij hetzelfde adres), wordt herkend; een broer of zus wordt een
+            nieuw kind bij hetzelfde gezin. Bij een naam die bijna hetzelfde is, kies jij.
+          </p>
+          {!personen ? (
+            <button type="button" className="d-knop d-knop--secundair" onClick={kijkKinderenNa}>Kinderen nakijken</button>
+          ) : (
+            <>
+              <p className="d-klein">
+                {personen.filter((p) => p.contact === 'nieuw').length} rij(en) met een nieuw gezin, {personen.filter((p) => p.contact === 'bestaand').length} met
+                een bekend gezin{personen.some((p) => p.contact === 'geen') && `, ${personen.filter((p) => p.contact === 'geen').length} zonder geldig e-mailadres (niet te koppelen)`} ·{' '}
+                {personen.filter((p) => p.status === 'zelfde').length} kind(eren) herkend, {personen.filter((p) => p.status === 'nieuw').length} nieuw,{' '}
+                {personen.filter((p) => p.status === 'twijfel').length} twijfel.{' '}
+                {openPersonen > 0 && <strong className="d-nee">Nog {openPersonen} te kiezen.</strong>}
+              </p>
+              {personen.some((p) => p.status === 'twijfel') && (
+                <div className="d-tabelvak">
+                  <table className="d-tabel d-tabel--compact">
+                    <thead><tr><th className="getal">Rij</th><th>Kind in het bestand</th><th>Lijkt op</th></tr></thead>
+                    <tbody>
+                      {personen.map((p, i) => p.status !== 'twijfel' ? null : (
+                        <tr key={i}>
+                          <td className="getal">{i + 1}</td>
+                          <td className="pii">{[kind(bestand.rijen[i]).kindVoornaam, kind(bestand.rijen[i]).kindNaam].filter(Boolean).join(' ')}</td>
+                          <td>
+                            <select aria-label={`Rij ${i + 1}`} value={p.keuze}
+                              onChange={(e) => setPersonen(personen.map((x, j) => (j === i ? { ...x, keuze: e.target.value } : x)))}>
+                              <option value="">Kies…</option>
+                              {p.kandidaten.map((k) => (
+                                <option key={k.id} value={k.id}>
+                                  Zelfde kind als {k.naam}{k.id.startsWith('rij:') ? ` (rij ${Number(k.id.slice(4)) + 1} van dit bestand)` : ''}
+                                </option>
+                              ))}
+                              <option value="nieuw">Een ander kind</option>
+                            </select>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </>
           )}
         </>

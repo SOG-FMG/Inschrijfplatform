@@ -1,4 +1,6 @@
 import { blindeIndex, ontsleutel, versleutel } from '../../crypto/versleuteling';
+import { koppelAanContact, werkContactBij } from '../../kern/contacten';
+import { geldigeUitnodiging, markeerGebruiktStmt } from './uitnodigingen';
 import type { Env, Keuze, Moment, RegistratieInvoer, RegistratieResultaat } from '../../types';
 import { plaatshouders, promoveerWachtlijst, referentie, STATUS_DAGDEEL, STATUS_SESSIE, vandaag } from './capaciteit';
 import { binnen, publiekEvenement } from './evenement';
@@ -16,11 +18,11 @@ export async function registreer(env: Env, slug: string, invoer: RegistratieInvo
 
   const e = await db
     .prepare(
-      `select evenement_id, titel, contact_email, inschrijving_vanaf, inschrijving_tot, max_dagdelen
+      `select evenement_id, titel, contact_email, inschrijving_vanaf, inschrijving_tot, max_dagdelen, deelnemer_type
        from evenementen where slug = ? and status = 'gepubliceerd'`,
     )
     .bind(slug)
-    .first<{ evenement_id: string; titel: string; contact_email: string | null; inschrijving_vanaf: string | null; inschrijving_tot: string | null; max_dagdelen: number }>();
+    .first<{ evenement_id: string; titel: string; contact_email: string | null; inschrijving_vanaf: string | null; inschrijving_tot: string | null; max_dagdelen: number; deelnemer_type: string }>();
   if (!e) throw new DbFout('EVENEMENT_NIET_GEVONDEN');
   const nu = Date.now();
   if (!binnen(nu, e.inschrijving_vanaf, e.inschrijving_tot)) throw new DbFout('INSCHRIJVING_GESLOTEN');
@@ -91,6 +93,20 @@ export async function registreer(env: Env, slug: string, invoer: RegistratieInvo
     if (ontbreekt) throw new DbFout('VERPLICHT_TIJDSBLOK_ONTBREEKT');
   }
 
+  // Contact en persoon (kern): via de uitnodiging, of herkend aan e-mailadres en naam.
+  const uitnodiging = invoer.uitnodiging ? await geldigeUitnodiging(env, invoer.uitnodiging, eid) : null;
+  const volwassene = e.deelnemer_type === 'volwassene';
+  const contactGegevens = {
+    email: d.email,
+    voornaam: d.contactVoornaam ?? (volwassene ? d.voornaam : null),
+    naam: d.contactNaam ?? (volwassene ? d.naam : null),
+    telefoon: d.telefoon ?? null,
+  };
+  const koppeling = uitnodiging?.persoonId
+    ? { contactId: uitnodiging.contactId, persoonId: uitnodiging.persoonId }
+    : await koppelAanContact(env, contactGegevens, { voornaam: d.voornaam, naam: d.naam }, uitnodiging?.contactId);
+  if (uitnodiging?.persoonId) await werkContactBij(env, uitnodiging.contactId, contactGegevens);
+
   // Persoonsgegevens versleutelen; blinde indexen voor dubbels en inzageverzoeken
   const deelnemerId = crypto.randomUUID();
   const v = (x?: string) => versleutel(env, x);
@@ -106,11 +122,11 @@ export async function registreer(env: Env, slug: string, invoer: RegistratieInvo
       .prepare(
         `insert into deelnemers (deelnemer_id, evenement_id, doelgroep_id, naam_enc, voornaam_enc, email_enc,
            contact_voornaam_enc, contact_naam_enc, telefoon_enc, school_andere_enc, functie_enc, opmerkingen_enc,
-           email_hash, dubbel_hash, school_id, gemeente, leerjaar, privacy_akkoord_op, beheer_token_hash)
-         values (${plaatshouders(19)})`,
+           email_hash, dubbel_hash, school_id, gemeente, leerjaar, privacy_akkoord_op, beheer_token_hash, contact_id, persoon_id)
+         values (${plaatshouders(21)})`,
       )
       .bind(deelnemerId, eid, groep?.doelgroep_id ?? null, ...enc, d.schoolId ?? null, d.gemeente ?? null, d.leerjaar ?? null,
-        new Date(nu).toISOString(), tokenHash),
+        new Date(nu).toISOString(), tokenHash, koppeling.contactId, koppeling.persoonId),
     ...dagdelen.map((id) =>
       db
         .prepare(
@@ -131,6 +147,8 @@ export async function registreer(env: Env, slug: string, invoer: RegistratieInvo
         )
         .bind(crypto.randomUUID(), deelnemerId, eid, s.sessie_id),
     ),
+    // Als laatste, zodat de resultaten van de sessies (hierboven) op hun plaats blijven.
+    ...(uitnodiging ? [markeerGebruiktStmt(env, uitnodiging.uitnodigingId, deelnemerId)] : []),
   ];
 
   let resultaten: D1Result[];
@@ -141,7 +159,7 @@ export async function registreer(env: Env, slug: string, invoer: RegistratieInvo
     throw fout;
   }
 
-  const statussen = resultaten.slice(1 + dagdelen.length).map((r) => (r.results[0] as { status: string }).status);
+  const statussen = resultaten.slice(1 + dagdelen.length, 1 + dagdelen.length + gekozen.length).map((r) => (r.results[0] as { status: string }).status);
   const momenten: Moment[] = gekozenDagdelen.map((dd) => ({
     dagdeelId: dd.dagdeel_id, dag: dd.dag, dagdeel: dd.naam, startUur: dd.start_uur, eindUur: dd.eind_uur,
   }));

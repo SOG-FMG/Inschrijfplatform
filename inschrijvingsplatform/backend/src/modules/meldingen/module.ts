@@ -71,5 +71,5 @@ export default defineModule({
     },
   ],
 
-  taken: [{ naam: 'meldingen ouder dan 90 dagen verwijderen', uitvoeren: ruimMeldingenOp }],
+  taken: [{ naam: 'meldingen ouder dan 90 dagen verwijderen', uitvoeren: (env) => ruimMeldingenOp(env) }],
 });

@@ -126,6 +126,41 @@ ${p.contactEmail ? `<p>Vragen? Mail naar <a href="mailto:${esc(p.contactEmail)}"
   };
 }
 
+/**
+ * Uitnodiging (of herinnering) om in te schrijven, aan één contact: per kind een link naar het vooraf ingevulde
+ * formulier en een afmeldlink, plus een link om een ander kind in te schrijven.
+ */
+export function uitnodigingsmail(p: {
+  aan: string;
+  evenement: string;
+  inschrijvingTot: string | null;
+  contactEmail: string | null;
+  herinnering: boolean;
+  kinderen: { naam: string; inschrijven: string; afmelden: string }[];
+  anderKind: string | null;
+}): Mail {
+  const tot = p.inschrijvingTot
+    ? new Date(p.inschrijvingTot).toLocaleDateString('nl-BE', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Brussels' })
+    : null;
+  const kinderen = p.kinderen
+    .map((k) => `<li><a href="${esc(k.inschrijven)}"><strong>${esc(k.naam)} inschrijven</strong></a>
+<br><small><a href="${esc(k.afmelden)}">${esc(k.naam)} komt niet</a> (dan sturen we geen herinnering meer)</small></li>`)
+    .join('');
+  return {
+    aan: p.aan,
+    type: p.herinnering ? 'herinnering' : 'uitnodiging',
+    onderwerp: `${p.herinnering ? 'Herinnering: ' : ''}inschrijven voor ${p.evenement}`,
+    html: `<p>Beste,</p>
+<p>${p.herinnering ? 'We hebben nog geen inschrijving ontvangen.' : 'Je toonde eerder interesse in onze school.'}
+De inschrijvingen voor <strong>${esc(p.evenement)}</strong> zijn open${tot ? ` tot ${esc(tot)}` : ''}.</p>
+<p>Met de knop hieronder opent het formulier, met de gegevens die je al gaf ingevuld. Kijk ze na en kies een moment.</p>
+<ul>${kinderen}</ul>
+${p.anderKind ? `<p>Een ander kind inschrijven? <a href="${esc(p.anderKind)}">Gebruik deze link</a>.</p>` : ''}
+<p>Deze links zijn persoonlijk. Deel ze niet met anderen.</p>
+${p.contactEmail ? `<p>Vragen? Mail naar <a href="mailto:${esc(p.contactEmail)}">${esc(p.contactEmail)}</a>.</p>` : ''}`,
+  };
+}
+
 export function testmail(aan: string): Mail {
   return {
     aan,

@@ -67,6 +67,7 @@ export function valideerRegistratie(body: any): RegistratieInvoer {
     dagdelen,
     sessies,
     turnstileToken: typeof body.turnstileToken === 'string' ? body.turnstileToken : undefined,
+    uitnodiging: typeof body.uitnodiging === 'string' && /^[A-Za-z0-9_-]{43}$/.test(body.uitnodiging) ? body.uitnodiging : undefined,
     website: typeof body.website === 'string' ? body.website : undefined,
   };
 }

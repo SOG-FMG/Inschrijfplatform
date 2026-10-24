@@ -929,7 +929,9 @@ describe('voorinschrijvingen importeren', () => {
     expect(r.status).toBe(201);
     importId = r.data.importId;
     const rij = await een(`select * from voorinschrijvingen where import_id = ? and school_id is not null order by ingediend_op limit 1`, importId);
-    expect(rij.kind_naam_enc).toMatch(/^v1\./);
+    // Naam en e-mail staan bij de persoon en het contact van de kern, versleuteld; niet meer in de rij zelf.
+    expect(rij.kind_naam_enc).toBeNull();
+    expect((await een(`select naam_enc from personen where persoon_id = ?`, rij.persoon_id)).naam_enc).toMatch(/^v1\./);
     expect(JSON.stringify(rij)).not.toContain('Proef Kind');
     expect(await een(`select count(*) as n from voorinschrijvingen where import_id = ? and ingediend_op is null`, importId)).toEqual({ n: 1 });
     expect(await een(`select school_andere from voorinschrijvingen where import_id = ? and school_id is null`, importId)).toEqual({ school_andere: 'School buiten de lijst' });
@@ -938,7 +940,7 @@ describe('voorinschrijvingen importeren', () => {
   test('statistieken en controles, zonder persoonsgegevens', async () => {
     const s = (await api('GET', '/api/beheer/voorinschrijvingen/statistieken')).data.find((x: any) => x.id === importId);
     expect(s.aantal).toBe(3);
-    expect(s.controle).toEqual({ zonderEmail: 0, dubbeleAdressen: 1, ookIngeschreven: 1, ookInAndereImport: 0, adressen: 2 });
+    expect(s.controle).toEqual({ zonderEmail: 0, dubbeleAdressen: 1, ookIngeschreven: 1, ookInAndereImport: 0, adressen: 2, kinderen: 3, kinderenIngeschreven: 0 });
     expect(s.scholen.find((x: any) => x.soort === 'andere')).toMatchObject({ school: 'School buiten de lijst', aantal: 1 });
     expect(s.klassen).toContainEqual({ klas: '6de leerjaar', aantal: 2 });
     expect(s.maanden).toEqual([{ maand: '2025-03', aantal: 1 }, { maand: '2025-04', aantal: 1 }]);
@@ -956,5 +958,144 @@ describe('voorinschrijvingen importeren', () => {
     expect((await api('DELETE', `/api/beheer/voorinschrijvingen/importen/${importId}`)).status).toBe(200);
     expect(await een(`select count(*) as n from voorinschrijvingen where import_id = ?`, importId)).toEqual({ n: 0 });
     expect((await api('DELETE', `/api/beheer/voorinschrijvingen/importen/${importId}`)).status).toBe(404);
+  });
+});
+
+describe('contacten, personen en uitnodigingen', () => {
+  const BEHEER = 'import.test@onderwijs.gent.be';
+  const URL_FLOW = 'https://prod-12.westeurope.logic.azure.com:443/workflows/abc/triggers/manual/paths/invoke?sig=geheim';
+  const echteFetch = globalThis.fetch;
+  let mails: any[] = [];
+  let evId: string;
+  let dagdeelId: string;
+  let importA: string;
+  let importB: string;
+  const importeer = (naam: string, rijen: object[]) => api('POST', '/api/beheer/voorinschrijvingen/importen', { naam, rijen });
+  const contactVan = async (email: string) => {
+    const { blindeIndex } = await import('../src/crypto/versleuteling');
+    return (await een(`select contact_id from contacten where email_hash = ?`, await blindeIndex(env, 'email', email)))?.contact_id ?? null;
+  };
+  const tokens = (html: string) => [...html.matchAll(/uitnodiging=([A-Za-z0-9_-]{43})(&amp;afmelden=1)?/g)].map((m) => ({ token: m[1], afmelden: !!m[2] }));
+  const inschrijven = (extra: Record<string, unknown>, uitnodiging?: string) =>
+    api('POST', `/api/evenementen/${SLUG}/registraties`, { deelnemer: deelnemer(extra), dagdelen: [dagdeelId], sessies: [], uitnodiging });
+
+  beforeAll(async () => {
+    env.DEV_BEHEER_EMAIL = BEHEER;
+    env.MAIL_PROVIDER = 'webhook';
+    env.MAIL_WEBHOOK_URL = URL_FLOW;
+    env.MAIL_WEBHOOK_SLEUTEL = 'testsleutel-123';
+    globalThis.fetch = (async (url: any, init?: any) => {
+      if (String(url).startsWith('https://prod-12.westeurope.logic.azure.com')) {
+        mails.push(JSON.parse(init.body));
+        return new Response(null, { status: 202 });
+      }
+      return echteFetch(url, init);
+    }) as typeof fetch;
+    // Het evenement open en zonder capaciteitsgrens, ongeacht wat eerdere tests deden.
+    await sql(`update evenementen set inschrijving_tot = null, eind_datum = '2099-12-31', status = 'gepubliceerd' where slug = ?`, SLUG);
+    evId = (await een(`select evenement_id from evenementen where slug = ?`, SLUG)).evenement_id;
+    await sql(`update dagdelen set capaciteit = null where dag_id in (select dag_id from evenement_dagen where evenement_id = ?)`, evId);
+    dagdeelId = vm1.id;
+  });
+  afterAll(() => {
+    globalThis.fetch = echteFetch;
+    env.MAIL_PROVIDER = 'log';
+  });
+
+  test('import: één contact per adres, zelfde kind herkend, broer of zus apart, twijfel moet beslist worden', async () => {
+    const a = await importeer('A', [
+      { email: 'gezin@example.org', kindVoornaam: 'Robin', kindNaam: 'Proef', klas: '6de leerjaar' },
+      { email: 'Gezin@Example.org', kindVoornaam: 'Lotte', kindNaam: 'Proef', klas: '5de leerjaar' },
+      { email: 'gezin@example.org', kindVoornaam: 'robin', kindNaam: 'proef' }, // zelfde kind, ook in hetzelfde bestand
+    ]);
+    expect(a.data).toMatchObject({ contacten: 1, nieuweKinderen: 2 });
+    importA = a.data.importId;
+    const gezin = await contactVan('gezin@example.org');
+    expect(await een(`select count(*) as n from personen where contact_id = ?`, gezin)).toEqual({ n: 2 });
+
+    const rijen = [
+      { email: 'gezin@example.org', kindVoornaam: 'Robin', kindNaam: 'Proef' }, // zelfde
+      { email: 'gezin@example.org', kindVoornaam: 'Robbin', kindNaam: 'Proef' }, // tikfout = twijfel
+      { email: 'nieuw@example.org', kindVoornaam: 'Mo', kindNaam: 'Test' },
+    ];
+    const c = await api('POST', '/api/beheer/voorinschrijvingen/personen', { rijen });
+    expect(c.data.map((r: any) => [r.contact, r.status])).toEqual([['bestaand', 'zelfde'], ['bestaand', 'twijfel'], ['nieuw', 'nieuw']]);
+    expect(c.data[1].kandidaten).toEqual([{ id: expect.any(String), naam: 'Robin Proef' }]);
+
+    expect((await importeer('B', rijen)).status).toBe(400); // twijfel niet beslist
+    const b = await importeer('B', rijen.map((r, i) => (i === 1 ? { ...r, persoonKeuze: 'nieuw' } : r)));
+    expect(b.data).toMatchObject({ contacten: 2, nieuweKinderen: 2 });
+    importB = b.data.importId;
+    expect(await een(`select count(*) as n from personen where contact_id = ?`, gezin)).toEqual({ n: 3 });
+  });
+
+  test('inschrijven via het formulier: zelfde contact en kind, ook met andere hoofdletters', async () => {
+    const r = await inschrijven({ email: 'GEZIN@example.org', voornaam: 'Robin', naam: 'Proef' });
+    expect(r.status).toBe(201);
+    const d = await een(`select persoon_id from deelnemers where contact_id = ?`, await contactVan('gezin@example.org'));
+    const robin = await een(`select persoon_id from voorinschrijvingen where import_id = ? and klas = '6de leerjaar'`, importA);
+    expect(d.persoon_id).toBe(robin.persoon_id);
+  });
+
+  test('uitnodigen: één mail per gezin met een link per kind; al ingeschreven niet; vooraf ingevuld; link één keer', async () => {
+    const pad = `/api/beheer/voorinschrijvingen/importen/${importA}/uitnodigingen/${evId}`;
+    expect((await api('GET', pad)).data).toMatchObject({ nogNietIngeschreven: 1, contacten: 1 });
+    mails = [];
+    expect((await api('POST', pad, { soort: 'uitnodiging' })).data).toEqual({ verstuurd: 1, mislukt: 0, resterend: 0 });
+    expect(mails).toHaveLength(1);
+    expect(mails[0]).toMatchObject({ aan: 'gezin@example.org', type: 'uitnodiging' });
+    expect(mails[0].html).toContain('Lotte Proef inschrijven');
+    expect(mails[0].html).not.toContain('Robin');
+    const links = tokens(mails[0].html);
+    const lotte = links[0].token;
+    const ander = links.find((l) => l.token !== lotte && !l.afmelden)!.token;
+    expect(links.filter((l) => l.afmelden).map((l) => l.token)).toEqual([lotte]);
+
+    const v = await api('GET', `/api/uitnodigingen/${lotte}`);
+    expect(v.data).toMatchObject({ slug: SLUG, status: 'verstuurd', contact: { email: 'gezin@example.org' }, persoon: { voornaam: 'Lotte', naam: 'Proef' }, leerjaar: '5de leerjaar' });
+
+    // Inschrijven via de link: koppelt aan Lotte, ook als de ouder het e-mailadres wijzigt.
+    expect((await inschrijven({ email: 'ander.adres@example.org', voornaam: 'Lotte', naam: 'Proef' }, lotte)).status).toBe(201);
+    const { sha256 } = await import('../src/crypto/versleuteling');
+    const lotteId = (await een(`select persoon_id from uitnodigingen where token_hash = ?`, await sha256(lotte))).persoon_id;
+    expect(await een(`select count(*) as n from deelnemers where persoon_id = ?`, lotteId)).toEqual({ n: 1 });
+    expect((await api('GET', `/api/uitnodigingen/${lotte}`)).data).toEqual({ slug: SLUG, evenement: expect.any(String), status: 'gebruikt' });
+    expect((await inschrijven({ email: 'gezin@example.org', voornaam: 'Lotte', naam: 'Proef' }, lotte)).data.fout).toBe('UITNODIGING_GEBRUIKT');
+
+    // "Een ander kind": nieuw kind bij hetzelfde contact; de link blijft bruikbaar.
+    expect((await inschrijven({ email: 'gezin@example.org', voornaam: 'Mila', naam: 'Proef' }, ander)).status).toBe(201);
+    expect(await een(`select count(*) as n from personen where contact_id = ?`, await contactVan('gezin@example.org'))).toEqual({ n: 4 });
+    expect((await api('GET', `/api/uitnodigingen/${'x'.repeat(43)}`)).data.fout).toBe('UITNODIGING_ONGELDIG');
+  });
+
+  test('afmelden en herinneringen: enkel wie nog niet reageerde', async () => {
+    const pad = `/api/beheer/voorinschrijvingen/importen/${importB}/uitnodigingen/${evId}`;
+    mails = [];
+    expect((await api('POST', pad, { soort: 'uitnodiging' })).data).toMatchObject({ verstuurd: 2, resterend: 0 });
+    const naarGezin = mails.find((m) => m.aan === 'gezin@example.org');
+    expect(naarGezin.html).toContain('Robbin Proef inschrijven'); // Robin is al ingeschreven en staat er niet in
+    expect(naarGezin.html).not.toContain('Robin Proef');
+    const robbin = tokens(naarGezin.html)[0].token;
+    expect((await api('POST', `/api/uitnodigingen/${robbin}/afmelden`)).data).toEqual({ ok: true });
+
+    // Meteen opnieuw: niets (minstens een uur tussen twee mails). Later: enkel wie nog niet reageerde.
+    expect((await api('POST', pad, { soort: 'herinnering' })).data).toMatchObject({ verstuurd: 0 });
+    await sql(`update uitnodigingen set laatst_verstuurd_op = '2000-01-01T00:00:00Z' where bron = ?`, `voorinschrijvingen:${importB}`);
+    mails = [];
+    expect((await api('POST', pad, { soort: 'herinnering' })).data).toMatchObject({ verstuurd: 1, resterend: 0 });
+    expect(mails.map((m) => [m.aan, m.type])).toEqual([['nieuw@example.org', 'herinnering']]);
+    expect((await api('GET', pad)).data).toMatchObject({ afgemeld: 1, verstuurd: 1 });
+  });
+
+  test('anonimiseren verbreekt de koppeling; de kern ruimt ongebruikte contacten en personen op', async () => {
+    expect((await api('POST', `/api/beheer/voorinschrijvingen/importen/${importB}/anonimiseer`)).status).toBe(200);
+    expect(await een(`select count(*) as n from uitnodigingen where bron = ?`, `voorinschrijvingen:${importB}`)).toEqual({ n: 0 });
+    await worker.scheduled!({} as ScheduledController, env, ctx);
+    await Promise.allSettled(wachtend.splice(0));
+    expect(await contactVan('nieuw@example.org')).toBeNull(); // enkel in import B
+    const gezin = await contactVan('gezin@example.org');
+    expect(gezin).not.toBeNull(); // nog in import A en ingeschreven
+    // Robbin (enkel in B) is weg; Robin, Lotte en Mila blijven.
+    expect(await een(`select count(*) as n from personen where contact_id = ?`, gezin)).toEqual({ n: 3 });
   });
 });

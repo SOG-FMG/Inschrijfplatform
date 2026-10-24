@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { MomentKiezer } from '../components/MomentKiezer';
 import { Overzicht } from '../components/Overzicht';
-import { SchoolKiezer } from '../components/SchoolKiezer';
+import { SchoolKiezer, schoolLabel as labelVanSchool } from '../components/SchoolKiezer';
 import { SessieKiezer, sessiesVoor } from '../components/SessieKiezer';
 import { Stappen } from '../components/Stappen';
 import { Turnstile, TURNSTILE_SITEKEY } from '../components/Turnstile';
@@ -9,7 +9,7 @@ import { Keuzerondjes, Tekstveld } from '../components/Velden';
 import { api, isDemo } from '../services/api';
 import { zetHuisstijl } from '../services/huisstijl';
 import { log } from '../services/logboek';
-import { ApiFout, type Evenement, type Keuze, type Moment, type RegistratieAntwoord, type Tijdsblok } from '../types';
+import { ApiFout, type Evenement, type Keuze, type Moment, type RegistratieAntwoord, type Tijdsblok, type Voorinvulling } from '../types';
 
 interface Formulier {
   doelgroepId: string;
@@ -41,6 +41,13 @@ const TELEFOON = /^[+0-9 ()./-]{8,20}$/;
 
 type Fouten = Record<string, string>;
 
+/** ?uitnodiging=<token> (link uit een uitnodigingsmail) en eventueel &afmelden=1. */
+function leesUitnodigingUitAdres(): { token: string | null; afmelden: boolean } {
+  const p = new URLSearchParams(location.search);
+  const t = p.get('uitnodiging');
+  return { token: t && /^[A-Za-z0-9_-]{43}$/.test(t) ? t : null, afmelden: p.get('afmelden') === '1' };
+}
+
 export function InschrijfPagina({ slug }: { slug: string }) {
   const [evenement, setEvenement] = useState<Evenement | null>(null);
   const [laadFout, setLaadFout] = useState<string | null>(null);
@@ -53,6 +60,13 @@ export function InschrijfPagina({ slug }: { slug: string }) {
   const [turnstileToken, setTurnstileToken] = useState<string>();
   const [antwoord, setAntwoord] = useState<RegistratieAntwoord | null>(null);
   const kopRef = useRef<HTMLHeadingElement>(null);
+  const [link] = useState(leesUitnodigingUitAdres);
+  const [uitnodiging, setUitnodiging] = useState<Voorinvulling | null>(null);
+  const [uitnodigingFout, setUitnodigingFout] = useState<string | null>(null);
+  // Na een inschrijving met de link ("nog een kind inschrijven") niet opnieuw dezelfde link meesturen.
+  const [linkGebruiken, setLinkGebruiken] = useState(true);
+  const [afgemeld, setAfgemeld] = useState(false);
+  const voorIngevuld = useRef(false);
   const foutRef = useRef<HTMLDivElement>(null);
 
   const wijzig = <K extends keyof Formulier>(k: K, v: Formulier[K]) => {
@@ -79,6 +93,32 @@ export function InschrijfPagina({ slug }: { slug: string }) {
   useEffect(() => {
     laad();
   }, [laad]);
+
+  useEffect(() => {
+    if (!link.token) return;
+    api.haalUitnodiging(link.token).then(setUitnodiging).catch((e) => setUitnodigingFout(e instanceof ApiFout ? e.message : 'Deze link werkt niet.'));
+  }, [link.token]);
+
+  // Formulier vooraf invullen zodra evenement en uitnodiging er zijn (één keer).
+  useEffect(() => {
+    const u = uitnodiging;
+    if (!evenement || !u?.contact || voorIngevuld.current || link.afmelden) return;
+    voorIngevuld.current = true;
+    const c = u.contact;
+    const volwassen = evenement.deelnemerType === 'volwassene';
+    setF((oud) => ({
+      ...oud,
+      email: c.email,
+      telefoon: c.telefoon ?? '',
+      contactVoornaam: volwassen ? '' : c.voornaam ?? '',
+      contactNaam: volwassen ? '' : c.naam ?? '',
+      voornaam: u.persoon?.voornaam ?? (volwassen ? c.voornaam ?? '' : ''),
+      naam: u.persoon?.naam ?? (volwassen ? c.naam ?? '' : ''),
+      schoolId: u.school?.id,
+      schoolTekst: u.school ? labelVanSchool(u.school) : u.schoolAndere ?? '',
+      leerjaar: u.leerjaar && evenement.leerjaarOpties.includes(u.leerjaar) ? u.leerjaar : oud.leerjaar,
+    }));
+  }, [evenement, uitnodiging, link.afmelden]);
 
   useEffect(() => {
     if (evenement) document.title = `Inschrijven – ${evenement.titel}`;
@@ -133,6 +173,37 @@ export function InschrijfPagina({ slug }: { slug: string }) {
       });
     });
   }, [stapNaam, laad]);
+
+  // "Dit kind komt niet": geen herinneringen meer voor dit kind.
+  if (link.token && link.afmelden) {
+    const wie = uitnodiging?.persoon ? [uitnodiging.persoon.voornaam, uitnodiging.persoon.naam].filter(Boolean).join(' ') : 'dit kind';
+    const bevestig = () =>
+      api.meldAf(link.token!).then(() => setAfgemeld(true)).catch((e) => setUitnodigingFout(e instanceof ApiFout ? e.message : 'Dat lukte niet.'));
+    return (
+      <main className="pagina">
+        <section className="kaartblok">
+          <h1>{uitnodiging?.evenement ?? 'Uitnodiging'}</h1>
+          {uitnodigingFout ? (
+            <div className="melding melding--fout" role="alert">{uitnodigingFout}</div>
+          ) : afgemeld || uitnodiging?.status === 'afgemeld' ? (
+            <div className="melding melding--succes" role="status">Bedankt. We sturen geen herinneringen meer over <span className="pii">{wie}</span>.</div>
+          ) : uitnodiging?.status === 'gebruikt' ? (
+            <div className="melding" role="status">Er is al ingeschreven met deze link. Wijzigen of annuleren kan via de link in je bevestigingsmail.</div>
+          ) : !uitnodiging ? (
+            <p className="laden">Even geduld…</p>
+          ) : (
+            <>
+              <p>Komt <strong className="pii">{wie}</strong> niet naar {uitnodiging.evenement}? Dan sturen we geen herinneringen meer.</p>
+              <div className="knoppen">
+                <a className="knop knop--secundair" href={`/${uitnodiging.slug}?uitnodiging=${link.token}`}>Toch inschrijven</a>
+                <button type="button" className="knop" onClick={bevestig}>Bevestigen: komt niet</button>
+              </div>
+            </>
+          )}
+        </section>
+      </main>
+    );
+  }
 
   if (laadFout) {
     return (
@@ -213,9 +284,11 @@ export function InschrijfPagina({ slug }: { slug: string }) {
         dagdelen: f.dagdelen,
         sessies,
         turnstileToken,
+        uitnodiging: link.token && linkGebruiken && uitnodiging?.contact ? link.token : undefined,
         website: f.website,
       });
       setAntwoord(res);
+      setLinkGebruiken(false);
     } catch (e) {
       const fout = e instanceof ApiFout ? e : new ApiFout('SERVERFOUT', 'Er ging iets mis. Probeer het later opnieuw.');
       setMelding(fout.message);
@@ -318,6 +391,13 @@ export function InschrijfPagina({ slug }: { slug: string }) {
   return (
     <main className="pagina">
       {kop}
+      {link.token && linkGebruiken && uitnodigingFout && <div className="melding" role="status">{uitnodigingFout}</div>}
+      {link.token && linkGebruiken && uitnodiging?.status === 'gebruikt' && (
+        <div className="melding" role="status">Met deze link is al ingeschreven. Wijzigen kan via de link in je bevestigingsmail; een ander kind inschrijven kan hieronder.</div>
+      )}
+      {link.token && linkGebruiken && uitnodiging?.contact && stap === 0 && (
+        <div className="melding melding--succes" role="status">Je gegevens zijn al ingevuld vanuit je voorinschrijving. Kijk ze na en pas aan wat veranderd is.</div>
+      )}
       {stap === 0 && evenement.omschrijving && <p className="intro">{evenement.omschrijving}</p>}
       <Stappen stappen={stappen} huidig={stap} onGaNaar={setStap} />
 

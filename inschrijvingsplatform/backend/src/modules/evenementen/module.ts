@@ -1,5 +1,6 @@
 import { sha256 } from '../../crypto/versleuteling';
-import { anonimiseerEvenement, anonimiseerVerlopenEvenementen, deelnemerslijst, kenSessieToe, verplaatsDagdeel } from './beheer';
+import { anonimiseerEvenement, anonimiseerVerlopenEvenementen, deelnemerslijst, kenSessieToe, koppelBestaandeDeelnemers, verplaatsDagdeel } from './beheer';
+import { meldAf, voorinvulling } from './uitnodigingen';
 import { publiekEvenement } from './evenement';
 import { bewaarLogo, instellingen, isSoort, kopieerDagdeel, kopieerSessies, maak, verwijder, verwijderLogo, wijzig } from './instellingen';
 import { annulatieGegevens, annuleerViaToken, registratieViaToken, registreer, wijzigKeuzesViaToken } from './registratie';
@@ -88,6 +89,25 @@ export default defineModule({
             'Content-Security-Policy': "default-src 'none'",
           },
         });
+      },
+    },
+    // Uitnodiging (link uit een mail): vooraf ingevuld formulier, of "dit kind komt niet"
+    {
+      methode: 'GET',
+      pad: '/uitnodigingen/:token:token',
+      toegang: 'publiek',
+      async handler({ env, request, params }) {
+        if (await teSnel(env.RL_REGISTRATIE, request)) return teVeelAanvragen();
+        return voorinvulling(env, params.token);
+      },
+    },
+    {
+      methode: 'POST',
+      pad: '/uitnodigingen/:token:token/afmelden',
+      toegang: 'publiek',
+      async handler({ env, request, params }) {
+        if (await teSnel(env.RL_REGISTRATIE, request)) return teVeelAanvragen();
+        return meldAf(env, params.token);
       },
     },
     // Zelfbeheer via de persoonlijke link (/beheer/<token> in de frontend)
@@ -265,7 +285,14 @@ export default defineModule({
     IN_GEBRUIK: [409, 'Dit onderdeel heeft al inschrijvingen (ook geannuleerde). Zet de status op gesloten of geannuleerd in plaats van te verwijderen.'],
     INSCHRIJVING_NIET_GEVONDEN: [404, 'Deze deelnemer is niet ingeschreven voor dat moment.'],
     EERST_DAGDEEL_VERPLAATSEN: [409, 'Verplaats de deelnemer eerst naar het dagdeel van deze sessie.'],
+    UITNODIGING_ONGELDIG: [404, 'Deze link is ongeldig of verlopen. Je kan je wel gewoon inschrijven via het formulier.'],
+    UITNODIGING_GEBRUIKT: [409, 'Met deze link is al ingeschreven. Bekijk of wijzig de inschrijving via de link in je bevestigingsmail.'],
   },
 
-  taken: [{ naam: 'verlopen evenementen anonimiseren', uitvoeren: anonimiseerVerlopenEvenementen }],
+  taken: [
+    { naam: 'verlopen evenementen anonimiseren', uitvoeren: (env) => anonimiseerVerlopenEvenementen(env) },
+    { naam: 'bestaande inschrijvingen aan contacten koppelen', uitvoeren: (env) => koppelBestaandeDeelnemers(env) },
+  ],
+
+  persoonsverwijzingen: [{ tabel: 'deelnemers', persoon: 'persoon_id', contact: 'contact_id' }],
 });

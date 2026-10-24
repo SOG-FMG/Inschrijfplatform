@@ -89,6 +89,6 @@ export const DASHBOARD_MODULES: DashboardModule[] = [
   {
     id: 'voorinschrijvingen',
     menu: [{ href: '/dashboard/voorinschrijvingen', label: 'Voorinschrijvingen', volgorde: 15, recht: 'voorinschrijvingen.beheren', actief: (p) => p.startsWith('/dashboard/voorinschrijvingen') }],
-    paginas: [{ patroon: /^\/dashboard\/voorinschrijvingen$/, recht: 'voorinschrijvingen.beheren', toon: () => <Voorinschrijvingen /> }],
+    paginas: [{ patroon: /^\/dashboard\/voorinschrijvingen$/, recht: 'voorinschrijvingen.beheren', toon: (_m, c) => <Voorinschrijvingen profiel={c.profiel} /> }],
   },
 ];

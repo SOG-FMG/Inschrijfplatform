@@ -1,4 +1,5 @@
 import { ruimAanmeldingOp } from '../auth/sessie';
+import { ruimContactenOp } from './contacten';
 import { audit } from './audit';
 import { testmail, verstuur } from '../mail';
 import { json } from './http';
@@ -51,5 +52,9 @@ export default defineModule({
     GEEN_TOEGANG: [403, 'Je hebt geen toegang tot deze gegevens.'],
   },
 
-  taken: [{ naam: 'verlopen sessies en aanmeldpogingen opruimen', uitvoeren: ruimAanmeldingOp }],
+  // Volgorde: eerst de taken van de modules (bv. anonimiseren), daarna pas wat nergens meer gebruikt wordt opruimen.
+  taken: [
+    { naam: 'verlopen sessies en aanmeldpogingen opruimen', uitvoeren: (env) => ruimAanmeldingOp(env) },
+    { naam: 'ongebruikte contacten en personen verwijderen', uitvoeren: (env, { modules }) => ruimContactenOp(env, modules) },
+  ],
 });
