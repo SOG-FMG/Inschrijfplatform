@@ -1,3 +1,4 @@
+import { checkinSectieHtml } from '../../kern/checkin';
 import { esc, type SjabloonDefinitie, type Velden } from '../../kern/sjablonen';
 import { mailVolgensSjabloon, type Mail } from '../../mail';
 import type { Keuze, Moment } from '../../types';
@@ -149,12 +150,17 @@ function kinderenHtml(k: { naam: string; inschrijven: string; afmelden: string }
 <br><small><a href="${esc(x.afmelden)}">${esc(x.naam)} komt niet</a> (dan sturen we geen herinnering meer)</small></li>`));
 }
 
-export function bevestigingsmail(r: { referentie: string; evenement: string; contactEmail: string | null; momenten: Moment[]; keuzes: Keuze[] }, aan: string, voornaam: string, beheerUrl: string): Mail {
+/** `checkin`: de QR-code voor het onthaal (kern/checkin.ts), als vaste sectie onder de (aanpasbare) tekst. */
+export function bevestigingsmail(
+  r: { referentie: string; evenement: string; contactEmail: string | null; momenten: Moment[]; keuzes: Keuze[] },
+  aan: string, voornaam: string, beheerUrl: string, checkin?: { basisUrl: string; token: string },
+): Mail {
   const velden: Velden = {
     voornaam, evenement: r.evenement, referentie: r.referentie, momenten: momentenHtml(r.momenten), keuzes: keuzesHtml(r.keuzes),
     beheerlink: link(beheerUrl, 'deze persoonlijke link'), contactEmail: mailto(r.contactEmail),
   };
-  return mailVolgensSjabloon(sjabloon('bevestiging'), velden, { aan, type: 'bevestiging', referentie: r.referentie });
+  const mail = mailVolgensSjabloon(sjabloon('bevestiging'), velden, { aan, type: 'bevestiging', referentie: r.referentie });
+  return checkin ? { ...mail, onderaan: checkinSectieHtml(checkin.basisUrl, checkin.token) } : mail;
 }
 
 export function wijzigingsmail(p: { aan: string; voornaam: string; evenement: string; referentie: string; keuzes: Keuze[]; beheerUrl: string; contactEmail: string | null }): Mail {

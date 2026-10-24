@@ -193,7 +193,7 @@ async function anonimiseer(env: Env, evenementId: string): Promise<number> {
         `update deelnemers set
            naam_enc = null, voornaam_enc = null, email_enc = null, contact_voornaam_enc = null, contact_naam_enc = null,
            telefoon_enc = null, school_andere_enc = null, functie_enc = null, opmerkingen_enc = null,
-           email_hash = null, dubbel_hash = null, beheer_token_hash = null, contact_id = null, persoon_id = null, geanonimiseerd_op = ?
+           email_hash = null, dubbel_hash = null, beheer_token_hash = null, checkin_token = null, contact_id = null, persoon_id = null, geanonimiseerd_op = ?
          where evenement_id = ? and geanonimiseerd_op is null`,
       )
       .bind(new Date().toISOString(), evenementId),

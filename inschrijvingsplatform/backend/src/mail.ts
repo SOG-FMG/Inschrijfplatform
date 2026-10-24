@@ -13,6 +13,8 @@ export interface Mail {
   reden?: string;
   /** Mail volgens een sjabloon: bij het versturen geldt de aangepaste tekst (Dashboard → Mailteksten), als die er is. */
   sjabloon?: { sleutel: string; velden: Velden };
+  /** Vaste HTML onder de tekst, ook onder een aangepaste tekst (bv. de QR-code voor de check-in). */
+  onderaan?: string;
 }
 
 /** Bouwt een mail met de standaardtekst van het sjabloon; verstuur() vervangt die door de aangepaste tekst. */
@@ -134,7 +136,7 @@ export async function verstuur(env: Env, mail: Mail): Promise<'verzonden' | 'ove
     }
   }
   // Banner, voettekst en de vaste regel wie de mail stuurt en waarom.
-  mail = { ...mail, html: verpakMail(mail.html, { opmaak: await leesOpmaak(env), organisatie: installatie(env).organisatie, basisUrl: env.PUBLIC_APP_URL, reden: mail.reden }) };
+  mail = { ...mail, html: verpakMail(mail.html + (mail.onderaan ?? ''), { opmaak: await leesOpmaak(env), organisatie: installatie(env).organisatie, basisUrl: env.PUBLIC_APP_URL, reden: mail.reden }) };
   if (env.MAIL_PROVIDER === 'webhook') {
     await viaWebhook(env, mail);
     return 'verzonden';

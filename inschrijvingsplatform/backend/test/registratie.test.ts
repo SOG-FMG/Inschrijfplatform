@@ -835,6 +835,44 @@ describe('e-mail via de Power Automate-webhook', () => {
     expect(JSON.stringify(await een(`select * from mail_berichten order by created_at desc limit 1`))).not.toContain('example.org');
   });
 
+  test('bevestigingsmail: QR-code voor de check-in met een eigen token, zonder persoonsgegevens', async () => {
+    const ev = (await api('GET', `/api/evenementen/${SLUG}`)).data;
+    const r = await registreer(deelnemer({ voornaam: 'Qrtest', email: 'qrtest@example.org' }), [ev.dagen[0].dagdelen[0].id], []);
+    await wacht();
+    const html: string = aanroepen[0].body.html;
+    const { sha256 } = await import('../src/crypto/versleuteling');
+    const { checkin_token } = await een(`select checkin_token from deelnemers where beheer_token_hash = ?`, await sha256(token(r)));
+    expect(checkin_token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(checkin_token).not.toBe(token(r)); // los van de beheertoken
+    expect(html).toContain('QR-code voor aanmelden op de dag van het evenement');
+    expect(html).toContain(`http://localhost:5173/api/checkin/${checkin_token}/qr.png`);
+    expect(html).toContain(`http://localhost:5173/checkin/${checkin_token}`);
+    expect(html).toContain(r.data.beheerUrl); // de beheerlink blijft
+    // De sectie staat onder de tekst van het sjabloon.
+    expect(html.indexOf('QR-code voor aanmelden')).toBeGreaterThan(html.indexOf(r.data.beheerUrl));
+
+    const png = await worker.fetch(new Request(`http://localhost/api/checkin/${checkin_token}/qr.png`), env, ctx);
+    expect(png.status).toBe(200);
+    expect(png.headers.get('Content-Type')).toBe('image/png');
+    const bytes = new Uint8Array(await png.arrayBuffer());
+    expect([...bytes.slice(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
+    // Geen QR-code voor een onbekende token (geen open generator)
+    expect((await api('GET', `/api/checkin/${'x'.repeat(43)}/qr.png`)).status).toBe(404);
+    // De check-intoken geeft geen toegang tot het zelfbeheer
+    expect((await api('GET', `/api/registraties/${checkin_token}`)).status).toBe(404);
+  });
+
+  test('een aangepaste mailtekst houdt de QR-code onderaan', async () => {
+    await sql(`insert into mailsjablonen (sleutel, onderwerp, tekst) values ('bevestiging', 'Eigen onderwerp', 'Eigen tekst voor {{voornaam}}.')
+               on conflict (sleutel) do update set onderwerp = excluded.onderwerp, tekst = excluded.tekst`);
+    const ev = (await api('GET', `/api/evenementen/${SLUG}`)).data;
+    await registreer(deelnemer({ voornaam: 'Eigen' }), [ev.dagen[0].dagdelen[0].id], []);
+    await wacht();
+    expect(aanroepen[0].body.html).toContain('Eigen tekst voor Eigen.');
+    expect(aanroepen[0].body.html).toContain('QR-code voor aanmelden op de dag van het evenement');
+    await sql(`delete from mailsjablonen where sleutel = 'bevestiging'`);
+  });
+
   test('annuleren via de link stuurt een annulatiemail', async () => {
     const ev = (await api('GET', `/api/evenementen/${SLUG}`)).data;
     const r = await registreer(deelnemer(), [ev.dagen[0].dagdelen[0].id], []);

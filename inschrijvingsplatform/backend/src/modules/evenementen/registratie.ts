@@ -11,8 +11,9 @@ import { DbFout, schrijf } from '../../kern/fouten';
  * Eerst alles valideren (lezen), daarna één schrijfbatch waarin ook de capaciteit
  * gecontroleerd wordt. Faalt één keuze, dan wordt niets bewaard.
  * De invoer is al gevalideerd en genormaliseerd door validatie.ts.
+ * `tokenHash`: hash van de beheertoken (link in de mail); `checkinToken`: aparte token voor de QR-code (kern/checkin.ts).
  */
-export async function registreer(env: Env, slug: string, invoer: RegistratieInvoer, tokenHash: string): Promise<RegistratieResultaat> {
+export async function registreer(env: Env, slug: string, invoer: RegistratieInvoer, tokenHash: string, checkinToken: string): Promise<RegistratieResultaat> {
   const db = env.DB;
   const { deelnemer: d, dagdelen, sessies } = invoer;
 
@@ -122,11 +123,11 @@ export async function registreer(env: Env, slug: string, invoer: RegistratieInvo
       .prepare(
         `insert into deelnemers (deelnemer_id, evenement_id, doelgroep_id, naam_enc, voornaam_enc, email_enc,
            contact_voornaam_enc, contact_naam_enc, telefoon_enc, school_andere_enc, functie_enc, opmerkingen_enc,
-           email_hash, dubbel_hash, school_id, gemeente, leerjaar, privacy_akkoord_op, beheer_token_hash, contact_id, persoon_id)
-         values (${plaatshouders(21)})`,
+           email_hash, dubbel_hash, school_id, gemeente, leerjaar, privacy_akkoord_op, beheer_token_hash, contact_id, persoon_id, checkin_token)
+         values (${plaatshouders(22)})`,
       )
       .bind(deelnemerId, eid, groep?.doelgroep_id ?? null, ...enc, d.schoolId ?? null, d.gemeente ?? null, d.leerjaar ?? null,
-        new Date(nu).toISOString(), tokenHash, koppeling.contactId, koppeling.persoonId),
+        new Date(nu).toISOString(), tokenHash, koppeling.contactId, koppeling.persoonId, checkinToken),
     ...dagdelen.map((id) =>
       db
         .prepare(

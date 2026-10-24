@@ -4,6 +4,8 @@ import { meldAf, voorinvulling } from './uitnodigingen';
 import { publiekEvenement } from './evenement';
 import { bewaarLogo, instellingen, isSoort, kopieerDagdeel, kopieerSessies, maak, verwijder, verwijderLogo, wijzig } from './instellingen';
 import { annulatieGegevens, annuleerViaToken, registratieViaToken, registreer, wijzigKeuzesViaToken } from './registratie';
+import { checkinUrl } from '../../kern/checkin';
+import { qrPng } from '../../kern/qr';
 import { botcontroleMislukt, controleerTurnstile, csv, json, nietGevonden, nieuwToken, teSnel, teVeelAanvragen } from '../../kern/http';
 import { defineModule, type PubliekCtx } from '../../kern/module';
 import { type Mail, verstuur } from '../../mail';
@@ -67,10 +69,12 @@ export default defineModule({
         if (!(await controleerTurnstile(env, invoer.turnstileToken, ctx.ip))) return botcontroleMislukt();
 
         const token = nieuwToken();
-        const resultaat = await registreer(env, params.slug, invoer, await sha256(token));
+        const checkinToken = nieuwToken();
+        const resultaat = await registreer(env, params.slug, invoer, await sha256(token), checkinToken);
 
         const beheerUrl = `${basisUrl(env)}/beheer/${token}`;
-        stuurEnLog(env, ctx, resultaat.deelnemerId, bevestigingsmail(resultaat, invoer.deelnemer.email, invoer.deelnemer.voornaam, beheerUrl));
+        const checkin = { basisUrl: basisUrl(env), token: checkinToken };
+        stuurEnLog(env, ctx, resultaat.deelnemerId, bevestigingsmail(resultaat, invoer.deelnemer.email, invoer.deelnemer.voornaam, beheerUrl, checkin));
 
         const { deelnemerId: _intern, ...publiek } = resultaat;
         return json({ ...publiek, beheerUrl }, 201);
@@ -89,6 +93,20 @@ export default defineModule({
             'Cache-Control': 'public, max-age=300',
             'Content-Security-Policy': "default-src 'none'",
           },
+        });
+      },
+    },
+    // QR-code uit de bevestigingsmail (kern/checkin.ts). Enkel voor een bestaande check-intoken: geen open QR-generator.
+    // Geen rate limit: mailproxy's (Gmail, Outlook) halen afbeeldingen op vanaf gedeelde IP-adressen.
+    {
+      methode: 'GET',
+      pad: '/checkin/:token:token/qr.png',
+      toegang: 'publiek',
+      async handler({ env, params }) {
+        const dn = await env.DB.prepare(`select 1 as ok from deelnemers where checkin_token = ? and geanonimiseerd_op is null`).bind(params.token).first();
+        if (!dn) return nietGevonden();
+        return new Response(await qrPng(checkinUrl(basisUrl(env), params.token)), {
+          headers: { 'Content-Type': 'image/png', 'Cache-Control': 'private, max-age=3600', 'Content-Security-Policy': "default-src 'none'" },
         });
       },
     },
