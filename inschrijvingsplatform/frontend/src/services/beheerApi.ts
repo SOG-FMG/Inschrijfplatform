@@ -99,6 +99,33 @@ export interface BeheerMelding {
   created_at: string;
 }
 
+export interface ImportRij {
+  ingediendOp: string | null;
+  schooljaar: string | null;
+  klas: string | null;
+  schoolId: string | null;
+  schoolAndere: string | null;
+  kindNaam: string | null;
+  email: string | null;
+  telefoon: string | null;
+  opmerkingen: string | null;
+}
+
+/** Statistieken van één import (enkel aantallen, geen persoonsgegevens). */
+export interface ImportStatistiek {
+  id: string;
+  naam: string;
+  bestandsnaam: string | null;
+  aantal: number;
+  geanonimiseerdOp: string | null;
+  aangemaakt: string;
+  scholen: { school: string; soort: 'lijst' | 'andere' | 'leeg'; aantal: number }[];
+  klassen: { klas: string; aantal: number }[];
+  maanden: { maand: string; aantal: number }[];
+  schooljaren: { schooljaar: string; aantal: number }[];
+  controle: { zonderEmail: number; dubbeleAdressen: number; ookIngeschreven: number; ookInAndereImport: number; adressen: number };
+}
+
 const post = <T>(pad: string, body: unknown = {}) => call<T>(pad, { method: 'POST', body });
 
 export const beheerApi = {
@@ -133,6 +160,13 @@ export const beheerApi = {
   zetStatusMelding: (id: string, status: MeldingStatus) => call<{ ok: true }>(`/api/beheer/meldingen/${id}`, { method: 'PATCH', body: { status } }),
   /** Het pad komt van de API (/api/beheer/meldingen/<id>/screenshot); zelfde hostnaam, dus de sessiecookie gaat mee. */
   screenshotUrl: (pad: string) => `${BASIS}${pad}`,
+
+  // voorinschrijvingen (import uit een extern bestand)
+  voorinschrijvingenStatistieken: () => call<ImportStatistiek[]>('/api/beheer/voorinschrijvingen/statistieken'),
+  importeerVoorinschrijvingen: (body: { naam: string; bestandsnaam: string; rijen: ImportRij[] }) =>
+    post<{ importId: string; aantal: number }>('/api/beheer/voorinschrijvingen/importen', body),
+  anonimiseerImport: (id: string) => post<{ ok: true }>(`/api/beheer/voorinschrijvingen/importen/${id}/anonimiseer`),
+  verwijderImport: (id: string) => call<{ ok: true }>(`/api/beheer/voorinschrijvingen/importen/${id}`, { method: 'DELETE' }),
 
   csvUrl: (evenementId: string) => `${BASIS}/api/beheer/evenementen/${evenementId}/deelnemers.csv`,
 };

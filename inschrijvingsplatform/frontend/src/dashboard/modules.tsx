@@ -8,6 +8,7 @@ import { Medewerkers } from './Medewerkers';
 import { Meldingen } from './Meldingen';
 import { Privacy } from './Privacy';
 import { Rapporten } from './Rapporten';
+import { Voorinschrijvingen } from './Voorinschrijvingen';
 
 /**
  * Het dashboard per module (zelfde ids als backend/src/modules). Dashboard.tsx toont enkel het menu en de
@@ -84,5 +85,10 @@ export const DASHBOARD_MODULES: DashboardModule[] = [
     id: 'meldingen',
     menu: [{ href: '/dashboard/meldingen', label: 'Meldingen', volgorde: 30, recht: 'meldingen.beheren', actief: (p) => p.startsWith('/dashboard/meldingen') }],
     paginas: [{ patroon: /^\/dashboard\/meldingen$/, recht: 'meldingen.beheren', toon: () => <Meldingen /> }],
+  },
+  {
+    id: 'voorinschrijvingen',
+    menu: [{ href: '/dashboard/voorinschrijvingen', label: 'Voorinschrijvingen', volgorde: 15, recht: 'voorinschrijvingen.beheren', actief: (p) => p.startsWith('/dashboard/voorinschrijvingen') }],
+    paginas: [{ patroon: /^\/dashboard\/voorinschrijvingen$/, recht: 'voorinschrijvingen.beheren', toon: () => <Voorinschrijvingen /> }],
   },
 ];

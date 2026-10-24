@@ -890,3 +890,71 @@ describe('e-mail via de Power Automate-webhook', () => {
     await sql(`update gebruikers set rol_id = (select rol_id from rollen where code = 'platformbeheerder') where email = ?`, BEHEERDER);
   });
 });
+
+describe('voorinschrijvingen importeren', () => {
+  const IMPORTEUR = 'import.test@onderwijs.gent.be';
+  let schoolId: string;
+  let importId: string;
+
+  beforeAll(async () => {
+    await sql(`insert into gebruikers (naam, voornaam, email, rol_id) select 'I', 'T', ?, rol_id from rollen where code = 'platformbeheerder'`, IMPORTEUR);
+    schoolId = (await een(`select school_id from scholen order by naam limit 1`)).school_id;
+    // Een ouder die zich ook voor een infodag inschreef (zelfde blinde index als bij een echte inschrijving).
+    const { blindeIndex } = await import('../src/crypto/versleuteling');
+    await sql(`insert into deelnemers (deelnemer_id, evenement_id, email_hash, privacy_akkoord_op) select ?, evenement_id, ?, '2026-01-01' from evenementen limit 1`,
+      crypto.randomUUID(), await blindeIndex(env, 'email', 'zelfde@example.org'));
+  });
+
+  test('enkel met het recht voorinschrijvingen.beheren', async () => {
+    env.DEV_BEHEER_EMAIL = BEHEERDER;
+    await sql(`update gebruikers set rol_id = (select rol_id from rollen where code = 'organisator') where email = ?`, BEHEERDER);
+    expect((await api('GET', '/api/beheer/voorinschrijvingen/importen')).status).toBe(403);
+    await sql(`update gebruikers set rol_id = (select rol_id from rollen where code = 'platformbeheerder') where email = ?`, BEHEERDER);
+    env.DEV_BEHEER_EMAIL = IMPORTEUR;
+  });
+
+  test('importeren: versleuteld, school gekoppeld of als andere, ongeldige rijen gecontroleerd', async () => {
+    expect((await api('POST', '/api/beheer/voorinschrijvingen/importen', { naam: '', rijen: [] })).data.velden).toMatchObject({ naam: expect.any(String), rijen: expect.any(String) });
+    expect((await api('POST', '/api/beheer/voorinschrijvingen/importen', { naam: 'X', rijen: [{ schoolId: crypto.randomUUID() }] })).status).toBe(400);
+
+    const r = await api('POST', '/api/beheer/voorinschrijvingen/importen', {
+      naam: 'Voorinschrijvingen 2025-2026',
+      bestandsnaam: 'proef.csv',
+      rijen: [
+        { ingediendOp: '2025-03-11T13:26:06', schooljaar: 'Schooljaar 2026 - 2027', klas: '6de leerjaar', schoolId, kindNaam: 'Proef Kind', email: 'Zelfde@Example.org', telefoon: '0400000000', opmerkingen: 'Vraag' },
+        { ingediendOp: '2025-04-02T09:00:00', schooljaar: 'Schooljaar 2026 - 2027', klas: '5de leerjaar', schoolAndere: 'School buiten de lijst', kindNaam: 'Tweede Kind', email: 'ander@example.org' },
+        { ingediendOp: 'geen datum', klas: '6de leerjaar', schoolId, kindNaam: 'Derde Kind', email: 'ander@example.org' },
+      ],
+    });
+    expect(r.status).toBe(201);
+    importId = r.data.importId;
+    const rij = await een(`select * from voorinschrijvingen where import_id = ? and school_id is not null order by ingediend_op limit 1`, importId);
+    expect(rij.kind_naam_enc).toMatch(/^v1\./);
+    expect(JSON.stringify(rij)).not.toContain('Proef Kind');
+    expect(await een(`select count(*) as n from voorinschrijvingen where import_id = ? and ingediend_op is null`, importId)).toEqual({ n: 1 });
+    expect(await een(`select school_andere from voorinschrijvingen where import_id = ? and school_id is null`, importId)).toEqual({ school_andere: 'School buiten de lijst' });
+  });
+
+  test('statistieken en controles, zonder persoonsgegevens', async () => {
+    const s = (await api('GET', '/api/beheer/voorinschrijvingen/statistieken')).data.find((x: any) => x.id === importId);
+    expect(s.aantal).toBe(3);
+    expect(s.controle).toEqual({ zonderEmail: 0, dubbeleAdressen: 1, ookIngeschreven: 1, ookInAndereImport: 0, adressen: 2 });
+    expect(s.scholen.find((x: any) => x.soort === 'andere')).toMatchObject({ school: 'School buiten de lijst', aantal: 1 });
+    expect(s.klassen).toContainEqual({ klas: '6de leerjaar', aantal: 2 });
+    expect(s.maanden).toEqual([{ maand: '2025-03', aantal: 1 }, { maand: '2025-04', aantal: 1 }]);
+    expect(JSON.stringify(s)).not.toMatch(/Kind|example\.org/);
+  });
+
+  test('anonimiseren wist persoonsgegevens, statistieken blijven; verwijderen wist alles', async () => {
+    expect((await api('POST', `/api/beheer/voorinschrijvingen/importen/${importId}/anonimiseer`)).status).toBe(200);
+    expect(await een(`select count(*) as n from voorinschrijvingen where import_id = ? and (kind_naam_enc is not null or email_enc is not null or telefoon_enc is not null or opmerkingen_enc is not null or email_hash is not null)`, importId)).toEqual({ n: 0 });
+    const s = (await api('GET', '/api/beheer/voorinschrijvingen/statistieken')).data.find((x: any) => x.id === importId);
+    expect(s.geanonimiseerdOp).toBeTruthy();
+    expect(s.klassen).toContainEqual({ klas: '6de leerjaar', aantal: 2 });
+    expect(await een(`select count(*) as n from audit_log where entiteit = 'voorinschrijvingen_importen' and record_id = ?`, importId)).toEqual({ n: 2 });
+
+    expect((await api('DELETE', `/api/beheer/voorinschrijvingen/importen/${importId}`)).status).toBe(200);
+    expect(await een(`select count(*) as n from voorinschrijvingen where import_id = ?`, importId)).toEqual({ n: 0 });
+    expect((await api('DELETE', `/api/beheer/voorinschrijvingen/importen/${importId}`)).status).toBe(404);
+  });
+});

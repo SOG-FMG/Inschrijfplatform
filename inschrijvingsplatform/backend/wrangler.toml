@@ -61,7 +61,7 @@ ORGANISATIE_NAAM = "Stedelijk Onderwijs Gent"
 # E-maildomeinen van medewerkers (komma-gescheiden). "*" = elk adres, enkel op uitnodiging. Leeg = niemand kan aanmelden.
 AANMELD_DOMEINEN = "onderwijs.gent.be"
 # Actieve modules (src/modules/index.ts), komma-gescheiden. De kern is altijd actief. Ontbreekt het: alle modules.
-MODULES = "evenementen,onderwijs,rapporten,etiketten,meldingen"
+MODULES = "evenementen,onderwijs,rapporten,etiketten,meldingen,voorinschrijvingen"
 # URL van de frontend (Cloudflare Pages), zonder slash op het einde. Meerdere origins: komma-gescheiden.
 ALLOWED_ORIGINS = "https://fmg-inschrijfplatform.freinetmiddenschool-automatisatie.workers.dev"
 PUBLIC_APP_URL = "https://fmg-inschrijfplatform.freinetmiddenschool-automatisatie.workers.dev"
@@ -117,7 +117,7 @@ enabled = true
 [env.test.vars]
 ORGANISATIE_NAAM = "Testinstallatie"
 AANMELD_DOMEINEN = "onderwijs.gent.be"
-MODULES = "evenementen,onderwijs,rapporten,etiketten,meldingen"
+MODULES = "evenementen,onderwijs,rapporten,etiketten,meldingen,voorinschrijvingen"
 ALLOWED_ORIGINS = "https://fmg-inschrijfplatform-test.freinetmiddenschool-automatisatie.workers.dev"
 PUBLIC_APP_URL = "https://fmg-inschrijfplatform-test.freinetmiddenschool-automatisatie.workers.dev"
 HOOFDADMIN_EMAIL = "freinetmiddenschool.automatisatie@onderwijs.gent.be"
