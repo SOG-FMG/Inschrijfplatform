@@ -1,5 +1,6 @@
 import { sessieEmail } from '../auth/sessie';
 import { DbFout } from '../db/fouten';
+import { isToegelatenEmail } from '../kern/installatie';
 import type { Env } from '../types';
 
 /**
@@ -21,16 +22,10 @@ export interface Gebruiker {
   moetWachtwoordInstellen: boolean;
 }
 
-/** Enkel accounts van dit domein krijgen toegang tot beheer en gegevens. */
-export const TOEGELATEN_DOMEIN = 'onderwijs.gent.be';
-
-export const isToegelatenEmail = (email: string) =>
-  /^[^@\s]+@[^@\s]+$/.test(email) && email.toLowerCase().endsWith(`@${TOEGELATEN_DOMEIN}`);
-
 export async function huidigeGebruiker(request: Request, env: Env): Promise<Gebruiker> {
   const { email, viaSessie } = await aangemeldEmail(request, env);
-  // Tweede slot naast het schema: een gebruikersrij met een extern adres geeft nooit toegang.
-  if (!isToegelatenEmail(email)) throw new DbFout('GEEN_TOEGANG');
+  // Enkel de aanmelddomeinen van deze installatie (AANMELD_DOMEINEN): een gebruikersrij met een ander adres geeft nooit toegang.
+  if (!isToegelatenEmail(env, email)) throw new DbFout('GEEN_TOEGANG');
   const g = await env.DB.prepare(
     `select g.gebruiker_id, g.email, g.school_id, r.code as rol, g.wachtwoord_hash is not null as heeft_wachtwoord
      from gebruikers g join rollen r on r.rol_id = g.rol_id

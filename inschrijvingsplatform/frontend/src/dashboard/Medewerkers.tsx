@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { beheerApi, type BeheerGebruiker, type Profiel, type Rol, type Uitnodiging } from '../services/beheerApi';
+import { domeinTekst, isToegelatenEmail, useInstallatie, voorbeeldAdres } from '../services/installatie';
 import { datumTijd, EenmaligeCode, foutTekst, Invoer, Melding, ROLNAAM, Venster } from './ui';
 
 /** Medewerkers beheren (enkel platformbeheerders; de API controleert dat ook). */
@@ -23,6 +24,7 @@ export function Medewerkers({ profiel }: { profiel: Profiel }) {
   const [bewerk, setBewerk] = useState<BeheerGebruiker | 'nieuw' | null>(null);
   const [code, setCode] = useState<(Uitnodiging & { voor: string; voornaam: string }) | null>(null);
   const [zoek, setZoek] = useState('');
+  const domein = domeinTekst(useInstallatie());
 
   const laad = useCallback(() => {
     beheerApi.gebruikers().then(setLijst).catch((e) => setFout(foutTekst(e)));
@@ -59,7 +61,7 @@ export function Medewerkers({ profiel }: { profiel: Profiel }) {
       <header className="d-paginakop">
         <div>
           <h1>Medewerkers</h1>
-          <p className="d-sub">Enkel @onderwijs.gent.be-adressen. Nieuwe medewerkers krijgen een eenmalige code om hun account te activeren.</p>
+          <p className="d-sub">{domein ? `Enkel ${domein}-adressen. ` : ''}Nieuwe medewerkers krijgen een eenmalige code om hun account te activeren.</p>
         </div>
         <button type="button" className="d-knop" onClick={() => setBewerk('nieuw')}>+ Medewerker toevoegen</button>
       </header>
@@ -187,7 +189,8 @@ function Bewerken({ gebruiker, profiel, onSluit, naKlaar }: {
   });
   const [fout, setFout] = useState<string | null>(null);
   const ik = gebruiker?.email === profiel.email;
-  const emailFout = w.email && !w.email.trim().toLowerCase().endsWith('@onderwijs.gent.be') ? 'Enkel adressen @onderwijs.gent.be.' : undefined;
+  const installatie = useInstallatie();
+  const emailFout = w.email && !isToegelatenEmail(installatie, w.email) ? `Enkel adressen ${domeinTekst(installatie)}.` : undefined;
 
   return (
     <Venster titel={gebruiker ? `${gebruiker.voornaam} ${gebruiker.naam} bewerken` : 'Medewerker toevoegen'} onSluit={onSluit} breed>
@@ -221,7 +224,7 @@ function Bewerken({ gebruiker, profiel, onSluit, naKlaar }: {
         {gebruiker ? (
           <p className="d-klein">Login: <strong>{gebruiker.email}</strong> (het adres wijzig je niet; maak zo nodig een nieuwe medewerker aan).</p>
         ) : (
-          <Invoer label="E-mailadres (login)" type="email" waarde={w.email} onWijzig={(v) => setW({ ...w, email: v })} verplicht fout={emailFout} placeholder="voornaam.naam@onderwijs.gent.be" />
+          <Invoer label="E-mailadres (login)" type="email" waarde={w.email} onWijzig={(v) => setW({ ...w, email: v })} verplicht fout={emailFout} placeholder={voorbeeldAdres(installatie)} />
         )}
 
         <fieldset className="d-groep" disabled={ik}>

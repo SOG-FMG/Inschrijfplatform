@@ -1,15 +1,17 @@
 import { useState, type ReactNode } from 'react';
 import { beheerApi, type Koppeling } from '../services/beheerApi';
+import { domeinTekst, useInstallatie, voorbeeldAdres } from '../services/installatie';
 import { meldAanMetPasskey, passkeysBeschikbaar } from '../services/passkey';
 import { foutTekst, Invoer, Koppelen, Link, Melding, navigeer, wachtwoordHint } from './ui';
 
 /** Aanmelden, account activeren en (voor oude accounts) een wachtwoord instellen. */
 
 function Kaart({ titel, children }: { titel: string; children: ReactNode }) {
+  const { organisatie } = useInstallatie();
   return (
     <main className="d-aanmelden">
       <div className="d-aanmelden__kaart">
-        <p className="d-merk">Inschrijvingsplatform <span>Beheer</span></p>
+        <p className="d-merk">Inschrijvingsplatform <span>Beheer{organisatie && ` · ${organisatie}`}</span></p>
         <h1>{titel}</h1>
         {children}
       </div>
@@ -20,6 +22,7 @@ function Kaart({ titel, children }: { titel: string; children: ReactNode }) {
 const zesCijfers = (c: string) => c.replace(/\s/g, '').length === 6;
 
 export function Aanmelden({ naKlaar }: { naKlaar: () => void }) {
+  const installatie = useInstallatie();
   const [email, setEmail] = useState('');
   const [wachtwoord, setWachtwoord] = useState('');
   const [code, setCode] = useState('');
@@ -49,7 +52,7 @@ export function Aanmelden({ naKlaar }: { naKlaar: () => void }) {
           uitvoeren(() => beheerApi.aanmelden(email.trim(), wachtwoord, code.replace(/\s/g, '')));
         }}
       >
-        <Invoer label="E-mailadres" type="email" waarde={email} onWijzig={setEmail} autoComplete="username" verplicht autoFocus placeholder="voornaam.naam@onderwijs.gent.be" />
+        <Invoer label="E-mailadres" type="email" waarde={email} onWijzig={setEmail} autoComplete="username" verplicht autoFocus placeholder={voorbeeldAdres(installatie)} />
         <Invoer label="Wachtwoord" type="password" waarde={wachtwoord} onWijzig={setWachtwoord} autoComplete="current-password" hulp="Nog nooit een wachtwoord gekozen? Laat leeg: je kiest er meteen één na het aanmelden." />
         <Invoer label="Code uit je authenticator-app" waarde={code} onWijzig={setCode} autoComplete="one-time-code" inputMode="numeric" maxLength={7} verplicht hulp="6 cijfers" />
         <button type="submit" className="d-knop d-knop--breed" disabled={bezig || !email || !zesCijfers(code)}>
@@ -74,6 +77,7 @@ export function Aanmelden({ naKlaar }: { naKlaar: () => void }) {
 }
 
 export function Activeren({ naKlaar }: { naKlaar: () => void }) {
+  const domein = domeinTekst(useInstallatie());
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [koppeling, setKoppeling] = useState<Koppeling | null>(null);
@@ -110,7 +114,7 @@ export function Activeren({ naKlaar }: { naKlaar: () => void }) {
             uitvoeren(async () => setKoppeling(await beheerApi.activeerStart(email.trim(), code)));
           }}
         >
-          <p>Vul je @onderwijs.gent.be-adres in en de uitnodigingscode die je van de beheerder kreeg.</p>
+          <p>Vul je {domein ? `${domein}-adres` : 'e-mailadres'} in en de uitnodigingscode die je van de beheerder kreeg.</p>
           <Invoer label="E-mailadres" type="email" waarde={email} onWijzig={setEmail} autoComplete="username" verplicht autoFocus />
           <Invoer label="Uitnodigingscode" waarde={code} onWijzig={setCode} verplicht hulp="16 tekens, bv. ABCD-EFGH-JKLM-NPQR" autoComplete="off" />
           <button type="submit" className="d-knop d-knop--breed" disabled={bezig || !email || !code}>Volgende</button>

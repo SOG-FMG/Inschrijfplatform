@@ -266,11 +266,14 @@ describe('beheer', () => {
     // DEV-aanmelding werkt enkel op localhost
     env.DEV_BEHEER_EMAIL = BEHEERDER;
     expect((await api('GET', `/api/beheer/meldingen`, undefined, 'https://api.example.be')).status).toBe(401);
-    // Extern domein: geweigerd, zelfs als de rij in gebruikers zou bestaan (check constraint verhindert dat ook)
-    await expect(sql(`insert into gebruikers (naam, voornaam, email, rol_id) select 'X', 'Y', 'iemand@gmail.com', rol_id from rollen limit 1`)).rejects.toThrow(/CHECK/);
-    await expect(sql(`insert into gebruikers (naam, voornaam, email, rol_id) select 'X', 'Y', 'a@evilonderwijs.gent.be', rol_id from rollen limit 1`)).rejects.toThrow(/CHECK/);
-    env.DEV_BEHEER_EMAIL = 'iemand@gmail.com';
-    expect((await api('GET', `/api/beheer/evenementen/${ev.evenementId}/deelnemers.csv`)).status).toBe(403);
+    // Ander domein dan AANMELD_DOMEINEN: geweigerd, ook als de rij in gebruikers bestaat (als platformbeheerder)
+    for (const extern of ['iemand@gmail.com', 'a@evilonderwijs.gent.be']) {
+      await sql(`insert into gebruikers (naam, voornaam, email, rol_id) select 'X', 'Y', ?, rol_id from rollen where code = 'platformbeheerder'`, extern);
+      env.DEV_BEHEER_EMAIL = extern;
+      expect((await api('GET', `/api/beheer/evenementen/${ev.evenementId}/deelnemers.csv`)).status).toBe(403);
+      await sql(`delete from gebruikers where email = ?`, extern);
+    }
+    await expect(sql(`insert into gebruikers (naam, voornaam, email, rol_id) select 'X', 'Y', 'a@b@c.be', rol_id from rollen limit 1`)).rejects.toThrow(/CHECK/);
     // Wel eigen domein, maar niet gekoppeld aan het evenement
     env.DEV_BEHEER_EMAIL = BEHEERDER;
     expect((await api('POST', `/api/beheer/deelnemers/${wachtId}/dagdeel`, { van: vm1.id, naar: nm1.id })).data.fout).toBe('GEEN_TOEGANG');

@@ -5,7 +5,13 @@ export interface Env {
   RL_MELDING?: RateLimit;
   /** R2 (jurisdictie EU): schermafbeeldingen bij meldingen. */
   STORAGE: R2Bucket;
-  /** Optioneel: mailbox die een seintje krijgt bij een nieuwe melding (enkel @onderwijs.gent.be). */
+  /** Naam van de organisatie van deze installatie (zie src/kern/installatie.ts). */
+  ORGANISATIE_NAAM?: string;
+  /** Komma-gescheiden e-maildomeinen voor medewerkers, bv. "onderwijs.gent.be". "*" = elk adres (enkel op uitnodiging). Leeg = niemand. */
+  AANMELD_DOMEINEN?: string;
+  /** Komma-gescheiden ids van de actieve modules (src/modules/index.ts). Ontbreekt het, dan zijn alle modules actief. */
+  MODULES?: string;
+  /** Optioneel: mailbox die een seintje krijgt bij een nieuwe melding (enkel een adres van AANMELD_DOMEINEN). */
   MELDINGEN_MAIL?: string;
   /** Secret – 64 hex-tekens. Versleutelt de persoonsgegevens in D1. Kwijt = gegevens onleesbaar. */
   ENCRYPTION_KEY: string;
@@ -15,7 +21,7 @@ export interface Env {
   PUBLIC_APP_URL: string;
   /** Cloudflare Turnstile (optioneel lokaal, verplicht in productie). */
   TURNSTILE_SECRET?: string;
-  /** De hoofdadmin: de enige die zich de eerste keer kan activeren met HOOFDADMIN_SETUP_CODE. Moet @onderwijs.gent.be zijn. */
+  /** De hoofdadmin: de enige die zich de eerste keer kan activeren met HOOFDADMIN_SETUP_CODE. Moet een adres van AANMELD_DOMEINEN zijn. */
   HOOFDADMIN_EMAIL?: string;
   /** Secret – eenmalige code waarmee de hoofdadmin zijn authenticator/passkey koppelt (`wrangler secret put`). */
   HOOFDADMIN_SETUP_CODE?: string;

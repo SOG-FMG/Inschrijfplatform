@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { isDemo } from '../services/api';
 import { beheerApi, type Profiel } from '../services/beheerApi';
+import { useInstallatie } from '../services/installatie';
 import { Account } from './Account';
 import { Aanmelden, Activeren, WachtwoordInstellen } from './Aanmelden';
 import './dashboard.css';
@@ -8,6 +9,7 @@ import { Etiketten } from './Etiketten';
 import { Evenementen } from './Evenementen';
 import { Instellingen } from './Instellingen';
 import { Medewerkers } from './Medewerkers';
+import { Meldingen } from './Meldingen';
 import { Privacy } from './Privacy';
 import { Rapporten } from './Rapporten';
 import { Link, Melding, ROLNAAM, usePad } from './ui';
@@ -19,6 +21,7 @@ import { Link, Melding, ROLNAAM, usePad } from './ui';
  *   /dashboard/evenementen/<id>/rapporten   overzichten en klaslijsten (afdrukken, Excel, mailen)
  *   /dashboard/evenementen/<id>/etiketten   naametiketten met de lesjes (opmaak instelbaar)
  *   /dashboard/medewerkers         medewerkers (platformbeheer)
+ *   /dashboard/meldingen           meldingen "Probleem of idee?" met logboek en schermafbeelding (platformbeheer)
  *   /dashboard/account             eigen wachtwoord, authenticator en passkeys
  *   /dashboard/privacy             privacy per evenement
  *   /dashboard/activeren           eerste keer aanmelden met een uitnodigingscode
@@ -32,6 +35,7 @@ if (location.pathname.startsWith('/medewerkers')) {
 export function Dashboard() {
   const pad = usePad().replace(/\/$/, '') || '/dashboard';
   const [profiel, setProfiel] = useState<Profiel | null | 'laden'>('laden');
+  const { organisatie } = useInstallatie();
 
   const laad = useCallback(() => {
     beheerApi
@@ -68,6 +72,7 @@ export function Dashboard() {
   else if ((ev = pad.match(/^\/dashboard\/evenementen\/([A-Za-z0-9-]{1,64})\/rapporten$/))) inhoud = <Rapporten key={ev[1]} evenementId={ev[1]} profiel={profiel} />;
   else if ((ev = pad.match(/^\/dashboard\/evenementen\/([A-Za-z0-9-]{1,64})\/etiketten$/))) inhoud = <Etiketten key={ev[1]} evenementId={ev[1]} />;
   else if (pad === '/dashboard/medewerkers') inhoud = isBeheer ? <Medewerkers profiel={profiel} /> : <Melding soort="fout">Enkel voor platformbeheerders.</Melding>;
+  else if (pad === '/dashboard/meldingen') inhoud = isBeheer ? <Meldingen /> : <Melding soort="fout">Enkel voor platformbeheerders.</Melding>;
   else if (pad === '/dashboard/account') inhoud = <Account profiel={profiel} naVerandering={laad} />;
   else if (pad === '/dashboard/privacy') inhoud = <Privacy profiel={profiel} />;
   else inhoud = <Melding soort="fout">Deze pagina bestaat niet.</Melding>;
@@ -79,11 +84,12 @@ export function Dashboard() {
     <div className="dash">
       <aside className="dash__zijbalk">
         <Link href="/dashboard" className="dash__merk">
-          Inschrijvingsplatform <span>Beheer</span>
+          Inschrijvingsplatform <span>Beheer{organisatie && ` · ${organisatie}`}</span>
         </Link>
         <nav aria-label="Beheer">
           <Link href="/dashboard" className={evenementenActief}>Evenementen</Link>
           {isBeheer && <Link href="/dashboard/medewerkers" className={actief('/dashboard/medewerkers')}>Medewerkers</Link>}
+          {isBeheer && <Link href="/dashboard/meldingen" className={actief('/dashboard/meldingen')}>Meldingen</Link>}
           <Link href="/dashboard/privacy" className={actief('/dashboard/privacy')}>Privacy</Link>
           <Link href="/dashboard/account" className={actief('/dashboard/account')}>Mijn account</Link>
         </nav>

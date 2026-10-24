@@ -1,5 +1,6 @@
 import { ontsleutel } from '../crypto/versleuteling';
-import { controleerToegang, isToegelatenEmail, type Gebruiker } from '../middleware/toegang';
+import { isToegelatenEmail } from '../kern/installatie';
+import { controleerToegang, type Gebruiker } from '../middleware/toegang';
 import type { Env } from '../types';
 import { ValidatieFout } from '../validatie';
 import { audit } from './beheer';
@@ -211,7 +212,7 @@ export async function klaslijstenPerLeerkracht(env: Env, g: Gebruiker, evenement
       for (const t of dd.tijdsblokken)
         for (const s of t.sessies) {
           if (!gevraagd.has(s.id)) continue;
-          if (!s.lesgeverEmail || !isToegelatenEmail(s.lesgeverEmail)) {
+          if (!s.lesgeverEmail || !isToegelatenEmail(env, s.lesgeverEmail)) {
             zonderAdres.push(s.titel);
             continue;
           }

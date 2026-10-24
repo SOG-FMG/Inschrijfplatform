@@ -1,6 +1,7 @@
 import { ontsleutel, sha256, versleutel } from '../crypto/versleuteling';
 import { DbFout } from '../db/fouten';
-import { isToegelatenEmail, type Gebruiker } from '../middleware/toegang';
+import { isToegelatenEmail } from '../kern/installatie';
+import type { Gebruiker } from '../middleware/toegang';
 import type { Env } from '../types';
 import { isUuid } from '../validatie';
 import {
@@ -82,11 +83,11 @@ async function controleerActivatie(env: Env, emailInvoer: unknown, codeInvoer: u
   const weiger = () => new DbFout('ONGELDIGE_UITNODIGING');
   const email = String(emailInvoer ?? '').trim().toLowerCase();
   const code = normaliseerCode(codeInvoer);
-  if (!isToegelatenEmail(email) || code.length !== 16) throw weiger();
+  if (!isToegelatenEmail(env, email) || code.length !== 16) throw weiger();
 
   const hoofd = env.HOOFDADMIN_EMAIL?.trim().toLowerCase();
   const setup = normaliseerCode(env.HOOFDADMIN_SETUP_CODE);
-  const isHoofdadmin = !!hoofd && email === hoofd && isToegelatenEmail(hoofd);
+  const isHoofdadmin = !!hoofd && email === hoofd && isToegelatenEmail(env, hoofd);
   const setupGeldig = isHoofdadmin && setup.length === 16 && gelijk(setup, code);
 
   let g = await env.DB.prepare(
@@ -174,7 +175,7 @@ async function aanmeldenTotp(env: Env, request: Request, body: any): Promise<Res
       .first<{ gebruiker_id: string; wachtwoord_hash: string | null; secret_enc: string; laatste_stap: number }>();
     // Het wachtwoord wordt altijd berekend (ook bij een onbekend adres), zodat de responstijd niets verraadt.
     const wachtwoordOk = await controleerWachtwoord(String(body?.wachtwoord ?? ''), r?.wachtwoord_hash);
-    if (!r || !isToegelatenEmail(email)) throw new DbFout('AANMELDEN_MISLUKT');
+    if (!r || !isToegelatenEmail(env, email)) throw new DbFout('AANMELDEN_MISLUKT');
     // Accounts van vóór de wachtwoordstap hebben nog geen wachtwoord: die moeten er meteen één instellen (zie beheerRoute).
     if (r.wachtwoord_hash && !wachtwoordOk) throw new DbFout('AANMELDEN_MISLUKT');
     const stap = await controleerTotp((await ontsleutel(env, r.secret_enc))!, String(body?.code ?? '').replace(/\s/g, ''), r.laatste_stap);
@@ -323,7 +324,7 @@ async function maakGebruiker(env: Env, request: Request, g: Gebruiker, body: any
   const voornaam = tekst(body?.voornaam, 100);
   const naam = tekst(body?.naam, 100);
   const rol = tekst(body?.rol, 30);
-  if (!isToegelatenEmail(email) || !voornaam || !naam || !(ROLLEN_BEHEER as readonly string[]).includes(rol)) throw new DbFout('ONGELDIGE_GEGEVENS');
+  if (!isToegelatenEmail(env, email) || !voornaam || !naam || !(ROLLEN_BEHEER as readonly string[]).includes(rol)) throw new DbFout('ONGELDIGE_GEGEVENS');
   const evenementIds: string[] = Array.isArray(body?.evenementIds) ? body.evenementIds.filter((x: unknown) => typeof x === 'string' && isUuid(x)) : [];
 
   const id = crypto.randomUUID();

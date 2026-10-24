@@ -1,4 +1,5 @@
-import { controleerToegang, isToegelatenEmail, TOEGELATEN_DOMEIN, type Gebruiker } from '../middleware/toegang';
+import { domeinTekst, isToegelatenEmail } from '../kern/installatie';
+import { controleerToegang, type Gebruiker } from '../middleware/toegang';
 import type { Env } from '../types';
 import { ValidatieFout } from '../validatie';
 import { audit } from './beheer';
@@ -151,7 +152,7 @@ export const SCHEMA: Record<Soort, Definitie> = {
       { naam: 'locatie_id', label: 'Lokaal', type: 'ref', ref: 'locatie' },
       { naam: 'capaciteit', label: 'Max. deelnemers', type: 'getal', min: 0, hulp: 'Leeg = onbeperkt' },
       { naam: 'lesgever', label: 'Leerkracht', type: 'tekst', hulp: 'Verschijnt op de rapporten' },
-      { naam: 'lesgever_email', label: 'E-mail leerkracht', type: 'email', intern: true, hulp: 'Enkel @onderwijs.gent.be. Krijgt de klaslijst via "Mailen".' },
+      { naam: 'lesgever_email', label: 'E-mail leerkracht', type: 'email', intern: true, hulp: 'Enkel een adres van de eigen organisatie (zelfde domein als de medewerkers). Krijgt de klaslijst via "Mailen".' },
       { naam: 'status', label: 'Status', type: 'keuze', verplicht: true, standaard: 'open',
         opties: opties(['open', 'Open'], ['gesloten', 'Gesloten'], ['geannuleerd', 'Geannuleerd']) },
       { naam: 'zichtbaar', label: 'Zichtbaar', type: 'jaNee', standaard: true },
@@ -192,7 +193,7 @@ async function evenementVan(env: Env, soort: Soort, id: string): Promise<string>
 // ---------------------------------------------------------------------------
 const leeg = (v: unknown) => v === undefined || v === null || (typeof v === 'string' && v.trim() === '');
 
-function zetOm(v: Veld, waarde: unknown): unknown {
+function zetOm(env: Env, v: Veld, waarde: unknown): unknown {
   const fout = (m: string) => new ValidatieFout({ [v.naam]: m });
   if (v.type === 'jaNee') return waarde === true || waarde === 1 || waarde === '1' ? 1 : 0;
   if (v.type === 'lijst') {
@@ -243,7 +244,7 @@ function zetOm(v: Veld, waarde: unknown): unknown {
       return s.toLowerCase();
     case 'email':
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s) || s.length > 254) throw fout('Geef een geldig e-mailadres.');
-      if (v.intern && !isToegelatenEmail(s)) throw fout(`Enkel een adres @${TOEGELATEN_DOMEIN}.`);
+      if (v.intern && !isToegelatenEmail(env, s)) throw fout(`Enkel ${domeinTekst(env)}.`);
       return s.toLowerCase();
   }
   return s;
@@ -270,7 +271,7 @@ async function zetWaardenOm(env: Env, def: Definitie, invoer: Record<string, unk
     if (!aanwezig && !nieuw) continue; // gedeeltelijke wijziging
     const waarde = aanwezig ? invoer[v.naam] : v.standaard;
     try {
-      uit[v.naam] = zetOm(v, waarde);
+      uit[v.naam] = zetOm(env, v, waarde);
       if (evenementId) await controleerRef(env, v, uit[v.naam], evenementId);
     } catch (e) {
       if (e instanceof ValidatieFout) Object.assign(fouten, e.velden);

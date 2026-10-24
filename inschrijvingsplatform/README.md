@@ -6,6 +6,8 @@ Generiek activiteiten- en inschrijvingsplatform voor Stedelijk Onderwijs Gent. D
 Alles draait op Cloudflare, met data in de EU:
 
 - **backend/** – Cloudflare Worker: publieke API, validatie, botcontrole, bevestigingsmail, beheer, meldingen
+  - `src/kern/` – de kern: installatieprofiel, modulecontract (`module.ts`), module-register (`register.ts`), gedeelde HTTP-hulpjes
+  - `src/modules/` – de modules (`evenementen`, `onderwijs`, `rapporten`, `etiketten`, `meldingen`); welke actief zijn, staat in `MODULES` in `wrangler.toml`. Zie [Plan_Modulair_Platform.md](Plan_Modulair_Platform.md)
   - `migrations/` – D1-schema (SQLite)
   - `seed/` – voorbeeldevenement en scholenlijst (gegenereerd)
   - `test/` – integratietests tegen een lokale D1
@@ -16,7 +18,7 @@ Alles draait op Cloudflare, met data in de EU:
 | --- | --- | --- |
 | Database | D1 | jurisdictie `eu` (afgedwongen, niet enkel een location hint) |
 | Schermafbeeldingen bij meldingen | R2 | jurisdictie `eu` |
-| Aanmelden medewerkers | E-mail + wachtwoord + authenticator-app (TOTP), of een passkey; hoofdadmin in `wrangler.toml` | enkel `@onderwijs.gent.be` |
+| Aanmelden medewerkers | E-mail + wachtwoord + authenticator-app (TOTP), of een passkey; hoofdadmin in `wrangler.toml` | enkel `AANMELD_DOMEINEN` (hier `@onderwijs.gent.be`) |
 | Persoonsgegevens | AES-256-GCM in de Worker (`*_enc`-kolommen) | sleutel als Worker-secret |
 | Logs | Workers Observability | zonder persoonsgegevens |
 | Anonimiseren en opruimen | Cron Trigger (dagelijks 03:15 UTC) | |
@@ -32,6 +34,7 @@ Vervang `<account>` door de accountnaam in de Worker-URL (bv. `freinetmiddenscho
 | **Beheer (dashboard)** | `/dashboard` | medewerkers |
 | Instellingen van een evenement | `/dashboard/evenementen/<id>` (via *Instellingen* op `/dashboard`) | organisatoren en beheerders |
 | Rapporten (overzichten, klaslijsten) | `/dashboard/evenementen/<id>/rapporten` (via *Rapporten*) | organisatoren, beheerders, onthaal (lezen) |
+| Meldingen ("Probleem of idee?") met logboek en schermafbeelding | `/dashboard/meldingen` (via *Meldingen*) | platformbeheerders |
 | **Account activeren** (eerste keer) | `/dashboard/activeren` | nieuwe medewerkers, met hun uitnodigingscode |
 | API | `https://inschrijvingsplatform-api.<account>.workers.dev` (de frontend stuurt `/api/*` zelf door) | enkel technisch, niet delen |
 
@@ -40,7 +43,7 @@ Vervang `<account>` door de accountnaam in de Worker-URL (bv. `freinetmiddenscho
 Enkel een **platformbeheerder**, onder *Medewerkers* in het dashboard (`/dashboard/medewerkers`). Andere rollen (organisator, onthaal, schoolbeheerder) zien dat deel niet, en de API weigert het ook (403).
 
 - De eerste platformbeheerder is de **hoofdadmin**: het adres in `HOOFDADMIN_EMAIL` (`backend/wrangler.toml`). Die activeert zich één keer met het secret `HOOFDADMIN_SETUP_CODE`.
-- Een nieuwe gebruiker moet `@onderwijs.gent.be` zijn en krijgt een eenmalige **uitnodigingscode** (7 dagen geldig) die je persoonlijk doorgeeft.
+- Een nieuwe gebruiker moet een adres van `AANMELD_DOMEINEN` hebben (hier `@onderwijs.gent.be`) en krijgt een eenmalige **uitnodigingscode** (7 dagen geldig) die je persoonlijk doorgeeft.
 - Een platformbeheerder kan een medewerker **bewerken** (naam, rol, evenementen), de **2FA opnieuw instellen** (wist wachtwoord, authenticator en passkeys; geeft een nieuwe eenmalige code) of **deactiveren**, maar niet zichzelf. De hoofdadmin blijft altijd platformbeheerder.
 - Aanmelden: e-mail + **wachtwoord** (minstens 12 tekens) + code uit de authenticator-app. Een passkey (pincode/vingerafdruk) vervangt die drie, want die is op zich al tweestaps. Eigen wachtwoord, authenticator en passkeys beheer je onder *Mijn account*.
 - Elke aanmelding en elke wijziging van gebruikers komt in `audit_log`.
@@ -98,7 +101,7 @@ Op elke pagina staat rechtsonder de knop **Probleem of idee?**. Die opent een ve
 
 De gebruiker kan onder *Welke technische gegevens sturen we mee?* precies zien wat er verstuurd wordt.
 
-Meldingen worden versleuteld bewaard in D1, schermafbeeldingen in R2. Na 90 dagen worden ze automatisch verwijderd. Lezen kan enkel een **platformbeheerder**:
+Meldingen worden versleuteld bewaard in D1, schermafbeeldingen in R2. Na 90 dagen worden ze automatisch verwijderd. Lezen kan enkel een **platformbeheerder**, in het dashboard onder *Meldingen* (`/dashboard/meldingen`: meest voorkomende fouten, logboek, status, kopiëren als tekst) of rechtstreeks via de API. Hoe je hetzelfde principe in een ander project gebruikt: zie [Instructie_Logboek_en_Meldingen.md](Instructie_Logboek_en_Meldingen.md).
 
 - `GET /api/beheer/meldingen`
 - `GET /api/beheer/meldingen/<id>/screenshot`
@@ -173,11 +176,12 @@ Enkel het tabblad *Scholen* wordt gelezen. De structuur van de infodag (lesjes, 
 
 De eerste livegang staat stap voor stap in [Stappenplan_Livegang.md](Stappenplan_Livegang.md): welke map aan welke Worker gekoppeld wordt, en welke instelling waar staat. De back-up staat in [Todo_SetupBackupSystem.md](Todo_SetupBackupSystem.md).
 
-**Domeinbeperking.** Enkel `@onderwijs.gent.be` krijgt toegang tot beheer en gegevens. Dat geldt op drie plaatsen:
+**Installatieprofiel en domeinbeperking.** Elke installatie (organisatie) heeft in `backend/wrangler.toml` onder `[vars]`:
 
-- de aanmeldregels (hoofdadmin, uitnodigingscodes, sessieduur)
-- de Worker, die het JWT zelf controleert en elk ander domein weigert, ook bij een te ruime policy of via `workers.dev`
-- een CHECK-constraint op `gebruikers.email`
+- `ORGANISATIE_NAAM`: getoond in het dashboard en op het aanmeldscherm
+- `AANMELD_DOMEINEN`: de e-maildomeinen van medewerkers, komma-gescheiden (bv. `onderwijs.gent.be` of `meulestede.be, gent.be`). `*` = elk adres, enkel op uitnodiging. **Leeg of ontbrekend = niemand kan aanmelden.**
+
+Voor deze installatie is dat `onderwijs.gent.be`. Enkel die adressen krijgen toegang tot beheer en gegevens, en enkel die krijgen klaslijsten. De Worker controleert dat bij elke aanvraag (`src/kern/installatie.ts`), ook bij het activeren, aanmelden, toevoegen van medewerkers en mailen. De frontend haalt het profiel op via `GET /api/installatie` om de teksten aan te passen. De database van FMG heeft daarnaast nog een CHECK-constraint op `gebruikers.email` voor `@onderwijs.gent.be`; nieuwe installaties hebben die niet (zie de opmerking in `0001_schema.sql`). Zie [Plan_Modulair_Platform.md](Plan_Modulair_Platform.md) voor de opbouw met meerdere installaties en modules.
 
 ### Open beslissingen vóór de livegang
 
@@ -209,7 +213,7 @@ Elke actie komt in `audit_log`.
   3. *Klaslijst per lesje*: voornaam, achternaam, huidige school en leerjaar, genummerd tot het maximum; wachtlijst apart.
 
   Titels en kolomkoppen zijn aanklikbaar om te wijzigen; met *Bewaren* worden ze per evenement onthouden (leeg maken = standaardtekst). Het openen van een rapport wordt gelogd (`RAPPORT`).
-- **Leerkracht per lesje.** Velden *Leerkracht* en *E-mail leerkracht* bij het lesje. Klaslijsten gaan enkel naar adressen `@onderwijs.gent.be` (ze bevatten namen van leerlingen); elke leerkracht krijgt één mail met al zijn lesjes. In het auditlog staan enkel aantallen.
+- **Leerkracht per lesje.** Velden *Leerkracht* en *E-mail leerkracht* bij het lesje. Klaslijsten gaan enkel naar adressen van `AANMELD_DOMEINEN` (ze bevatten namen van leerlingen); elke leerkracht krijgt één mail met al zijn lesjes. In het auditlog staan enkel aantallen.
 - **Kopiëren naar andere momenten.** Bij een tijdsblok: *Lesjes kopiëren naar…* (andere keuzeblokken, ook op een andere dag; een lesje met dezelfde code of titel wordt overgeslagen). Bij een moment: *Kopiëren naar andere dag…* (het dagdeel met alle tijdsblokken en lesjes). Inschrijvingen gaan nooit mee.
 - **Verplaatsen.**
   - Naar een ander dagdeel: `POST /api/beheer/deelnemers/<id>/dagdeel` met `{"van": "<dagdeel>", "naar": "<dagdeel>"}`.
@@ -221,7 +225,7 @@ Persoonsgegevens staan versleuteld in D1. Rechtstreeks met SQL in de database ki
 
 ## Nog te bouwen
 
-- Beheerdashboard: deelnemerslijst op het scherm, verplaatsen, etiketten, meldingen opvolgen.
+- Beheerdashboard: deelnemerslijst op het scherm, verplaatsen.
 - Herinneringsmail en mail bij doorschuiven van de wachtlijst.
 - QR-check-in op de dag zelf (fase 2). De velden `aanwezig` en `checkin_datum` bestaan al.
 - Officiële lijst van Belgische gemeenten (NIS-codes).

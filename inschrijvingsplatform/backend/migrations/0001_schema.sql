@@ -38,7 +38,11 @@ create table gebruikers (
   naam         text not null,
   voornaam     text not null,
   email        text not null unique collate nocase
-               check (lower(email) like '%_@onderwijs.gent.be' and email not like '%@%@%'),  -- enkel eigen domein
+               -- Het toegelaten domein hangt af van de installatie (AANMELD_DOMEINEN) en wordt in de Worker
+               -- gecontroleerd (src/kern/installatie.ts). De installatie van FMG, gemaakt vóór 24 oktober 2026,
+               -- heeft hier nog de oudere controle "like '%_@onderwijs.gent.be'"; die blijft daar staan, want
+               -- weghalen vraagt het heropbouwen van de tabel en de cascades zouden passkeys en sessies wissen.
+               check (email like '%_@_%' and email not like '%@%@%'),
   rol_id       text not null references rollen(rol_id),
   school_id    text references scholen(school_id),   -- voor rol 'schoolbeheerder'
   actief       integer not null default 1 check (actief in (0, 1)),

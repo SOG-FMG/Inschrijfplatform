@@ -316,3 +316,22 @@
   .e-blad:last-child { break-after: auto; }
   .e-etiket { outline: 0; }
 }
+
+/* ---------- Meldingen ---------- */
+.m-tellers { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.m-tellers .d-kaart { margin: 0; }
+.m-teller strong { display: block; font-size: 1.8em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.m-teller span { color: var(--d-zacht); }
+.m-omschrijving { max-width: 32em; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; }
+.m-nowrap { white-space: nowrap; }
+.m-pagina { max-width: 14em; overflow-wrap: anywhere; }
+.m-tekst { white-space: pre-wrap; }
+.m-breek { overflow-wrap: anywhere; }
+.m-code { font-family: ui-monospace, Consolas, monospace; font-size: .9em; white-space: pre-wrap; overflow-wrap: anywhere; }
+.m-screenshot { display: block; max-width: 100%; max-height: 420px; border: 1px solid var(--d-rand); border-radius: 4px; }
+.m-logboek td { border-bottom-color: color-mix(in srgb, var(--d-rand) 50%, transparent); }
+.m-tijd { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--d-zacht); }
+.m-niveau { white-space: nowrap; font-weight: 700; color: var(--d-zacht); }
+.m-log--waarschuwing .m-niveau { color: var(--d-nee); }
+.m-log--fout { background: color-mix(in srgb, #c62828 9%, transparent); }
+.m-log--fout .m-niveau { color: #b3261e; }

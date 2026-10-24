@@ -56,11 +56,17 @@ enabled = true
 #   MAIL_WEBHOOK_SLEUTEL  gedeeld geheim dat de flow controleert; stap 14
 #   GRAPH_CLIENT_SECRET   stap 14
 [vars]
+# Profiel van deze installatie (src/kern/installatie.ts). Een andere organisatie krijgt een eigen installatie met eigen waarden.
+ORGANISATIE_NAAM = "Stedelijk Onderwijs Gent"
+# E-maildomeinen van medewerkers (komma-gescheiden). "*" = elk adres, enkel op uitnodiging. Leeg = niemand kan aanmelden.
+AANMELD_DOMEINEN = "onderwijs.gent.be"
+# Actieve modules (src/modules/index.ts), komma-gescheiden. De kern is altijd actief. Ontbreekt het: alle modules.
+MODULES = "evenementen,onderwijs,rapporten,etiketten,meldingen"
 # URL van de frontend (Cloudflare Pages), zonder slash op het einde. Meerdere origins: komma-gescheiden.
 ALLOWED_ORIGINS = "https://fmg-inschrijfplatform.freinetmiddenschool-automatisatie.workers.dev"
 PUBLIC_APP_URL = "https://fmg-inschrijfplatform.freinetmiddenschool-automatisatie.workers.dev"
 # Hoofdadmin (stap 13): de enige die zich de eerste keer kan activeren, met het secret HOOFDADMIN_SETUP_CODE.
-# Daarna voegt die de andere medewerkers toe in het beheerscherm. Enkel adressen @onderwijs.gent.be.
+# Daarna voegt die de andere medewerkers toe in het beheerscherm. Enkel adressen van AANMELD_DOMEINEN.
 HOOFDADMIN_EMAIL = "freinetmiddenschool.automatisatie@onderwijs.gent.be" #van FMG
 # 'log' = geen mails versturen (enkel loggen). Op 'webhook' zetten in stap 14 (Power Automate-flow).
 MAIL_PROVIDER = "webhook"

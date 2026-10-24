@@ -1,367 +1,93 @@
-import { authRoute, aanmeldBeheerRoute } from './auth/routes';
-import { ruimAanmeldingOp } from './auth/sessie';
-import { sha256 } from './crypto/versleuteling';
-import { anonimiseerEvenement, anonimiseerVerlopenEvenementen, audit, deelnemerslijst, kenSessieToe, verplaatsDagdeel } from './db/beheer';
-import { publiekEvenement, scholen } from './db/evenement';
+import { aanmeldBeheerRoute, authRoute } from './auth/routes';
 import { DbFout } from './db/fouten';
-import { bewaarLogo, instellingen, isSoort, kopieerDagdeel, kopieerSessies, maak, verwijder, verwijderLogo, wijzig } from './db/instellingen';
-import { bewaarMelding, lijstMeldingen, MeldingFout, ruimMeldingenOp, zetStatusMelding } from './db/meldingen';
-import { bewaarEtiketInstellingen, etiketten, zetVerdieping } from './db/etiketten';
-import { bewaarTeksten, klaslijstenPerLeerkracht, rapport } from './db/rapporten';
-import { annulatieGegevens, annuleerViaToken, registratieViaToken, registreer, wijzigKeuzesViaToken } from './db/registratie';
-import { annulatiemail, bevestigingsmail, klaslijstmail, meldingsmail, type Mail, testmail, verstuur, wijzigingsmail } from './mail';
-import { type Gebruiker, huidigeGebruiker, isToegelatenEmail } from './middleware/toegang';
+import { MeldingFout } from './db/meldingen';
+import { cors, json, leesJson, nietGevonden } from './kern/http';
+import { installatie } from './kern/installatie';
+import type { BeheerCtx, PubliekCtx } from './kern/module';
+import { maakRegister, type Register } from './kern/register';
+import { huidigeGebruiker } from './middleware/toegang';
+import { ALLE_MODULES } from './modules';
 import type { Env } from './types';
-import { isUuid, ValidatieFout, valideerRegistratie } from './validatie';
+import { ValidatieFout } from './validatie';
 
-/** Gebruikersvriendelijke meldingen voor de foutcodes uit de databaselaag. */
-const MELDINGEN: Record<string, [number, string]> = {
-  EVENEMENT_NIET_GEVONDEN: [404, 'Dit evenement bestaat niet of is niet meer beschikbaar.'],
-  INSCHRIJVING_GESLOTEN: [409, 'De inschrijvingen zijn afgesloten.'],
-  ONGELDIGE_GEGEVENS: [400, 'Controleer de ingevulde gegevens.'],
-  PRIVACY_NIET_AANVAARD: [400, 'Je moet de privacyverklaring aanvaarden.'],
-  ONGELDIGE_DOELGROEP: [400, 'Maak een geldige keuze.'],
-  GEEN_SESSIEKEUZE_VOOR_DOELGROEP: [400, 'Voor deze keuze kan je geen onderdelen kiezen.'],
-  ONGELDIG_AANTAL_DAGDELEN: [400, 'Kies een geldig moment.'],
-  ONGELDIG_DAGDEEL: [400, 'Dit moment is niet meer beschikbaar.'],
-  DUBBELE_INSCHRIJVING: [409, 'Deze deelnemer is al ingeschreven met dit e-mailadres. Bekijk je bevestigingsmail.'],
-  ONGELDIGE_SESSIEKEUZE: [400, 'Een gekozen onderdeel is niet meer beschikbaar. Vernieuw de pagina.'],
-  MEERDERE_SESSIES_IN_TIJDSBLOK: [400, 'Kies maximaal één onderdeel per tijdsblok.'],
-  ZELFDE_ONDERDEEL_DUBBEL: [400, 'Je koos twee keer hetzelfde onderdeel. Kies iets anders.'],
-  VERPLICHT_TIJDSBLOK_ONTBREEKT: [400, 'Maak een keuze voor elk verplicht tijdsblok.'],
-  DAGDEEL_VOLZET: [409, 'Dit moment is intussen volzet. Kies een ander moment.'],
-  SESSIE_VOLZET: [409, 'Een gekozen onderdeel is intussen volzet. Kies een ander onderdeel.'],
-  REGISTRATIE_NIET_GEVONDEN: [404, 'Deze inschrijving werd niet gevonden of is al geannuleerd.'],
-  NIET_MEER_ANNULEERBAAR: [409, 'Deze inschrijving kan niet meer geannuleerd worden.'],
-  NIET_MEER_WIJZIGBAAR: [409, 'Je keuzes kunnen niet meer gewijzigd worden. Neem contact op met de organisatie.'],
-  NIET_AANGEMELD: [401, 'Meld je aan om verder te gaan.'],
-  AANMELDEN_MISLUKT: [401, 'Aanmelden mislukt. Controleer je gegevens en probeer opnieuw.'],
-  ONGELDIGE_UITNODIGING: [400, 'Deze uitnodiging is ongeldig of verlopen.'],
-  TE_VEEL_POGINGEN: [429, 'Te veel pogingen. Probeer het over 15 minuten opnieuw.'],
-  GEBRUIKER_BESTAAT: [409, 'Er bestaat al een gebruiker met dit e-mailadres.'],
-  HUIDIG_WACHTWOORD_FOUT: [400, 'Je huidige wachtwoord klopt niet.'],
-  WACHTWOORD_INSTELLEN: [403, 'Stel eerst een wachtwoord in voor je account.'],
-  IN_GEBRUIK: [409, 'Dit onderdeel heeft al inschrijvingen (ook geannuleerde). Zet de status op gesloten of geannuleerd in plaats van te verwijderen.'],
-  GEEN_TOEGANG: [403, 'Je hebt geen toegang tot deze gegevens.'],
-  INSCHRIJVING_NIET_GEVONDEN: [404, 'Deze deelnemer is niet ingeschreven voor dat moment.'],
-  EERST_DAGDEEL_VERPLAATSEN: [409, 'Verplaats de deelnemer eerst naar het dagdeel van deze sessie.'],
-};
+/**
+ * De kern: neemt elke aanvraag aan, stuurt ze naar de juiste module (src/kern/register.ts), vertaalt
+ * fouten naar een melding voor de gebruiker en schrijft één logregel per aanvraag.
+ *   /api/auth/*     aanmelden (kern)
+ *   /api/beheer/*   eerst aanmelden, dan account en medewerkers (kern), dan de beheerroutes van de modules
+ *   /api/*          publieke routes van de modules, en /api/installatie
+ */
 
-function cors(request: Request, env: Env): Record<string, string> {
-  const origin = request.headers.get('Origin') ?? '';
-  const toegelaten = env.ALLOWED_ORIGINS.split(',').map((o) => o.trim());
-  return toegelaten.includes(origin)
-    ? {
-        'Access-Control-Allow-Origin': origin,
-        'Access-Control-Allow-Credentials': 'true',
-        'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-        'Access-Control-Expose-Headers': 'X-Request-Id',
-        'Access-Control-Max-Age': '86400',
-        Vary: 'Origin',
-      }
-    : {};
+// Eén register per waarde van MODULES (in de praktijk één per installatie), bewaard zolang de Worker draait.
+let register: { sleutel: string; r: Register } | null = null;
+function huidigRegister(env: Env): Register {
+  const sleutel = env.MODULES ?? '';
+  if (register?.sleutel !== sleutel) register = { sleutel, r: maakRegister(ALLE_MODULES, env.MODULES) };
+  return register.r;
 }
 
-const json = (data: unknown, status = 200, extra: Record<string, string> = {}) =>
-  new Response(JSON.stringify(data), {
-    status,
-    headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...extra },
-  });
-
-function nieuwToken(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-async function controleerTurnstile(env: Env, token: string | undefined, ip: string | null): Promise<boolean> {
-  if (!env.TURNSTILE_SECRET) return true; // lokaal zonder Turnstile
-  if (!token) return false;
-  const form = new FormData();
-  form.append('secret', env.TURNSTILE_SECRET);
-  form.append('response', token);
-  if (ip) form.append('remoteip', ip);
-  const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', { method: 'POST', body: form });
-  const data = await res.json<{ success: boolean }>();
-  return data.success;
-}
-
-const botcontroleMislukt = () => json({ fout: 'BOTCONTROLE', melding: 'De beveiligingscontrole is mislukt. Probeer opnieuw.' }, 403);
-
-async function leesJson(request: Request, maxBytes: number): Promise<unknown> {
-  const lengte = Number(request.headers.get('Content-Length') ?? 0);
-  if (lengte > maxBytes) throw new ValidatieFout({ aanvraag: 'De aanvraag is te groot.' });
-  const tekst = await request.text();
-  if (tekst.length > maxBytes) throw new ValidatieFout({ aanvraag: 'De aanvraag is te groot.' });
-  return JSON.parse(tekst);
-}
-
-/** Beperkt het aantal aanvragen per IP-adres (Workers Rate Limiting). Zonder binding (lokaal, tests) gebeurt er niets. */
-async function teSnel(limiet: RateLimit | undefined, request: Request): Promise<boolean> {
-  if (!limiet) return false;
-  const { success } = await limiet.limit({ key: request.headers.get('CF-Connecting-IP') ?? 'onbekend' });
-  return !success;
-}
-
-const teVeelAanvragen = () => json({ fout: 'TE_VEEL_AANVRAGEN', melding: 'Te veel aanvragen na elkaar. Wacht even en probeer opnieuw.' }, 429);
-
-/** Verstuurt een mail op de achtergrond en bewaart het resultaat (zonder inhoud) in mail_berichten. */
-function stuurEnLog(env: Env, ctx: ExecutionContext, deelnemerId: string, mail: Mail) {
-  const log = (status: string, fout?: string) =>
-    env.DB.prepare(`insert into mail_berichten (bericht_id, deelnemer_id, type, status, fout) values (?, ?, ?, ?, ?)`)
-      .bind(crypto.randomUUID(), deelnemerId, mail.type ?? 'bericht', status, fout ?? null)
-      .run();
-  ctx.waitUntil(
-    verstuur(env, mail)
-      .then((status) => log(status))
-      .catch((e) => log('mislukt', String(e).slice(0, 500))),
-  );
-}
-
-async function registreerRoute(request: Request, env: Env, ctx: ExecutionContext, slug: string): Promise<Response> {
-  if (await teSnel(env.RL_REGISTRATIE, request)) return teVeelAanvragen();
-  const invoer = valideerRegistratie(await leesJson(request, 64 * 1024));
-  // Honeypot ingevuld → doen alsof het lukte, maar niets bewaren
-  if (invoer.website) return json({ referentie: 'OK' }, 201);
-  if (!(await controleerTurnstile(env, invoer.turnstileToken, request.headers.get('CF-Connecting-IP')))) return botcontroleMislukt();
-
-  const token = nieuwToken();
-  const resultaat = await registreer(env, slug, invoer, await sha256(token));
-
-  const beheerUrl = `${env.PUBLIC_APP_URL.replace(/\/$/, '')}/beheer/${token}`;
-  stuurEnLog(env, ctx, resultaat.deelnemerId, bevestigingsmail(resultaat, invoer.deelnemer.email, invoer.deelnemer.voornaam, beheerUrl));
-
-  const { deelnemerId: _intern, ...publiek } = resultaat;
-  return json({ ...publiek, beheerUrl }, 201);
-}
-
-async function meldingRoute(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-  if (await teSnel(env.RL_MELDING, request)) return teVeelAanvragen();
-  const body = (await leesJson(request, 5 * 1024 * 1024)) as any;
-  if (typeof body?.website === 'string' && body.website) return json({ referentie: 'OK' }, 201);
-  if (!(await controleerTurnstile(env, body?.turnstileToken, request.headers.get('CF-Connecting-IP')))) return botcontroleMislukt();
-  const melding = await bewaarMelding(env, body);
-  if (env.MELDINGEN_MAIL && isToegelatenEmail(env.MELDINGEN_MAIL)) {
-    ctx.waitUntil(verstuur(env, meldingsmail(env.MELDINGEN_MAIL, melding.referentie, body.type)).catch((e) => console.error('meldingsmail', String(e))));
-  }
-  return json(melding, 201);
-}
-
-function csv(rijen: Record<string, unknown>[], kolommen: string[], bestandsnaam: string): Response {
-  // Puntkomma + BOM: opent correct in Excel met Belgische landinstellingen. Formule-injectie neutraliseren.
-  const cel = (v: unknown) => {
-    let s = v == null ? '' : String(v);
-    if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-    return `"${s.replace(/"/g, '""')}"`;
+function publiekCtx(request: Request, env: Env, ctx: ExecutionContext, params: Record<string, string>): PubliekCtx {
+  return {
+    env,
+    request,
+    params,
+    ip: request.headers.get('CF-Connecting-IP'),
+    waitUntil: (p) => ctx.waitUntil(p),
+    leesJson: (max) => leesJson(request, max) as Promise<any>,
   };
-  const inhoud = '﻿' + [kolommen.join(';'), ...rijen.map((r) => kolommen.map((k) => cel(r[k])).join(';'))].join('\r\n');
-  return new Response(inhoud, {
-    headers: {
-      'Content-Type': 'text/csv; charset=utf-8',
-      'Content-Disposition': `attachment; filename="${bestandsnaam}"`,
-      'Cache-Control': 'no-store',
-    },
-  });
 }
 
-/** Mailt elke leerkracht de klaslijst(en) van zijn of haar lesjes. Enkel naar adressen van het eigen domein. */
-async function mailKlaslijsten(env: Env, g: Gebruiker, evenementId: string, body: any, ip: string | null) {
-  const sessieIds = Array.isArray(body?.sessieIds) ? body.sessieIds.filter((i: unknown) => typeof i === 'string').slice(0, 500) : [];
-  if (!sessieIds.length) throw new ValidatieFout({ sessieIds: 'Kies minstens één lesje.' });
-  const { evenement, perAdres, zonderAdres, afzender } = await klaslijstenPerLeerkracht(env, g, evenementId, sessieIds, ip);
-  const mislukt: string[] = [];
-  let verzonden = 0;
-  for (const [aan, lijsten] of perAdres) {
-    const mail = klaslijstmail({
-      aan,
-      evenement,
-      afzender,
-      lijsten: lijsten.map((l) => ({ titel: l.sessie.titel, moment: l.moment, uur: l.uur, lokaal: l.sessie.lokaal, capaciteit: l.sessie.capaciteit, deelnemers: l.sessie.deelnemers })),
-    });
-    try {
-      await verstuur(env, mail);
-      verzonden++;
-    } catch (e) {
-      console.error('klaslijstmail', String(e).slice(0, 200));
-      mislukt.push(...lijsten.map((l) => l.sessie.titel));
-    }
-  }
-  // Geen adressen of namen in het auditlog: enkel aantallen.
-  await audit(env, g, 'evenementen', evenementId, 'MAIL_KLASLIJSTEN', { lesjes: sessieIds.length, mails: verzonden, mislukt: mislukt.length }, ip).run();
-  return { verzonden, zonderAdres, mislukt };
-}
+const naarResponse = (a: unknown) => (a instanceof Response ? a : json(a));
 
-async function beheerRoute(request: Request, env: Env, pad: string, m: string): Promise<Response> {
-  const g = await huidigeGebruiker(request, env);
-  const ip = request.headers.get('CF-Connecting-IP');
-  let p: RegExpMatchArray | null;
+async function beheerRoute(request: Request, env: Env, ctx: ExecutionContext, reg: Register, pad: string): Promise<Response> {
+  const gebruiker = await huidigeGebruiker(request, env);
 
-  // Testmail naar jezelf: controleert de hele keten (Worker → flow → mailbox) zonder een inschrijving te doen.
-  if (m === 'POST' && pad === '/mail/test') {
-    if (g.rol !== 'platformbeheerder') throw new DbFout('GEEN_TOEGANG');
-    try {
-      const status = await verstuur(env, testmail(g.email));
-      await audit(env, g, 'mail', '*', 'TESTMAIL', { status }, ip).run();
-      return json({ ok: true, provider: env.MAIL_PROVIDER ?? 'log', status });
-    } catch (e) {
-      return json({ ok: false, provider: env.MAIL_PROVIDER ?? 'log', fout: String(e instanceof Error ? e.message : e).slice(0, 200) });
-    }
-  }
+  // Account, passkeys en medewerkers (kern). Daarna moet een account zonder wachtwoord er eerst één instellen.
+  const kern = await aanmeldBeheerRoute(request, env, gebruiker, pad);
+  if (kern) return kern;
 
-  const aanmelden = await aanmeldBeheerRoute(request, env, g, pad);
-  if (aanmelden) return aanmelden;
-
-  // Instellingen van een evenement (zie db/instellingen.ts)
-  if (m === 'GET' && (p = pad.match(/^\/evenementen\/([A-Za-z0-9-]{1,64})\/instellingen$/))) return json(await instellingen(env, g, p[1]));
-  if ((p = pad.match(/^\/evenementen\/([A-Za-z0-9-]{1,64})\/logo$/))) {
-    if (m === 'POST') return json(await bewaarLogo(env, g, p[1], request, ip));
-    if (m === 'DELETE') return json(await verwijderLogo(env, g, p[1], ip));
-  }
-  if ((p = pad.match(/^\/instellingen\/([a-z]+)(?:\/([A-Za-z0-9-]{1,64}))?$/)) && isSoort(p[1])) {
-    if (m === 'POST' && !p[2]) {
-      const body = (await leesJson(request, 64 * 1024)) as any;
-      const ouderId = typeof body?.ouderId === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(body.ouderId) ? body.ouderId : null;
-      return json(await maak(env, g, p[1], ouderId, body?.waarden ?? {}, ip), 201);
-    }
-    if (m === 'PATCH' && p[2]) return json(await wijzig(env, g, p[1], p[2], ((await leesJson(request, 64 * 1024)) as any)?.waarden ?? {}, ip));
-    if (m === 'DELETE' && p[2]) return json(await verwijder(env, g, p[1], p[2], ip));
-  }
-
-  // Lesjes of een heel moment kopiëren naar andere momenten
-  if (m === 'POST' && pad === '/kopieer') {
-    const body = (await leesJson(request, 64 * 1024)) as any;
-    const ids = (x: unknown) => (Array.isArray(x) && x.length >= 1 && x.length <= 200 && x.every((i) => typeof i === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(i)) ? (x as string[]) : null);
-    const [bron, naar] = [ids(body?.ids), ids(body?.naar)];
-    if (!bron || !naar) throw new ValidatieFout({ kopieer: 'Kies wat je wil kopiëren en waarheen.' });
-    if (body.soort === 'sessies') return json(await kopieerSessies(env, g, bron, naar, ip));
-    if (body.soort === 'dagdeel' && bron.length === 1) return json(await kopieerDagdeel(env, g, bron[0], naar, ip));
-    throw new ValidatieFout({ kopieer: 'Onbekende soort.' });
-  }
-
-  // Rapporten: overzicht per dagdeel, per moment en klaslijsten per lesje
-  if ((p = pad.match(/^\/evenementen\/([A-Za-z0-9-]{1,64})\/rapport(?:\/(teksten|mail))?$/))) {
-    if (m === 'GET' && !p[2]) return json(await rapport(env, g, p[1], ip));
-    if (m === 'PATCH' && p[2] === 'teksten') return json(await bewaarTeksten(env, g, p[1], ((await leesJson(request, 64 * 1024)) as any)?.teksten, ip));
-    if (m === 'POST' && p[2] === 'mail') return json(await mailKlaslijsten(env, g, p[1], (await leesJson(request, 64 * 1024)) as any, ip));
-  }
-
-  // Etiketten: opmaak per evenement, verdieping per lokaal
-  if ((p = pad.match(/^\/evenementen\/([A-Za-z0-9-]{1,64})\/etiketten(?:\/(instellingen)|\/lokalen\/([A-Za-z0-9-]{1,64}))?$/))) {
-    if (m === 'GET' && !p[2] && !p[3]) return json(await etiketten(env, g, p[1], ip));
-    if (m === 'PATCH' && p[2]) return json(await bewaarEtiketInstellingen(env, g, p[1], ((await leesJson(request, 16 * 1024)) as any)?.instellingen, ip));
-    if (m === 'PATCH' && p[3]) return json(await zetVerdieping(env, g, p[1], p[3], ((await leesJson(request, 1024)) as any)?.verdieping, ip));
-  }
-
-  if (m === 'GET' && (p = pad.match(/^\/evenementen\/([0-9a-f-]{36})\/deelnemers\.csv$/)) && isUuid(p[1])) {
-    const rijen = await deelnemerslijst(env, g, p[1], ip);
-    const kolommen = ['referentie', 'ingeschreven_op', 'doelgroep', 'voornaam', 'naam', 'email', 'contact_voornaam', 'contact_naam',
-      'telefoon', 'school', 'gemeente', 'leerjaar', 'functie', 'momenten', 'keuzes', 'opmerkingen'];
-    return csv(rijen, kolommen, `deelnemers-${p[1].slice(0, 8)}.csv`);
-  }
-  if (m === 'POST' && (p = pad.match(/^\/evenementen\/([0-9a-f-]{36})\/anonimiseer$/)) && isUuid(p[1])) {
-    return json(await anonimiseerEvenement(env, g, p[1]));
-  }
-  if (m === 'POST' && (p = pad.match(/^\/deelnemers\/([0-9a-f-]{36})\/(dagdeel|sessie)$/)) && isUuid(p[1])) {
-    const body = (await leesJson(request, 4096)) as any;
-    const forceer = body?.forceer === true;
-    if (p[2] === 'dagdeel') {
-      if (!isUuid(body?.van) || !isUuid(body?.naar)) throw new ValidatieFout({ dagdeel: 'Geef van en naar op.' });
-      return json(await verplaatsDagdeel(env, g, p[1], body.van, body.naar, forceer));
-    }
-    if (!isUuid(body?.sessieId)) throw new ValidatieFout({ sessieId: 'Geef een sessie op.' });
-    return json(await kenSessieToe(env, g, p[1], body.sessieId, forceer));
-  }
-
-  // Meldingen bevatten technische gegevens van het hele platform: enkel platformbeheer.
-  if (pad.startsWith('/meldingen')) {
-    if (g.rol !== 'platformbeheerder') throw new DbFout('GEEN_TOEGANG');
-    if (m === 'GET' && pad === '/meldingen') {
-      await audit(env, g, 'meldingen', '*', 'LIJST', undefined, ip).run();
-      return json(await lijstMeldingen(env));
-    }
-    if ((p = pad.match(/^\/meldingen\/([0-9a-f-]{36})(\/screenshot)?$/)) && isUuid(p[1])) {
-      if (m === 'GET' && p[2]) {
-        const obj = await env.STORAGE.get(`meldingen/${p[1]}.png`);
-        if (!obj) return json({ fout: 'NIET_GEVONDEN', melding: 'Niet gevonden.' }, 404);
-        return new Response(obj.body, { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'private, no-store' } });
-      }
-      if (m === 'PATCH' && !p[2]) {
-        const body = (await leesJson(request, 1024)) as any;
-        return (await zetStatusMelding(env, p[1], String(body?.status)))
-          ? json({ ok: true })
-          : json({ fout: 'NIET_GEVONDEN', melding: 'Niet gevonden.' }, 404);
-      }
-    }
-  }
-  return json({ fout: 'NIET_GEVONDEN', melding: 'Niet gevonden.' }, 404);
+  const t = reg.zoek('beheer', request.method, pad);
+  if (!t || t.route.toegang !== 'beheer') return nietGevonden();
+  if (t.route.recht && !reg.heeftRecht(gebruiker, t.route.recht)) throw new DbFout('GEEN_TOEGANG');
+  const beheer: BeheerCtx = {
+    ...publiekCtx(request, env, ctx, t.params),
+    gebruiker,
+    heeftRecht: (recht) => reg.heeftRecht(gebruiker, recht),
+  };
+  return naarResponse(await t.route.handler(beheer));
 }
 
 async function route(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const { pathname } = new URL(request.url);
-  const m = request.method;
-  let p: RegExpMatchArray | null;
+  const reg = huidigRegister(env);
 
-  if (m === 'GET' && (p = pathname.match(/^\/api\/evenementen\/([a-z0-9-]{1,80})$/))) {
-    const ev = await publiekEvenement(env, p[1]);
-    return ev ? json(ev) : json({ fout: 'EVENEMENT_NIET_GEVONDEN', melding: MELDINGEN.EVENEMENT_NIET_GEVONDEN[1] }, 404);
-  }
-  if (m === 'POST' && (p = pathname.match(/^\/api\/evenementen\/([a-z0-9-]{1,80})\/registraties$/))) {
-    return registreerRoute(request, env, ctx, p[1]);
-  }
-  if (m === 'GET' && (p = pathname.match(/^\/api\/logo\/([A-Za-z0-9-]{1,64})$/))) {
-    const obj = await env.STORAGE.get(`logos/${p[1]}`);
-    if (!obj) return json({ fout: 'NIET_GEVONDEN', melding: 'Niet gevonden.' }, 404);
-    return new Response(obj.body, {
-      headers: {
-        'Content-Type': obj.httpMetadata?.contentType ?? 'application/octet-stream',
-        'Cache-Control': 'public, max-age=300',
-        'Content-Security-Policy': "default-src 'none'",
-      },
-    });
-  }
-  if (m === 'GET' && pathname === '/api/scholen') {
-    return json(await scholen(env), 200, { 'Cache-Control': 'public, max-age=3600' });
-  }
-  if ((p = pathname.match(/^\/api\/registraties\/([A-Za-z0-9_-]{43})$/))) {
-    const hash = await sha256(p[1]);
-    if (m === 'GET') {
-      const r = await registratieViaToken(env, hash);
-      return r ? json(r) : json({ fout: 'REGISTRATIE_NIET_GEVONDEN', melding: MELDINGEN.REGISTRATIE_NIET_GEVONDEN[1] }, 404);
-    }
-    if (m === 'PATCH') {
-      if (await teSnel(env.RL_REGISTRATIE, request)) return teVeelAanvragen();
-      const sessies = ((await leesJson(request, 8 * 1024)) as any)?.sessies;
-      if (!Array.isArray(sessies) || sessies.length > 30 || !sessies.every((i) => typeof i === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(i))) {
-        throw new ValidatieFout({ sessies: 'Ongeldige keuze.' });
-      }
-      const { gewijzigd } = await wijzigKeuzesViaToken(env, hash, sessies);
-      const overzicht = await registratieViaToken(env, hash);
-      const gegevens = gewijzigd ? await annulatieGegevens(env, hash) : null;
-      if (gegevens?.email && overzicht) {
-        const beheerUrl = `${env.PUBLIC_APP_URL.replace(/\/$/, '')}/beheer/${p[1]}`;
-        stuurEnLog(env, ctx, gegevens.deelnemerId, wijzigingsmail({ ...gegevens, aan: gegevens.email, keuzes: overzicht.keuzes, beheerUrl }));
-      }
-      return json(overzicht);
-    }
-    if (m === 'DELETE') {
-      const gegevens = await annulatieGegevens(env, hash);
-      const resultaat = await annuleerViaToken(env, hash);
-      if (gegevens?.email) {
-        const basis = env.PUBLIC_APP_URL.replace(/\/$/, '');
-        stuurEnLog(env, ctx, gegevens.deelnemerId, annulatiemail({ ...gegevens, aan: gegevens.email, formulierUrl: `${basis}/${gegevens.slug}` }));
-      }
-      return json(resultaat);
-    }
-  }
-  if (m === 'POST' && pathname === '/api/meldingen') return meldingRoute(request, env, ctx);
   if (pathname.startsWith('/api/auth/')) return authRoute(request, env, pathname.slice('/api/auth'.length));
-  if (pathname.startsWith('/api/beheer/')) return beheerRoute(request, env, pathname.slice('/api/beheer'.length), m);
-  return json({ fout: 'NIET_GEVONDEN', melding: 'Niet gevonden.' }, 404);
+  if (pathname.startsWith('/api/beheer/')) return beheerRoute(request, env, ctx, reg, pathname.slice('/api/beheer'.length));
+
+  // Profiel van de installatie, voor teksten en modules in de frontend (ook vóór het aanmelden).
+  if (request.method === 'GET' && pathname === '/api/installatie') {
+    return json({ ...installatie(env), modules: reg.actief.map((m) => m.id) }, 200, { 'Cache-Control': 'public, max-age=300' });
+  }
+
+  if (pathname.startsWith('/api/')) {
+    const t = reg.zoek('publiek', request.method, pathname.slice('/api'.length));
+    if (t && t.route.toegang === 'publiek') return naarResponse(await t.route.handler(publiekCtx(request, env, ctx, t.params)));
+  }
+  return nietGevonden();
 }
 
 /** Pad zonder geheime tokens of id's, zodat logregels groeperen en niets gevoeligs bevatten. */
 const logPad = (pad: string) =>
   pad.replace(/[A-Za-z0-9_-]{43}/g, ':token').replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, ':id');
+
+/** Foutcodes van alle modules; ook als het register zelf niet laadt, blijft de foutafhandeling werken. */
+function foutcodes(env: Env): Record<string, [number, string]> {
+  try {
+    return huidigRegister(env).fouten;
+  } catch {
+    return {};
+  }
+}
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -376,8 +102,9 @@ export default {
     try {
       res = await route(request, env, ctx);
     } catch (e) {
-      if (e instanceof DbFout && MELDINGEN[e.code]) {
-        const [status, melding] = MELDINGEN[e.code];
+      const bekend = e instanceof DbFout ? foutcodes(env)[e.code] : undefined;
+      if (e instanceof DbFout && bekend) {
+        const [status, melding] = bekend;
         fout = e.code;
         // detail = id van het volzette dagdeel/sessie, zodat de frontend het kan markeren
         res = json({ fout: e.code, melding: e.hint ? `${melding} (${e.hint})` : melding, id: e.detail }, status);
@@ -406,10 +133,21 @@ export default {
     return new Response(res.body, { status: res.status, headers });
   },
 
+  /** Dagelijks (wrangler.toml [triggers]): de taken van alle actieve modules. Eén mislukte taak houdt de andere niet tegen. */
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    const taken = huidigRegister(env).taken;
     ctx.waitUntil(
-      Promise.all([anonimiseerVerlopenEvenementen(env), ruimMeldingenOp(env), ruimAanmeldingOp(env)]).then(([deelnemers, meldingen]) =>
-        console.log(JSON.stringify({ taak: 'opruimen', geanonimiseerd: deelnemers, meldingenVerwijderd: meldingen })),
+      Promise.allSettled(taken.map(({ taak }) => taak.uitvoeren(env))).then((uitkomsten) =>
+        console.log(
+          JSON.stringify({
+            taak: 'dagelijks',
+            resultaten: uitkomsten.map((u, i) => ({
+              module: taken[i].module.id,
+              taak: taken[i].taak.naam,
+              ...(u.status === 'fulfilled' ? { aantal: u.value ?? null } : { fout: String(u.reason).slice(0, 200) }),
+            })),
+          }),
+        ),
       ),
     );
   },

@@ -72,6 +72,31 @@ export interface Koppeling {
   otpauth: string;
 }
 
+export type MeldingStatus = 'nieuw' | 'in_behandeling' | 'afgehandeld';
+
+export interface Logregel {
+  t: string;
+  niveau: string;
+  bericht: string;
+}
+
+/** Een melding zoals de API ze teruggeeft (omschrijving en e-mail al ontsleuteld). */
+export interface BeheerMelding {
+  melding_id: string;
+  referentie: string;
+  type: 'probleem' | 'wens';
+  status: MeldingStatus;
+  omschrijving: string;
+  email: string | null;
+  pagina: string | null;
+  app_versie: string | null;
+  browser: string | null;
+  context: Record<string, string | number | boolean | null> | null;
+  logboek: Logregel[];
+  screenshot: string | null;
+  created_at: string;
+}
+
 const post = <T>(pad: string, body: unknown = {}) => call<T>(pad, { method: 'POST', body });
 
 export const beheerApi = {
@@ -100,6 +125,12 @@ export const beheerApi = {
     call<{ ok: true }>(`/api/beheer/gebruikers/${id}`, { method: 'PATCH', body: wijziging }),
   resetGebruiker: (id: string) => post<Uitnodiging>(`/api/beheer/gebruikers/${id}/reset`),
   testMail: () => post<{ ok: boolean; provider: string; status?: string; fout?: string }>('/api/beheer/mail/test'),
+
+  // meldingen via de knop "Probleem of idee?" (platformbeheer)
+  meldingen: () => call<BeheerMelding[]>('/api/beheer/meldingen'),
+  zetStatusMelding: (id: string, status: MeldingStatus) => call<{ ok: true }>(`/api/beheer/meldingen/${id}`, { method: 'PATCH', body: { status } }),
+  /** Het pad komt van de API (/api/beheer/meldingen/<id>/screenshot); zelfde hostnaam, dus de sessiecookie gaat mee. */
+  screenshotUrl: (pad: string) => `${BASIS}${pad}`,
 
   csvUrl: (evenementId: string) => `${BASIS}/api/beheer/evenementen/${evenementId}/deelnemers.csv`,
 };
