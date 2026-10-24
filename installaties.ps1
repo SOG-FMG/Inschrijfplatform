@@ -4,7 +4,7 @@
 #     .\installaties.ps1 lijst                 toont de installaties uit backend\wrangler.toml
 #     .\installaties.ps1 nieuw <naam>          maakt D1 en R2 aan voor een nieuwe installatie
 #     .\installaties.ps1 geheimen <naam>       zet ENCRYPTION_KEY en HOOFDADMIN_SETUP_CODE (eenmalig, na de eerste deploy)
-#     .\installaties.ps1 deploy <naam>         migreert en deployt een installatie (backend en frontend)
+#     .\installaties.ps1 deploy <naam>         migreert en deployt een installatie (productie: enkel migraties en API)
 #     .\installaties.ps1 deploy alle           eerst test, dan de andere, productie (FMG) als laatste
 #
 # "productie" is de installatie van FMG (de waarden bovenaan wrangler.toml, zonder --env).
@@ -58,7 +58,8 @@ function Controleer-Naam($naam) {
     if ($naam -notin (Installaties)) { Stop-Hier "Onbekende installatie '$naam'. Bekend: $((Installaties) -join ', '). Voeg ze eerst toe in backend\wrangler.toml (sjabloon onderaan)." }
     if ($naam -eq 'productie') { return }
     # Het blok van deze installatie: van [env.<naam>] tot de volgende andere installatie.
-    $toml = Get-Content -Raw -LiteralPath (Join-Path $Backend 'wrangler.toml')
+    # Commentaarregels (bv. het sjabloon onderaan) tellen niet mee.
+    $toml = (Get-Content -LiteralPath (Join-Path $Backend 'wrangler.toml') | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
     $blok = (($toml -split "\[env\.$naam\]", 2)[1] -split "\n\[env\.(?!$naam[.\]])", 2)[0]
     if ($blok -match 'VUL-IN-NA-AANMAKEN') { Stop-Hier "In wrangler.toml staat voor '$naam' nog geen database_id. Voer eerst uit: .\installaties.ps1 nieuw $naam" }
 }
@@ -69,8 +70,18 @@ function Deploy($naam) {
     Voer-Uit $Backend 'node tools/migraties.mjs --controleer'
     Voer-Uit $Backend "npx wrangler d1 migrations apply DB --remote$vlag"
     Voer-Uit $Backend "npx wrangler deploy$vlag"
-    Voer-Uit $Frontend 'npm run build'
-    Voer-Uit $Frontend "npx wrangler deploy$vlag"
+    if ($naam -eq 'productie') {
+        # De build-variabelen van productie (o.a. de Turnstile-sitekey) staan in het Cloudflare-dashboard; een lokale bouw zou ze missen.
+        Toon-Let-Op 'Frontend van productie: wordt door Cloudflare gebouwd bij een push naar main (of Deployments > Retry).'
+    }
+    else {
+        # Lokaal bouwen met de API achter dezelfde hostnaam. Eigen waarden per installatie (bv. VITE_STANDAARD_EVENEMENT,
+        # VITE_TURNSTILE_SITEKEY) in frontend\.env.<naam>; Vite leest dat bestand met --mode <naam>.
+        $env:VITE_API_URL = '/'
+        Voer-Uit $Frontend 'npx tsc --noEmit -p .'
+        Voer-Uit $Frontend "npx vite build --mode $naam"
+        Voer-Uit $Frontend "npx wrangler deploy$vlag"
+    }
     Toon-Ok "$naam is bijgewerkt."
 }
 
