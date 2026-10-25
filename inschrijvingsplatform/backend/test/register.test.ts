@@ -12,7 +12,7 @@ const gebruiker = (rol: Gebruiker['rol']) => ({ gebruikerId: 'x', email: 'x@y.be
 describe('de modules in deze code', () => {
   test('laden zonder fouten, kern altijd eerst', () => {
     const r = maakRegister(ALLE_MODULES);
-    expect(r.actief.map((m) => m.id)).toEqual(['kern', 'evenementen', 'onderwijs', 'rapporten', 'etiketten', 'meldingen', 'voorinschrijvingen', 'mailsjablonen']);
+    expect(r.actief.map((m) => m.id)).toEqual(['kern', 'evenementen', 'onderwijs', 'rapporten', 'etiketten', 'meldingen', 'voorinschrijvingen', 'mailsjablonen', 'historiek']);
   });
 
   test('MODULES kiest een deel; de kern blijft actief', () => {
@@ -70,7 +70,7 @@ describe('rechten', () => {
     expect(r.rechtenVan(gebruiker('platformbeheerder'))).toEqual([
       'kern.mail.testen', 'kern.gebruikers.beheren', 'evenementen.aanmaken', 'evenementen.sessiegevers.beheren', 'evenementen.inchecken',
       'evenementen.sessie_inzien', 'evenementen.lesje_wijzigen', 'evenementen.overboeken', 'evenementen.overzicht_aanwezigen',
-      'meldingen.beheren', 'voorinschrijvingen.beheren', 'mailsjablonen.beheren',
+      'meldingen.beheren', 'voorinschrijvingen.beheren', 'mailsjablonen.beheren', 'historiek.bekijken', 'historiek.importeren',
     ]);
     expect(r.rechtenVan(gebruiker('organisator'))).not.toContain('meldingen.beheren');
     expect(r.rechtenVan(gebruiker('onthaal'))).toEqual(['evenementen.inchecken', 'evenementen.sessie_inzien', 'evenementen.lesje_wijzigen', 'evenementen.overboeken', 'evenementen.overzicht_aanwezigen']);

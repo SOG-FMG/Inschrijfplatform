@@ -49,6 +49,7 @@
 .d-werkbalk { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
 .d-werkbalk input, .d-werkbalk select { font: inherit; padding: 5px 8px; border: 1px solid var(--d-rand); border-radius: 4px; background: var(--vlak); color: inherit; }
 .d-werkbalk input[type='search'] { min-width: 260px; }
+.d-werkbalk select { max-width: 22em; text-overflow: ellipsis; }
 
 /* ---------- Knoppen en links ---------- */
 .d-knop {
@@ -396,3 +397,25 @@
 /* QR-code voor de check-in op een etiket (Etiketten.tsx) */
 .e-qr { position: absolute; background: #fff; }
 .e-qr svg { display: block; width: 100%; height: 100%; }
+
+/* ---------- Historiek: importeren en overzicht per evenement ---------- */
+.h-tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 2px solid var(--d-rand); margin-bottom: 14px; }
+.h-tabs button { font: inherit; background: none; border: 0; border-bottom: 3px solid transparent; margin-bottom: -2px; padding: 6px 12px; cursor: pointer; color: var(--d-zacht); }
+.h-tabs button.actief { border-color: var(--primair); color: inherit; font-weight: 700; }
+.h-programma, .h-programma ul { margin: 0; padding-left: 18px; }
+.h-programma li { margin: 3px 0; }
+.h-naam { position: relative; cursor: help; border-bottom: 1px dotted var(--d-zacht); }
+.h-naam:focus { outline: 2px solid var(--focus); outline-offset: 1px; }
+.h-pop {
+  position: absolute; z-index: 20; left: 0; top: calc(100% + 4px); width: min(460px, 80vw); padding: 8px 10px;
+  background: var(--vlak); color: var(--tekst); border: 1px solid var(--d-rand); border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+  font-weight: 400; white-space: normal; cursor: default;
+}
+.h-pop ul { margin: 2px 0 6px; padding-left: 16px; }
+.h-pop li { margin: 2px 0; }
+.h-pop__titel { display: block; margin-bottom: 4px; }
+.h-balk { display: block; height: 4px; margin-top: 2px; border-radius: 2px; background: var(--primair); opacity: .55; }
+.h-groep h3 { margin: 0; }
+.h-verschil { background: var(--waarschuwing-licht); font-weight: 600; }
+.h-voorbeeld { background: var(--achtergrond); border: 1px solid var(--d-rand); border-radius: 4px; padding: 6px 12px; }
+.d-veld textarea, .d-veld select { font: inherit; padding: 6px 8px; border: 1px solid var(--d-rand); border-radius: 4px; background: var(--vlak); color: inherit; }

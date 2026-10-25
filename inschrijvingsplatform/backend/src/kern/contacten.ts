@@ -1,5 +1,6 @@
 import { blindeIndex, ontsleutel, versleutel } from '../crypto/versleuteling';
 import type { Env } from '../types';
+import { ValidatieFout } from '../validatie';
 import type { Module } from './module';
 
 /**
@@ -189,6 +190,173 @@ export async function leesContact(env: Env, contactId: string) {
     voornaam: await ontsleutel(env, r.voornaam_enc),
     naam: await ontsleutel(env, r.naam_enc),
     telefoon: await ontsleutel(env, r.telefoon_enc),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Een heel bestand tegelijk herkennen en bewaren (imports: voorinschrijvingen, inschrijvingen van vorige jaren)
+// ---------------------------------------------------------------------------
+
+/** Eén rij van een import: het contactadres (geldig en in kleine letters, of null) en de naam van de persoon. */
+export interface PersoonInvoer {
+  email: string | null;
+  voornaam: string | null;
+  naam: string | null;
+  /** Bij een twijfel: id van de bestaande persoon, 'rij:<n>' (persoon van een eerdere rij in dit bestand) of 'nieuw'. */
+  persoonKeuze?: string | null;
+}
+
+export interface RijPlan {
+  contact: 'nieuw' | 'bestaand' | 'geen';
+  status: 'zelfde' | 'twijfel' | 'nieuw' | 'geen';
+  /** Kandidaten bij twijfel: bestaande personen, of 'rij:<n>' voor een persoon van een eerdere rij in dit bestand. */
+  kandidaten: { id: string; naam: string }[];
+  /** Uiteindelijke keuze (na persoonKeuze): bestaande persoon, 'rij:<n>', of 'nieuw'. */
+  persoon?: string;
+  sleutel?: string;
+  emailSleutel?: string;
+}
+
+const volledigeNaam = (p: { voornaam: string | null; naam: string | null }) => [p.voornaam, p.naam].filter(Boolean).join(' ');
+
+/**
+ * Per rij: nieuw of bestaand contact, en zelfde, twijfel of nieuwe persoon (dezelfde regels als herken()).
+ * Personen die het bestand zelf aanmaakt, tellen mee voor de volgende rijen (bv. twee keer hetzelfde kind).
+ * Met `metKeuzes` moet elke twijfel een persoonKeuze hebben (de nakijkstap in het dashboard).
+ */
+export async function planPersonen(env: Env, rijen: PersoonInvoer[], metKeuzes: boolean): Promise<RijPlan[]> {
+  const sleutels = await Promise.all(rijen.map((r) => (r.email ? emailSleutel(env, r.email) : null)));
+  const contacten = await contactenOpSleutel(env, [...new Set(sleutels.filter((s): s is string => !!s))]);
+  const personen = await personenVan(env, [...contacten.values()]);
+  const nieuwInBestand = new Map<string, Persoon[]>();
+
+  const uit: RijPlan[] = [];
+  for (let i = 0; i < rijen.length; i++) {
+    const { voornaam, naam, persoonKeuze } = rijen[i];
+    const es = sleutels[i];
+    if (!es) {
+      uit.push({ contact: 'geen', status: 'geen', kandidaten: [] });
+      continue;
+    }
+    const contactId = contacten.get(es);
+    if (!voornaam && !naam) {
+      uit.push({ contact: contactId ? 'bestaand' : 'nieuw', status: 'geen', kandidaten: [], emailSleutel: es });
+      continue;
+    }
+    const sleutel = await naamSleutel(env, voornaam, naam);
+    const kandidaten = [...(contactId ? personen.get(contactId) ?? [] : []), ...(nieuwInBestand.get(es) ?? [])];
+    const h = herken(kandidaten, voornaam, naam, sleutel);
+    const p: RijPlan = {
+      contact: contactId ? 'bestaand' : 'nieuw',
+      status: h.status,
+      kandidaten: h.kandidaten.map((k) => ({ id: k.persoonId, naam: volledigeNaam(k) })),
+      sleutel,
+      emailSleutel: es,
+    };
+    if (h.status === 'zelfde') p.persoon = h.persoonId;
+    else if (h.status === 'nieuw') p.persoon = 'nieuw';
+    else if (metKeuzes) {
+      if (persoonKeuze === 'nieuw' || (persoonKeuze && h.kandidaten.some((x) => x.persoonId === persoonKeuze))) p.persoon = persoonKeuze;
+      else throw new ValidatieFout({ rijen: `Rij ${i + 1}: kies of dit hetzelfde kind is of een ander kind.` });
+    }
+    if (p.persoon === 'nieuw') {
+      const lijst = nieuwInBestand.get(es) ?? [];
+      lijst.push({ persoonId: `rij:${i}`, contactId: '', voornaam, naam, sleutel });
+      nieuwInBestand.set(es, lijst);
+    }
+    uit.push(p);
+  }
+  return uit;
+}
+
+/** Wat een import per rij over het contact weet (naast het e-mailadres uit PersoonInvoer). */
+export interface ContactInvoer {
+  telefoon?: string | null;
+  /** Naam van het contact zelf (bv. de ouder), niet van de persoon. */
+  contactVoornaam?: string | null;
+  contactNaam?: string | null;
+}
+
+const perDeel = <T>(lijst: T[], n: number) => Array.from({ length: Math.ceil(lijst.length / n) }, (_, i) => lijst.slice(i * n, i * n + n));
+
+/**
+ * Instructies om de contacten en nieuwe personen van een geplande import te bewaren (om in de batch van de import
+ * op te nemen: alles of niets). Eén contact per e-mailadres; de laatst ingevulde gegevens tellen.
+ * Rijen als JSON (json_each), zodat ook duizenden rijen weinig instructies vragen.
+ */
+export async function bewaarPersonenStmts(env: Env, rijen: (PersoonInvoer & ContactInvoer)[], plannen: RijPlan[]) {
+  const bestaand = await contactenOpSleutel(env, [...new Set(plannen.map((p) => p.emailSleutel).filter((s): s is string => !!s))]);
+  const contactPer = new Map<string, { id: string; email: string; telefoon: string | null; voornaam: string | null; naam: string | null }>();
+  rijen.forEach((r, i) => {
+    const es = plannen[i].emailSleutel;
+    if (!es || !r.email) return;
+    const vorige = contactPer.get(es);
+    contactPer.set(es, {
+      id: bestaand.get(es) ?? vorige?.id ?? crypto.randomUUID(),
+      email: r.email,
+      telefoon: r.telefoon ?? vorige?.telefoon ?? null,
+      voornaam: r.contactVoornaam ?? vorige?.voornaam ?? null,
+      naam: r.contactNaam ?? vorige?.naam ?? null,
+    });
+  });
+  const contactRijen = [];
+  for (const [es, c] of contactPer) {
+    contactRijen.push({
+      id: c.id, sleutel: es, email: await versleutel(env, c.email), tel: await versleutel(env, c.telefoon),
+      voornaam: await versleutel(env, c.voornaam), naam: await versleutel(env, c.naam),
+    });
+  }
+
+  const persoonVanRij = new Map<number, string>();
+  const persoonRijen = [];
+  const contactIds: (string | null)[] = [];
+  const persoonIds: (string | null)[] = [];
+  for (let i = 0; i < rijen.length; i++) {
+    const p = plannen[i];
+    const contactId = p.emailSleutel ? contactPer.get(p.emailSleutel)?.id ?? null : null;
+    let persoonId: string | null = null;
+    if (p.persoon === 'nieuw' && contactId) {
+      persoonId = crypto.randomUUID();
+      persoonVanRij.set(i, persoonId);
+      persoonRijen.push({
+        id: persoonId, contact: contactId, sleutel: p.sleutel,
+        voornaam: await versleutel(env, rijen[i].voornaam), naam: await versleutel(env, rijen[i].naam),
+      });
+    } else if (p.persoon?.startsWith('rij:')) persoonId = persoonVanRij.get(Number(p.persoon.slice(4))) ?? null;
+    else if (p.persoon) persoonId = p.persoon;
+    contactIds.push(contactId);
+    persoonIds.push(persoonId);
+  }
+
+  const v = (veld: string) => `json_extract(j.value, '$.${veld}')`;
+  const stmts: D1PreparedStatement[] = [];
+  for (const deel of perDeel(contactRijen, 400)) {
+    stmts.push(
+      env.DB.prepare(
+        `insert into contacten (contact_id, email_hash, email_enc, telefoon_enc, voornaam_enc, naam_enc)
+         select ${v('id')}, ${v('sleutel')}, ${v('email')}, ${v('tel')}, ${v('voornaam')}, ${v('naam')} from json_each(?) j where true
+         on conflict (email_hash) do update set telefoon_enc = coalesce(excluded.telefoon_enc, telefoon_enc),
+           voornaam_enc = coalesce(excluded.voornaam_enc, voornaam_enc), naam_enc = coalesce(excluded.naam_enc, naam_enc),
+           gewijzigd_op = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
+      ).bind(JSON.stringify(deel)),
+    );
+  }
+  for (const deel of perDeel(persoonRijen, 400)) {
+    stmts.push(
+      env.DB.prepare(
+        `insert into personen (persoon_id, contact_id, voornaam_enc, naam_enc, naam_sleutel)
+         select ${v('id')}, ${v('contact')}, ${v('voornaam')}, ${v('naam')}, ${v('sleutel')} from json_each(?) j`,
+      ).bind(JSON.stringify(deel)),
+    );
+  }
+  const bestaandeIds = new Set(bestaand.values());
+  return {
+    stmts,
+    contactIds,
+    persoonIds,
+    aantalContacten: contactRijen.length,
+    nieuweContacten: contactRijen.filter((c) => !bestaandeIds.has(c.id)).length,
+    nieuwePersonen: persoonRijen.length,
   };
 }
 

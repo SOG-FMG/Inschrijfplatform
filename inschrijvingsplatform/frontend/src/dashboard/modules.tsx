@@ -2,7 +2,9 @@ import type { ReactNode } from 'react';
 import type { Profiel } from '../services/beheerApi';
 import { Account } from './Account';
 import { Etiketten } from './Etiketten';
+import { EvenementOverzicht } from './EvenementOverzicht';
 import { Evenementen } from './Evenementen';
+import { Importeren } from './Importeren';
 import { Instellingen } from './Instellingen';
 import { Mailteksten } from './Mailteksten';
 import { Medewerkers } from './Medewerkers';
@@ -97,6 +99,14 @@ export const DASHBOARD_MODULES: DashboardModule[] = [
     id: 'voorinschrijvingen',
     menu: [{ href: '/dashboard/voorinschrijvingen', label: 'Voorinschrijvingen', volgorde: 15, recht: 'voorinschrijvingen.beheren', actief: (p) => p.startsWith('/dashboard/voorinschrijvingen') }],
     paginas: [{ patroon: /^\/dashboard\/voorinschrijvingen$/, recht: 'voorinschrijvingen.beheren', toon: (_m, c) => <Voorinschrijvingen profiel={c.profiel} /> }],
+  },
+  {
+    id: 'historiek',
+    menu: [{ href: '/dashboard/importeren', label: 'Importeren', volgorde: 16, recht: 'historiek.importeren', actief: (p) => p.startsWith('/dashboard/importeren') }],
+    paginas: [
+      { patroon: /^\/dashboard\/importeren$/, toon: (_m, c) => <Importeren profiel={c.profiel} naVerandering={c.naVerandering} /> },
+      { patroon: new RegExp(`^/dashboard/evenementen/${EV}/overzicht$`), recht: 'historiek.bekijken', toon: (m, c) => <EvenementOverzicht key={m[1]} evenementId={m[1]} profiel={c.profiel} /> },
+    ],
   },
   {
     id: 'mailsjablonen',

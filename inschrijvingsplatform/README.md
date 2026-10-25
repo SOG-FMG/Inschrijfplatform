@@ -232,6 +232,17 @@ Elke actie komt in `audit_log`.
 
 Persoonsgegevens staan versleuteld in D1. Rechtstreeks met SQL in de database kijken toont dus geen namen of e-mailadressen; daarvoor zijn de beheerroutes er.
 
+## Vorige schooljaren en overzicht per evenement (module `historiek`)
+
+- **Importeren** (`/dashboard/importeren`, recht `historiek.importeren`; standaard enkel platformbeheerders):
+  1. Kies een evenement, of maak met *+ Evenement voor een vorig schooljaar* een gearchiveerd evenement (bv. *Infodagen 2025-2026*) met een datum *Gegevens bewaren tot* (daarna anonimiseert de dagelijkse taak; stem af met de DPO).
+  2. **Inschrijvingen**: een CSV-export van het formulier (Google Formulieren: *Bestand → Downloaden → CSV*). Dagen, momenten, tijdsblokken en lesjes worden uit het bestand opgebouwd: het moment ("Zaterdag 24 januari - Voormiddag 10.00u. - 12.10u.") geeft dag, datum en uren; het tijdsblok komt uit de kolomnaam ("Keuzelesje 1 - start 10.10 u.") samen met het moment van de rij. "- geen" = geen lesje, "#ERROR!" = onbekend. Een bestand zonder kopregel gebruikt de kolomnamen van het vorige bestand (enkel de namen worden in de browser onthouden).
+     Opnieuw importeren mag: dezelfde inzending wordt overgeslagen, een nieuwere vervangt de vorige, en oudere inzendingen van hetzelfde kind blijven als geannuleerd bewaard (voor de dubbels).
+  3. **Voorinschrijvingen**: zoals onder *Voorinschrijvingen*, maar meteen gekoppeld aan het evenement. Een bestaande import koppel je daar met *Hoort bij evenement*.
+  4. **Sessiegevers**: CSV met voornaam, naam, e-mailadres en eventueel de titels van hun lesjes (gescheiden door `;`).
+- **Overzicht** (`/dashboard/evenementen/<id>/overzicht`, recht `historiek.bekijken`; standaard organisatoren en schoolbeheerders van het evenement): tellers, filters (school, leerjaar, moment, lesje, stroom, voorinschrijving), rapporten (inschrijvingen, voorinschrijvingen, per school, per leerjaar, per lesje, per week) met export naar Excel. Muis over een naam: historiek per schooljaar (voorinschrijving, inschrijving, aanwezig) en broers of zussen (andere kinderen van hetzelfde e-mailadres).
+- **Dubbels** (rapport *Dubbels nakijken*): zelfde kind, zelfde naam met een ander adres (en dezelfde school of hetzelfde leerjaar), of bijna dezelfde naam bij hetzelfde adres. Voorstel: de laatste inschrijving blijft; samenvoegen annuleert de andere. Verschillen stroom, moment of lesjes, dan stelt het platform een mail met de vraag voor, die je nakijkt en aanpast vóór het versturen.
+
 ## Nog te bouwen
 
 - Beheerdashboard: deelnemerslijst op het scherm, verplaatsen.

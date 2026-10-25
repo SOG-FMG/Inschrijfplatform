@@ -1637,3 +1637,114 @@ describe('aanwezigheid op de dag zelf en sessiegevers', () => {
     expect(await een(`select count(*) as n from sessie_sessiegevers where sessiegever_id = ?`, sessiegeverId)).toEqual({ n: 0 });
   });
 });
+
+describe('historiek: vorige jaren importeren en overzicht', () => {
+  let evId: string;
+  let schoolId: string;
+  const programma = [{
+    sleutel: 'd0', naam: 'Zaterdag 25 januari', datum: '2025-01-25',
+    dagdelen: [{
+      sleutel: 'dd0', naam: 'Voormiddag', start: '10:00', eind: '12:10',
+      tijdsblokken: [
+        { sleutel: 't0', naam: 'Keuzelesje 1', start: '10:10', eind: '10:50', sessies: [{ sleutel: 's0', titel: 'Domein Kunst' }, { sleutel: 's1', titel: 'Lesje wiskunde' }] },
+        { sleutel: 't1', naam: 'Keuzelesje 2', start: '11:30', eind: '12:10', sessies: [{ sleutel: 's2', titel: 'Domein Kunst' }] },
+      ],
+    }],
+  }];
+
+  const HISTORIEK = 'historiek.test@onderwijs.gent.be';
+
+  beforeAll(async () => {
+    await sql(`insert or ignore into gebruikers (naam, voornaam, email, rol_id) select 'H', 'T', ?, rol_id from rollen where code = 'platformbeheerder'`, HISTORIEK);
+    env.DEV_BEHEER_EMAIL = HISTORIEK;
+    schoolId = (await een(`select school_id from scholen order by naam limit 1`)).school_id;
+  });
+
+  test('vorig evenement aanmaken: gearchiveerd, bewaren tot moet in de toekomst liggen', async () => {
+    expect((await api('POST', '/api/beheer/historiek/evenementen', { schooljaar: '2024-2025', titel: 'X', slug: 'x', bewaarTot: '2020-01-01' })).status).toBe(400);
+    const r = await api('POST', '/api/beheer/historiek/evenementen', { schooljaar: '2024-2025', titel: 'Infodagen 2024-2025', slug: 'infodagen-2024-2025', bewaarTot: '2099-08-31' });
+    expect(r.status).toBe(201);
+    evId = r.data.id;
+    expect(await een(`select status, date(eind_datum, '+' || bewaartermijn_dagen || ' days') as tot from evenementen where evenement_id = ?`, evId))
+      .toEqual({ status: 'gearchiveerd', tot: '2099-08-31' });
+  });
+
+  test('inschrijvingen importeren: programma aangemaakt, laatste inzending telt, opnieuw importeren dubbelt niet', async () => {
+    const rijen = [
+      { ingediendOp: '2024-12-01T10:00:00+01:00', email: 'hist@example.org', ouderVoornaam: 'Ouder', kindVoornaam: 'An', kindNaam: 'Hist', schoolId, leerjaar: '6de leerjaar', doelgroep: 'A-stroom', dagdeel: 'dd0', sessies: ['s1'] },
+      { ingediendOp: '2024-12-05T10:00:00+01:00', email: 'hist@example.org', kindVoornaam: 'An', kindNaam: 'Hist', schoolId, leerjaar: '6de leerjaar', doelgroep: 'A-stroom', dagdeel: 'dd0', sessies: ['s0', 's2'], aanwezig: true },
+      { ingediendOp: '2024-12-02T10:00:00+01:00', email: 'hist@example.org', kindVoornaam: 'Bo', kindNaam: 'Hist', schoolAndere: 'Andere school', leerjaar: '5de leerjaar', doelgroep: 'B-stroom', dagdeel: 'dd0', sessies: [], persoonKeuze: 'nieuw' }, // lijkt op An (2 letters verschil): broer
+      { email: 'x@example.org', kindVoornaam: 'Zonder', kindNaam: 'Moment' },
+    ];
+    const c = await api('POST', '/api/beheer/historiek/kinderen', { rijen });
+    expect(c.data.map((x: any) => x.status)).toEqual(['nieuw', 'zelfde', 'twijfel', 'geen']);
+    expect((await api('POST', `/api/beheer/historiek/evenementen/${evId}/inschrijvingen`, { programma, rijen: rijen.map(({ persoonKeuze: _, ...x }) => x) })).status).toBe(400);
+    const r = await api('POST', `/api/beheer/historiek/evenementen/${evId}/inschrijvingen`, { programma, rijen });
+    expect(r.status).toBe(201);
+    expect(r.data).toMatchObject({ geimporteerd: 2, dubbelInBestand: 1, zonderMoment: 1, lesjes: 2, programma: { dagen: 1, dagdelen: 1, tijdsblokken: 2, sessies: 3 }, nieuweKinderen: 2 });
+    // Datums volgen de dag; bewaren tot blijft gelijk.
+    expect(await een(`select start_datum, eind_datum, date(eind_datum, '+' || bewaartermijn_dagen || ' days') as tot from evenementen where evenement_id = ?`, evId))
+      .toEqual({ start_datum: '2025-01-25', eind_datum: '2025-01-25', tot: '2099-08-31' });
+    const an = await een(`select deelnemer_id, created_at from deelnemers where evenement_id = ? and leerjaar = '6de leerjaar' and status = 'actief'`, evId);
+    // De oudere inzending van An blijft als geannuleerd (voor de dubbels), met haar lesje.
+    expect(await een(`select count(*) as n from deelnemers d join inschrijvingen i on i.deelnemer_id = d.deelnemer_id
+      where d.evenement_id = ? and d.leerjaar = '6de leerjaar' and d.status = 'geannuleerd' and i.status = 'geannuleerd'`, evId)).toEqual({ n: 2 });
+    expect(an.created_at).toBe('2024-12-05T09:00:00.000Z');
+    expect(await een(`select count(*) as n, sum(aanwezig) as a from inschrijvingen where deelnemer_id = ?`, an.deelnemer_id)).toEqual({ n: 3, a: 1 });
+
+    const opnieuw = await api('POST', `/api/beheer/historiek/evenementen/${evId}/inschrijvingen`, { programma, rijen });
+    expect(opnieuw.data).toMatchObject({ geimporteerd: 0, vervangen: 0, alIngeschreven: 3, dubbelInBestand: 0, programma: { dagen: 0, sessies: 0 } });
+
+    // Een nieuwere inzending voor een kind dat er al staat, vervangt de vorige (die blijft als geannuleerd).
+    const nieuwer = await api('POST', `/api/beheer/historiek/evenementen/${evId}/inschrijvingen`, { programma, rijen: [
+      { ingediendOp: '2025-01-10T10:00:00+01:00', email: 'hist@example.org', kindVoornaam: 'Bo', kindNaam: 'Hist', leerjaar: '5de leerjaar', doelgroep: 'A-stroom', dagdeel: 'dd0', sessies: ['s1'] },
+    ] });
+    expect(nieuwer.data).toMatchObject({ geimporteerd: 0, vervangen: 1 });
+    expect(await een(`select count(*) as n, sum(status = 'actief') as actief from deelnemers where evenement_id = ? and leerjaar = '5de leerjaar'`, evId)).toEqual({ n: 2, actief: 1 });
+  });
+
+  test('sessiegevers importeren: per adres één, gekoppeld op titel, buiten het domein overgeslagen', async () => {
+    const r = await api('POST', `/api/beheer/historiek/evenementen/${evId}/sessiegevers`, { rijen: [
+      { voornaam: 'Kim', naam: 'Kunst', email: 'kim.kunst@onderwijs.gent.be', lesjes: 'Domein Kunst; Bestaat niet' },
+      { voornaam: 'Ext', naam: 'Ern', email: 'ext@example.org', lesjes: 'Domein Kunst' },
+    ] });
+    expect(r.data).toMatchObject({ nieuw: 1, gekoppeld: 2, buitenDomein: 1, lesjesNietGevonden: ['Bestaat niet'] });
+    expect(await een(`select count(*) as n from sessies s join sessie_sessiegevers sg on sg.sessie_id = s.sessie_id where s.titel = 'Domein Kunst' and s.lesgever = 'Kim Kunst'`)).toEqual({ n: 2 });
+  });
+
+  test('voorinschrijving aan het evenement koppelen; overzicht met historiek en broer of zus', async () => {
+    const v = await api('POST', '/api/beheer/voorinschrijvingen/importen', {
+      naam: 'Voor 2024-2025', evenementId: evId,
+      rijen: [{ ingediendOp: '2024-03-01T10:00:00', klas: '5de leerjaar', schoolId, kindVoornaam: 'An', kindNaam: 'Hist', email: 'hist@example.org' },
+        { ingediendOp: '2024-03-02T10:00:00', klas: '5de leerjaar', schoolId, kindVoornaam: 'Cas', kindNaam: 'Anders', email: 'anders@example.org' }],
+    });
+    expect(v.status).toBe(201);
+    const o = await api('GET', `/api/beheer/historiek/evenementen/${evId}/overzicht`);
+    expect(o.status).toBe(200);
+    expect(o.data.evenement).toMatchObject({ schooljaar: '2024-2025' });
+    const an = o.data.inschrijvingen.find((x: any) => x.voornaam === 'An' && x.status === 'actief');
+    expect(an).toMatchObject({ voorinschrijving: true, lesjes: [{ titel: 'Domein Kunst' }, { titel: 'Domein Kunst' }], momenten: [{ aanwezig: true }] });
+    expect(o.data.voorinschrijvingen.map((x: any) => x.ingeschreven).sort()).toEqual([false, true]);
+    expect(o.data.gezinnen[an.contactId]).toHaveLength(2); // An en Bo
+    expect(o.data.historiek[an.persoonId].map((x: any) => [x.soort, !!x.geannuleerd])).toEqual([['voorinschrijving', false], ['inschrijving', true], ['inschrijving', false]]);
+
+    // Dubbels: de vervangen inschrijving van Bo is zichtbaar (geannuleerd, met haar moment) en kan terug gekozen worden.
+    const bo = o.data.inschrijvingen.filter((x: any) => x.voornaam === 'Bo');
+    expect(bo.map((x: any) => x.status).sort()).toEqual(['actief', 'geannuleerd']);
+    expect(bo.every((x: any) => x.momenten.length === 1 && x.email === 'hist@example.org')).toBe(true);
+    const oud = bo.find((x: any) => x.status === 'geannuleerd');
+    const nieuw = bo.find((x: any) => x.status === 'actief');
+    expect((await api('POST', `/api/beheer/historiek/evenementen/${evId}/dubbels/samenvoegen`, { behoud: oud.id, weg: [nieuw.id] })).data).toEqual({ ok: true, geannuleerd: 1 });
+    expect(await een(`select status from deelnemers where deelnemer_id = ?`, oud.id)).toEqual({ status: 'actief' });
+    expect(await een(`select count(*) as n from inschrijvingen where deelnemer_id = ? and status = 'bevestigd'`, oud.id)).toEqual({ n: 1 });
+    expect((await api('POST', `/api/beheer/historiek/evenementen/${evId}/dubbels/samenvoegen`, { behoud: oud.id, weg: [crypto.randomUUID()] })).status).toBe(403);
+
+    const m = await api('POST', `/api/beheer/historiek/evenementen/${evId}/dubbels/mail`, { deelnemers: [oud.id, nieuw.id], onderwerp: 'Vraag', tekst: 'Dag,\n\nWelke klopt?' });
+    expect(m.data).toEqual({ verstuurd: 1, mislukt: 0, aan: ['hist@example.org'] });
+
+    // Een organisator zonder toegang tot dit evenement ziet het niet.
+    await sql(`update gebruikers set rol_id = (select rol_id from rollen where code = 'organisator') where email = ?`, HISTORIEK);
+    expect((await api('GET', `/api/beheer/historiek/evenementen/${evId}/overzicht`)).status).toBe(403);
+    await sql(`update gebruikers set rol_id = (select rol_id from rollen where code = 'platformbeheerder') where email = ?`, HISTORIEK);
+  });
+});

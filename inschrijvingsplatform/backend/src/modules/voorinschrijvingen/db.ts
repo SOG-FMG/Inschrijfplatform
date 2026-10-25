@@ -1,6 +1,6 @@
 import { ontsleutel, versleutel } from '../../crypto/versleuteling';
 import { audit } from '../../kern/audit';
-import { contactenOpSleutel, emailSleutel, herken, koppelAanContact, naamSleutel, personenVan, type Persoon } from '../../kern/contacten';
+import { bewaarPersonenStmts, koppelAanContact, planPersonen } from '../../kern/contacten';
 import { DbFout } from '../../kern/fouten';
 import { controleerToegang, type Gebruiker } from '../../kern/toegang';
 import { verstuur } from '../../mail';
@@ -42,76 +42,22 @@ function datum(v: unknown): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Personen herkennen (voor de nakijkstap én bij het importeren: dezelfde regels)
+// Personen herkennen (voor de nakijkstap én bij het importeren: dezelfde regels, zie kern/contacten.ts)
 // ---------------------------------------------------------------------------
-
-export interface RijPlan {
-  contact: 'nieuw' | 'bestaand' | 'geen';
-  status: 'zelfde' | 'twijfel' | 'nieuw' | 'geen';
-  /** Kandidaten bij twijfel: bestaande personen, of 'rij:<n>' voor een kind van een eerdere rij in dit bestand. */
-  kandidaten: { id: string; naam: string }[];
-  /** Uiteindelijke keuze (na persoonKeuze): bestaande persoon, 'rij:<n>', of 'nieuw'. */
-  persoon?: string;
-  sleutel?: string;
-  emailSleutel?: string;
-}
 
 const volledigeNaam = (p: { voornaam: string | null; naam: string | null }) => [p.voornaam, p.naam].filter(Boolean).join(' ');
 
-async function plan(env: Env, rijen: ImportRij[], metKeuzes: boolean): Promise<RijPlan[]> {
-  const emails = rijen.map((r) => geldigEmail(r.email));
-  const sleutels = await Promise.all(emails.map((e) => (e ? emailSleutel(env, e) : null)));
-  const contacten = await contactenOpSleutel(env, [...new Set(sleutels.filter((s): s is string => !!s))]);
-  const personen = await personenVan(env, [...contacten.values()]);
-  // Personen die dit bestand zelf aanmaakt, per contact (sleutel van het e-mailadres).
-  const nieuwInBestand = new Map<string, Persoon[]>();
-
-  const uit: RijPlan[] = [];
-  for (let i = 0; i < rijen.length; i++) {
-    const r = rijen[i];
-    const es = sleutels[i];
-    const voornaam = tekst(r.kindVoornaam, 100);
-    const naam = tekst(r.kindNaam, 200);
-    if (!es) {
-      uit.push({ contact: 'geen', status: 'geen', kandidaten: [] });
-      continue;
-    }
-    const contactId = contacten.get(es);
-    if (!voornaam && !naam) {
-      uit.push({ contact: contactId ? 'bestaand' : 'nieuw', status: 'geen', kandidaten: [], emailSleutel: es });
-      continue;
-    }
-    const sleutel = await naamSleutel(env, voornaam, naam);
-    const kandidaten = [...(contactId ? personen.get(contactId) ?? [] : []), ...(nieuwInBestand.get(es) ?? [])];
-    const h = herken(kandidaten, voornaam, naam, sleutel);
-    const p: RijPlan = {
-      contact: contactId ? 'bestaand' : 'nieuw',
-      status: h.status,
-      kandidaten: h.kandidaten.map((k) => ({ id: k.persoonId, naam: volledigeNaam(k) })),
-      sleutel,
-      emailSleutel: es,
-    };
-    if (h.status === 'zelfde') p.persoon = h.persoonId;
-    else if (h.status === 'nieuw') p.persoon = 'nieuw';
-    else if (metKeuzes) {
-      const k = r.persoonKeuze;
-      if (k === 'nieuw' || (k && h.kandidaten.some((x) => x.persoonId === k))) p.persoon = k;
-      else throw new ValidatieFout({ rijen: `Rij ${i + 1}: kies of dit hetzelfde kind is of een ander kind.` });
-    }
-    if (p.persoon === 'nieuw') {
-      const lijst = nieuwInBestand.get(es) ?? [];
-      lijst.push({ persoonId: `rij:${i}`, contactId: '', voornaam, naam, sleutel });
-      nieuwInBestand.set(es, lijst);
-    }
-    uit.push(p);
-  }
-  return uit;
-}
+const persoonInvoer = (r: ImportRij) => ({
+  email: geldigEmail(r.email),
+  voornaam: tekst(r.kindVoornaam, 100),
+  naam: tekst(r.kindNaam, 200),
+  persoonKeuze: r.persoonKeuze,
+});
 
 /** Voor de nakijkstap in het dashboard: per rij nieuw of bestaand contact, en zelfde, twijfel of nieuw kind. */
 export async function controleerPersonen(env: Env, body: any) {
   const rijen: ImportRij[] = Array.isArray(body?.rijen) ? body.rijen.slice(0, MAX_RIJEN) : [];
-  return (await plan(env, rijen, false)).map(({ contact, status, kandidaten }) => ({ contact, status, kandidaten }));
+  return (await planPersonen(env, rijen.map(persoonInvoer), false)).map(({ contact, status, kandidaten }) => ({ contact, status, kandidaten }));
 }
 
 // ---------------------------------------------------------------------------
@@ -121,11 +67,13 @@ export async function controleerPersonen(env: Env, body: any) {
 export async function importeer(env: Env, g: Gebruiker, body: any, ip: string | null) {
   const naam = tekst(body?.naam, 120);
   const rijen: ImportRij[] = Array.isArray(body?.rijen) ? body.rijen : [];
+  const evenementId = typeof body?.evenementId === 'string' && body.evenementId ? body.evenementId : null;
   const fouten: Record<string, string> = {};
   if (!naam) fouten.naam = 'Geef de import een naam, bv. "Voorinschrijvingen 2025-2026".';
   if (!rijen.length) fouten.rijen = 'Er zijn geen rijen om te importeren.';
   if (rijen.length > MAX_RIJEN) fouten.rijen = `Maximaal ${MAX_RIJEN} rijen per import.`;
   if (Object.keys(fouten).length) throw new ValidatieFout(fouten);
+  if (evenementId) await controleerToegang(env, g, evenementId);
 
   // Enkel scholen uit de officiële lijst.
   const schoolIds = [...new Set(rijen.map((r) => r.schoolId).filter((x): x is string => typeof x === 'string' && !!x))];
@@ -134,41 +82,15 @@ export async function importeer(env: Env, g: Gebruiker, body: any, ip: string | 
     .all<{ school_id: string }>();
   if (bekend.length !== schoolIds.length) throw new ValidatieFout({ rijen: 'Een gekozen school staat niet in de lijst. Vernieuw de pagina en probeer opnieuw.' });
 
-  const plannen = await plan(env, rijen, true);
-  const bestaand = await contactenOpSleutel(env, [...new Set(plannen.map((p) => p.emailSleutel).filter((s): s is string => !!s))]);
+  const invoer = rijen.map((r) => ({ ...persoonInvoer(r), telefoon: tekst(r.telefoon, 40) }));
+  const plannen = await planPersonen(env, invoer, true);
+  const personen = await bewaarPersonenStmts(env, invoer, plannen);
 
-  // Contacten: één per e-mailadres; het laatst ingevulde telefoonnummer telt.
-  const contactPer = new Map<string, { id: string; email: string; telefoon: string | null }>();
-  rijen.forEach((r, i) => {
-    const es = plannen[i].emailSleutel;
-    if (!es) return;
-    const vorige = contactPer.get(es);
-    contactPer.set(es, { id: bestaand.get(es) ?? vorige?.id ?? crypto.randomUUID(), email: geldigEmail(r.email)!, telefoon: tekst(r.telefoon, 40) ?? vorige?.telefoon ?? null });
-  });
-  const contactRijen = [];
-  for (const [es, c] of contactPer) {
-    contactRijen.push({ id: c.id, sleutel: es, email: await versleutel(env, c.email), tel: await versleutel(env, c.telefoon) });
-  }
-
-  // Personen: nieuw per 'nieuw'-keuze; 'rij:<n>' verwijst naar de persoon die rij n aanmaakte.
-  const persoonVanRij = new Map<number, string>();
-  const persoonRijen = [];
   const importId = crypto.randomUUID();
   const rijData = [];
   for (let i = 0; i < rijen.length; i++) {
     const r = rijen[i];
-    const p = plannen[i];
-    const contactId = p.emailSleutel ? contactPer.get(p.emailSleutel)!.id : null;
-    let persoonId: string | null = null;
-    if (p.persoon === 'nieuw') {
-      persoonId = crypto.randomUUID();
-      persoonVanRij.set(i, persoonId);
-      persoonRijen.push({
-        id: persoonId, contact: contactId, sleutel: p.sleutel,
-        voornaam: await versleutel(env, tekst(r.kindVoornaam, 100)), naam: await versleutel(env, tekst(r.kindNaam, 200)),
-      });
-    } else if (p.persoon?.startsWith('rij:')) persoonId = persoonVanRij.get(Number(p.persoon.slice(4))) ?? null;
-    else if (p.persoon) persoonId = p.persoon;
+    const contactId = personen.contactIds[i];
     rijData.push({
       id: crypto.randomUUID(),
       op: datum(r.ingediendOp),
@@ -179,37 +101,20 @@ export async function importeer(env: Env, g: Gebruiker, body: any, ip: string | 
       // Zonder geldig e-mailadres geen contact: de naam blijft dan bij de rij zelf.
       kind: contactId ? null : await versleutel(env, [tekst(r.kindVoornaam, 100), tekst(r.kindNaam, 200)].filter(Boolean).join(' ') || null),
       opm: await versleutel(env, tekst(r.opmerkingen, 2000)),
-      hash: p.emailSleutel ?? null,
+      hash: plannen[i].emailSleutel ?? null,
       contact: contactId,
-      persoon: persoonId,
+      persoon: personen.persoonIds[i],
     });
   }
 
   // Alles in één atomische batch; rijen als JSON (json_each) zodat ook duizenden rijen weinig query's vragen.
   const v = (veld: string) => `json_extract(j.value, '$.${veld}')`;
   const stmts: D1PreparedStatement[] = [
-    env.DB.prepare(`insert into voorinschrijvingen_importen (import_id, naam, bestandsnaam, aantal, created_by) values (?, ?, ?, ?, ?)`)
-      .bind(importId, naam, tekst(body?.bestandsnaam, 200), rijen.length, g.gebruikerId),
+    env.DB.prepare(`insert into voorinschrijvingen_importen (import_id, naam, bestandsnaam, aantal, created_by, evenement_id) values (?, ?, ?, ?, ?, ?)`)
+      .bind(importId, naam, tekst(body?.bestandsnaam, 200), rijen.length, g.gebruikerId, evenementId),
+    ...personen.stmts,
   ];
   const perDeel = <T>(lijst: T[], n: number) => Array.from({ length: Math.ceil(lijst.length / n) }, (_, i) => lijst.slice(i * n, i * n + n));
-  for (const deel of perDeel(contactRijen, 400)) {
-    stmts.push(
-      env.DB.prepare(
-        `insert into contacten (contact_id, email_hash, email_enc, telefoon_enc)
-         select ${v('id')}, ${v('sleutel')}, ${v('email')}, ${v('tel')} from json_each(?) j where true
-         on conflict (email_hash) do update set telefoon_enc = coalesce(excluded.telefoon_enc, telefoon_enc),
-           gewijzigd_op = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
-      ).bind(JSON.stringify(deel)),
-    );
-  }
-  for (const deel of perDeel(persoonRijen, 400)) {
-    stmts.push(
-      env.DB.prepare(
-        `insert into personen (persoon_id, contact_id, voornaam_enc, naam_enc, naam_sleutel)
-         select ${v('id')}, ${v('contact')}, ${v('voornaam')}, ${v('naam')}, ${v('sleutel')} from json_each(?) j`,
-      ).bind(JSON.stringify(deel)),
-    );
-  }
   for (const deel of perDeel(rijData, 400)) {
     stmts.push(
       env.DB.prepare(
@@ -223,16 +128,30 @@ export async function importeer(env: Env, g: Gebruiker, body: any, ip: string | 
   }
   stmts.push(
     audit(env, g, 'voorinschrijvingen_importen', importId, 'IMPORT',
-      { rijen: rijen.length, nieuweContacten: contactRijen.filter((c) => ![...bestaand.values()].includes(c.id)).length, nieuweKinderen: persoonRijen.length }, ip),
+      { rijen: rijen.length, nieuweContacten: personen.nieuweContacten, nieuweKinderen: personen.nieuwePersonen, evenementId }, ip),
   );
   await env.DB.batch(stmts);
-  return { importId, aantal: rijen.length, contacten: contactRijen.length, nieuweKinderen: persoonRijen.length };
+  return { importId, aantal: rijen.length, contacten: personen.aantalContacten, nieuweKinderen: personen.nieuwePersonen };
+}
+
+/** Bij welk evenement (schooljaar) een import hoort; null = geen. */
+export async function koppelEvenement(env: Env, g: Gebruiker, importId: string, body: any, ip: string | null) {
+  await bestaat(env, importId);
+  const evenementId = typeof body?.evenementId === 'string' && body.evenementId ? body.evenementId : null;
+  if (evenementId) await controleerToegang(env, g, evenementId);
+  await env.DB.batch([
+    env.DB.prepare(`update voorinschrijvingen_importen set evenement_id = ? where import_id = ?`).bind(evenementId, importId),
+    audit(env, g, 'voorinschrijvingen_importen', importId, 'EVENEMENT', { evenementId }, ip),
+  ]);
+  return { ok: true };
 }
 
 export async function importen(env: Env) {
   const { results } = await env.DB.prepare(
-    `select import_id as id, naam, bestandsnaam, aantal, geanonimiseerd_op as geanonimiseerdOp, created_at as aangemaakt
-     from voorinschrijvingen_importen order by created_at desc`,
+    `select i.import_id as id, i.naam, i.bestandsnaam, i.aantal, i.geanonimiseerd_op as geanonimiseerdOp, i.created_at as aangemaakt,
+            coalesce(i.evenement_id, f.evenement_id) as evenementId
+     from voorinschrijvingen_importen i left join voorinschrijvingen_formulieren f on f.import_id = i.import_id
+     order by i.created_at desc`,
   ).all();
   return results;
 }

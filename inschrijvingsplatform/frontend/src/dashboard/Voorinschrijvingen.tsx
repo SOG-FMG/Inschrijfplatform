@@ -1,12 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { schoolLabel } from '../components/SchoolKiezer';
-import { api } from '../services/api';
-import { beheerApi, type EvenementKort, type ImportRij, type ImportStatistiek, type PersoonControle, type Profiel, type UitnodigingOverzicht } from '../services/beheerApi';
-import type { School } from '../types';
-import {
-  decodeer, herkenDatumvorm, koppelSchool, leesCsv, leesDatum, splitsNaam, stelKoppelingVoor, VELDEN,
-  type Datumvorm, type Koppeling, type Suggestie, type Zekerheid,
-} from './import/importlogica';
+import { beheerApi, historiekApi, type EvenementKort, type ImportRij, type ImportStatistiek, type Profiel, type UitnodigingOverzicht } from '../services/beheerApi';
+import { decodeer, herkenDatumvorm, leesCsv, leesDatum, splitsNaam, stelKoppelingVoor, VELDEN, type Datumvorm, type Koppeling } from './import/importlogica';
+import { KinderenNakijken, maakSchoolKeuzes, ScholenKoppelen, schoolVan, useScholen, type PersoonNakijk, type SchoolKeuze } from './import/Koppelen';
 import { datumTijd, foutTekst, Invoer, Melding } from './ui';
 import { VoorinschrijfFormulieren } from './VoorinschrijfFormulieren';
 
@@ -45,10 +40,10 @@ export function Voorinschrijvingen({ profiel }: { profiel: Profiel }) {
       </header>
       {fout && <Melding soort="fout">{fout}</Melding>}
       <VoorinschrijfFormulieren evenementen={profiel.evenementen} naVerandering={laad} />
-      {nieuw && <NieuweImport onKlaar={() => { setNieuw(false); laad(); }} onAnnuleer={() => setNieuw(false)} />}
+      {nieuw && <NieuweImport evenementen={profiel.evenementen} onKlaar={() => { setNieuw(false); laad(); }} onAnnuleer={() => setNieuw(false)} />}
       {!lijst ? <p>Laden…</p> : !lijst.length && !nieuw ? <Melding>Nog geen imports.</Melding> : null}
       {lijst?.map((imp) => (
-        <Import key={imp.id} imp={imp} evenementen={profiel.evenementen}
+        <Import key={imp.id} imp={imp} evenementen={profiel.evenementen} naKoppelen={laad}
           onAnonimiseer={() => confirm(`"${imp.naam}" anonimiseren?\n\nNamen, e-mailadressen, telefoonnummers en opmerkingen worden gewist. De statistieken blijven. Dit kan niet ongedaan gemaakt worden.`) && actie(() => beheerApi.anonimiseerImport(imp.id))}
           onVerwijder={() => confirm(`"${imp.naam}" volledig verwijderen, ook de statistieken?`) && actie(() => beheerApi.verwijderImport(imp.id))} />
       ))}
@@ -56,8 +51,8 @@ export function Voorinschrijvingen({ profiel }: { profiel: Profiel }) {
   );
 }
 
-function Import({ imp, evenementen, onAnonimiseer, onVerwijder }: {
-  imp: ImportStatistiek; evenementen: EvenementKort[]; onAnonimiseer: () => void; onVerwijder: () => void;
+function Import({ imp, evenementen, naKoppelen, onAnonimiseer, onVerwijder }: {
+  imp: ImportStatistiek; evenementen: EvenementKort[]; naKoppelen: () => void; onAnonimiseer: () => void; onVerwijder: () => void;
 }) {
   const [alleScholen, setAlleScholen] = useState(false);
   const c = imp.controle;
@@ -74,6 +69,15 @@ function Import({ imp, evenementen, onAnonimiseer, onVerwijder }: {
           {!imp.geanonimiseerdOp && <button type="button" className="d-knop d-knop--secundair" onClick={onAnonimiseer}>Anonimiseren</button>}
           <button type="button" className="d-knop d-knop--gevaar" onClick={onVerwijder}>Verwijderen</button>
         </div>
+      </div>
+
+      <div className="d-werkbalk">
+        <label className="d-klein" htmlFor={`ev-${imp.id}`}>Hoort bij evenement (schooljaar):</label>
+        <select id={`ev-${imp.id}`} value={imp.evenementId ?? ''}
+          onChange={(e) => historiekApi.koppelImportAanEvenement(imp.id, e.target.value || null).then(naKoppelen, () => undefined)}>
+          <option value="">(geen)</option>
+          {evenementen.map((e) => <option key={e.id} value={e.id}>{e.titel}</option>)}
+        </select>
       </div>
 
       <div className="m-tellers">
@@ -204,26 +208,21 @@ function Tabel({ titel, kolom, rijen, children }: { titel: string; kolom: string
 // ---------------------------------------------------------------------------
 
 interface Bestand { naam: string; kolommen: string[]; rijen: string[][] }
-interface SchoolKeuze { tekst: string; aantal: number; zekerheid: Zekerheid; suggesties: Suggestie[]; keuze: string }
-
-const ANDERE = 'andere';
-
-function NieuweImport({ onKlaar, onAnnuleer }: { onKlaar: () => void; onAnnuleer: () => void }) {
+/** Ook gebruikt op de pagina Importeren (met het evenement al gekozen). */
+export function NieuweImport({ evenementen, evenementId: vast, onKlaar, onAnnuleer }: {
+  evenementen: EvenementKort[]; evenementId?: string; onKlaar: () => void; onAnnuleer: () => void;
+}) {
   const [naam, setNaam] = useState('');
+  const [evenementId, setEvenementId] = useState(vast ?? '');
   const [bestand, setBestand] = useState<Bestand | null>(null);
   const [koppeling, setKoppeling] = useState<Koppeling | null>(null);
   const [datumvorm, setDatumvorm] = useState<Datumvorm | ''>('');
-  const [scholen, setScholen] = useState<School[]>([]);
   const [keuzes, setKeuzes] = useState<SchoolKeuze[]>([]);
-  const [enkelNakijken, setEnkelNakijken] = useState(true);
   const [naamVolgorde, setNaamVolgorde] = useState<'naam-voornaam' | 'voornaam-naam'>('naam-voornaam');
-  const [personen, setPersonen] = useState<(PersoonControle & { keuze: string })[] | null>(null);
+  const [personen, setPersonen] = useState<PersoonNakijk[] | null>(null);
   const [fout, setFout] = useState<string | null>(null);
   const [bezig, setBezig] = useState(false);
-
-  useEffect(() => {
-    api.haalScholen().then((s) => setScholen([...s].sort((a, b) => schoolLabel(a).localeCompare(schoolLabel(b), 'nl')))).catch((e) => setFout(foutTekst(e)));
-  }, []);
+  const scholen = useScholen((e) => setFout(foutTekst(e)));
 
   const waarde = (r: string[], veld: keyof Koppeling) => (koppeling?.[veld] != null ? r[koppeling[veld]!] ?? '' : '');
 
@@ -241,15 +240,7 @@ function NieuweImport({ onKlaar, onAnnuleer }: { onKlaar: () => void; onAnnuleer
   // Unieke schoolnamen uit het bestand, gekoppeld aan de officiële lijst (opnieuw als de schoolkolom wijzigt).
   useEffect(() => {
     if (!bestand || !scholen.length) return;
-    const tel = new Map<string, number>();
-    for (const r of bestand.rijen) {
-      const t = waarde(r, 'school').trim();
-      if (t) tel.set(t, (tel.get(t) ?? 0) + 1);
-    }
-    setKeuzes([...tel].sort((a, b) => b[1] - a[1]).map(([tekst, aantal]) => {
-      const { zekerheid, suggesties } = koppelSchool(tekst, scholen);
-      return { tekst, aantal, zekerheid, suggesties, keuze: zekerheid === 'zeker' ? suggesties[0].school.id : zekerheid === 'geen' ? ANDERE : '' };
-    }));
+    setKeuzes(maakSchoolKeuzes(bestand.rijen.map((r) => waarde(r, 'school')), scholen));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bestand, scholen, koppeling?.school]);
 
@@ -277,7 +268,6 @@ function NieuweImport({ onKlaar, onAnnuleer }: { onKlaar: () => void; onAnnuleer
     }
   }
 
-  const zichtbaar = enkelNakijken ? keuzes.filter((k) => k.zekerheid !== 'zeker') : keuzes;
   const ongeldigeDatums = useMemo(
     () => (bestand && koppeling?.ingediendOp != null && datumvorm ? bestand.rijen.filter((r) => waarde(r, 'ingediendOp') && !leesDatum(waarde(r, 'ingediendOp'), datumvorm)).length : 0),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -289,17 +279,13 @@ function NieuweImport({ onKlaar, onAnnuleer }: { onKlaar: () => void; onAnnuleer
     if (!bestand || !koppeling) return;
     setBezig(true);
     setFout(null);
-    const perTekst = new Map(keuzes.map((k) => [k.tekst, k.keuze]));
     const rijen: ImportRij[] = bestand.rijen.map((r, i) => {
-      const school = waarde(r, 'school').trim();
-      const keuze = school ? perTekst.get(school) : undefined;
       const leeg = (v: string) => v.trim() || null;
       return {
         ingediendOp: datumvorm ? leesDatum(waarde(r, 'ingediendOp'), datumvorm) : null,
         schooljaar: leeg(waarde(r, 'schooljaar')),
         klas: leeg(waarde(r, 'klas')),
-        schoolId: keuze && keuze !== ANDERE ? keuze : null,
-        schoolAndere: keuze === ANDERE ? school : null,
+        ...schoolVan(keuzes, waarde(r, 'school')),
         ...kind(r),
         email: leeg(waarde(r, 'email')),
         telefoon: leeg(waarde(r, 'telefoon')),
@@ -308,7 +294,7 @@ function NieuweImport({ onKlaar, onAnnuleer }: { onKlaar: () => void; onAnnuleer
       };
     });
     try {
-      await beheerApi.importeerVoorinschrijvingen({ naam: naam.trim(), bestandsnaam: bestand.naam, rijen });
+      await beheerApi.importeerVoorinschrijvingen({ naam: naam.trim(), bestandsnaam: bestand.naam, rijen, evenementId: evenementId || null });
       onKlaar();
     } catch (e) {
       setFout(foutTekst(e));
@@ -328,6 +314,16 @@ function NieuweImport({ onKlaar, onAnnuleer }: { onKlaar: () => void; onAnnuleer
         <input id="import-bestand" type="file" accept=".csv,text/csv" onChange={(e) => e.target.files?.[0] && kies(e.target.files[0])} />
       </div>
       <Invoer label="Naam van de import" waarde={naam} onWijzig={setNaam} verplicht placeholder="bv. Voorinschrijvingen 2025-2026" />
+      {!vast && (
+        <div className="d-veld">
+          <label htmlFor="import-evenement">Hoort bij evenement (schooljaar)</label>
+          <select id="import-evenement" value={evenementId} onChange={(e) => setEvenementId(e.target.value)}>
+            <option value="">(nog geen)</option>
+            {evenementen.map((e) => <option key={e.id} value={e.id}>{e.titel}</option>)}
+          </select>
+          <span className="d-veld__hulp">Het overzicht van dat evenement toont dan wie vooraf inschreef en wie daarna kwam.</span>
+        </div>
+      )}
 
       {bestand && koppeling && (
         <>
@@ -381,43 +377,7 @@ function NieuweImport({ onKlaar, onAnnuleer }: { onKlaar: () => void; onAnnuleer
           {koppeling.school != null && (
             <>
               <h3>3. Scholen koppelen aan de officiële lijst</h3>
-              <p className="d-klein">
-                {keuzes.filter((k) => k.zekerheid === 'zeker').length} zeker gekoppeld, {keuzes.filter((k) => k.zekerheid === 'twijfel').length} twijfel,{' '}
-                {keuzes.filter((k) => k.zekerheid === 'geen').length} niet gevonden (staan op "niet in de lijst").{' '}
-                {openTwijfels > 0 && <strong className="d-nee">Nog {openTwijfels} te kiezen.</strong>}
-              </p>
-              <label className="d-klein">
-                <input type="checkbox" checked={enkelNakijken} onChange={(e) => setEnkelNakijken(e.target.checked)} /> Enkel twijfels en niet gevonden
-              </label>
-              <div className="d-tabelvak">
-                <table className="d-tabel d-tabel--compact">
-                  <thead><tr><th>In het bestand</th><th className="getal">Rijen</th><th>Zekerheid</th><th>School in de lijst</th></tr></thead>
-                  <tbody>
-                    {zichtbaar.map((k) => (
-                      <tr key={k.tekst}>
-                        <td>{k.tekst}</td>
-                        <td className="getal">{k.aantal}</td>
-                        <td><span className={`d-badge d-badge--${k.zekerheid === 'zeker' ? 'gepubliceerd' : k.zekerheid === 'twijfel' ? 'concept' : 'gesloten'}`}>{k.zekerheid}</span></td>
-                        <td>
-                          <select aria-label={`School voor ${k.tekst}`} value={k.keuze}
-                            onChange={(e) => setKeuzes(keuzes.map((x) => (x.tekst === k.tekst ? { ...x, keuze: e.target.value } : x)))}>
-                            <option value="">Kies…</option>
-                            {k.suggesties.length > 0 && (
-                              <optgroup label="Voorstellen">
-                                {k.suggesties.map((s) => <option key={s.school.id} value={s.school.id}>{schoolLabel(s.school)} ({Math.round(s.score * 100)}%)</option>)}
-                              </optgroup>
-                            )}
-                            <option value={ANDERE}>Niet in de lijst (tekst bewaren)</option>
-                            <optgroup label="Alle scholen">
-                              {scholen.map((s) => <option key={s.id} value={s.id}>{schoolLabel(s)}</option>)}
-                            </optgroup>
-                          </select>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ScholenKoppelen keuzes={keuzes} scholen={scholen} onWijzig={setKeuzes} />
             </>
           )}
         </>
@@ -433,42 +393,8 @@ function NieuweImport({ onKlaar, onAnnuleer }: { onKlaar: () => void; onAnnuleer
           {!personen ? (
             <button type="button" className="d-knop d-knop--secundair" onClick={kijkKinderenNa}>Kinderen nakijken</button>
           ) : (
-            <>
-              <p className="d-klein">
-                {personen.filter((p) => p.contact === 'nieuw').length} rij(en) met een nieuw gezin, {personen.filter((p) => p.contact === 'bestaand').length} met
-                een bekend gezin{personen.some((p) => p.contact === 'geen') && `, ${personen.filter((p) => p.contact === 'geen').length} zonder geldig e-mailadres (niet te koppelen)`} ·{' '}
-                {personen.filter((p) => p.status === 'zelfde').length} kind(eren) herkend, {personen.filter((p) => p.status === 'nieuw').length} nieuw,{' '}
-                {personen.filter((p) => p.status === 'twijfel').length} twijfel.{' '}
-                {openPersonen > 0 && <strong className="d-nee">Nog {openPersonen} te kiezen.</strong>}
-              </p>
-              {personen.some((p) => p.status === 'twijfel') && (
-                <div className="d-tabelvak">
-                  <table className="d-tabel d-tabel--compact">
-                    <thead><tr><th className="getal">Rij</th><th>Kind in het bestand</th><th>Lijkt op</th></tr></thead>
-                    <tbody>
-                      {personen.map((p, i) => p.status !== 'twijfel' ? null : (
-                        <tr key={i}>
-                          <td className="getal">{i + 1}</td>
-                          <td className="pii">{[kind(bestand.rijen[i]).kindVoornaam, kind(bestand.rijen[i]).kindNaam].filter(Boolean).join(' ')}</td>
-                          <td>
-                            <select aria-label={`Rij ${i + 1}`} value={p.keuze}
-                              onChange={(e) => setPersonen(personen.map((x, j) => (j === i ? { ...x, keuze: e.target.value } : x)))}>
-                              <option value="">Kies…</option>
-                              {p.kandidaten.map((k) => (
-                                <option key={k.id} value={k.id}>
-                                  Zelfde kind als {k.naam}{k.id.startsWith('rij:') ? ` (rij ${Number(k.id.slice(4)) + 1} van dit bestand)` : ''}
-                                </option>
-                              ))}
-                              <option value="nieuw">Een ander kind</option>
-                            </select>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </>
+            <KinderenNakijken personen={personen} onWijzig={setPersonen}
+              naam={(i) => [kind(bestand.rijen[i]).kindVoornaam, kind(bestand.rijen[i]).kindNaam].filter(Boolean).join(' ')} />
           )}
         </>
       )}

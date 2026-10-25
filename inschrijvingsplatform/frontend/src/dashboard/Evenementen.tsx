@@ -81,6 +81,7 @@ export function Evenementen({ profiel, naVerandering }: { profiel: Profiel; naVe
                     )}
                   </td>
                   <td className="d-acties">
+                    {isModuleActief(installatie, 'historiek') && profiel.rechten.includes('historiek.bekijken') && <Link href={`/dashboard/evenementen/${e.id}/overzicht`}>Overzicht</Link>}
                     <Link href={`/dashboard/evenementen/${e.id}`}>Instellingen</Link>
                     {profiel.rechten.includes('evenementen.overzicht_aanwezigen') && <Link href={`/dashboard/evenementen/${e.id}/aanwezigheid`}>Aanwezigheid</Link>}
                     <Link href={`/dashboard/evenementen/${e.id}/sessiegevers`}>{hoofdletter(installatie.termen.sessiegevers)}</Link>

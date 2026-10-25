@@ -133,6 +133,8 @@ export interface UitnodigingOverzicht {
 /** Statistieken van één import (enkel aantallen, geen persoonsgegevens). */
 export interface ImportStatistiek {
   id: string;
+  /** Evenement (schooljaar) waar de import bij hoort, of null. */
+  evenementId: string | null;
   naam: string;
   bestandsnaam: string | null;
   aantal: number;
@@ -218,7 +220,7 @@ export const beheerApi = {
 
   // voorinschrijvingen (import uit een extern bestand)
   voorinschrijvingenStatistieken: () => call<ImportStatistiek[]>('/api/beheer/voorinschrijvingen/statistieken'),
-  importeerVoorinschrijvingen: (body: { naam: string; bestandsnaam: string; rijen: ImportRij[] }) =>
+  importeerVoorinschrijvingen: (body: { naam: string; bestandsnaam: string; rijen: ImportRij[]; evenementId?: string | null }) =>
     post<{ importId: string; aantal: number }>('/api/beheer/voorinschrijvingen/importen', body),
   controleerPersonen: (rijen: Pick<ImportRij, 'email' | 'kindVoornaam' | 'kindNaam'>[]) => post<PersoonControle[]>('/api/beheer/voorinschrijvingen/personen', { rijen }),
   uitnodigingOverzicht: (importId: string, evenementId: string) =>
@@ -423,4 +425,114 @@ export const etiketApi = {
     call<{ instellingen: EtiketInstellingen | null }>(`${etiketPad(evenementId)}/instellingen`, { method: 'PATCH', body: { instellingen } }),
   zetVerdieping: (evenementId: string, locatieId: string, verdieping: string) =>
     call<{ verdieping: string | null }>(`${etiketPad(evenementId)}/lokalen/${encodeURIComponent(locatieId)}`, { method: 'PATCH', body: { verdieping } }),
+};
+
+// ---------------------------------------------------------------------------
+// Historiek: vorige jaren importeren, overzicht per evenement, dubbels
+// ---------------------------------------------------------------------------
+export interface ProgrammaSessie { sleutel: string; titel: string }
+export interface ProgrammaTijdsblok { sleutel: string; naam: string; start: string; eind: string; sessies: ProgrammaSessie[] }
+export interface ProgrammaDagdeel { sleutel: string; naam: string; start: string; eind: string; tijdsblokken: ProgrammaTijdsblok[] }
+export interface ProgrammaDag { sleutel: string; naam: string; datum: string; dagdelen: ProgrammaDagdeel[] }
+
+export interface InschrijvingImportRij {
+  ingediendOp: string | null;
+  email: string | null;
+  ouderVoornaam: string | null;
+  ouderNaam: string | null;
+  telefoon: string | null;
+  kindVoornaam: string | null;
+  kindNaam: string | null;
+  schoolId: string | null;
+  schoolAndere: string | null;
+  leerjaar: string | null;
+  doelgroep: string | null;
+  dagdeel: string | null;
+  sessies: string[];
+  aanwezig: boolean;
+  opmerkingen: string | null;
+  persoonKeuze?: string;
+}
+
+export interface ImportVerslag {
+  geimporteerd: number;
+  vervangen: number;
+  dubbelInBestand: number;
+  alIngeschreven: number;
+  zonderNaam: number;
+  zonderMoment: number;
+  lesjes: number;
+  nieuweKinderen: number;
+  programma: { dagen: number; dagdelen: number; tijdsblokken: number; sessies: number };
+}
+
+export interface SessiegeverVerslag { nieuw: number; bestaand: number; gekoppeld: number; ongeldig: number; buitenDomein: number; lesjesNietGevonden: string[] }
+
+export interface OverzichtInschrijving {
+  id: string;
+  persoonId: string | null;
+  contactId: string | null;
+  voornaam: string | null;
+  naam: string | null;
+  email: string | null;
+  ouder: string | null;
+  ingeschrevenOp: string;
+  status: 'actief' | 'geannuleerd';
+  school: string;
+  leerjaar: string | null;
+  doelgroep: string | null;
+  momenten: { id: string; dag: string; datum: string; dagdeel: string; aanwezig: boolean }[];
+  lesjes: { id: string; tijdsblok: string; start: string; titel: string; wachtlijst: boolean; klas: string | null }[];
+  voorinschrijving: boolean;
+}
+
+export interface OverzichtVoorinschrijving {
+  id: string;
+  persoonId: string | null;
+  contactId: string | null;
+  naam: string | null;
+  ingediendOp: string | null;
+  school: string;
+  klas: string | null;
+  schooljaar: string | null;
+  ingeschreven: boolean;
+}
+
+export interface HistoriekItem {
+  soort: 'inschrijving' | 'voorinschrijving';
+  evenementId: string | null;
+  evenement: string | null;
+  schooljaar: string | null;
+  datum: string | null;
+  school: string | null;
+  leerjaar: string | null;
+  detail: string | null;
+  aanwezig?: boolean;
+  geannuleerd?: boolean;
+}
+
+export interface EvenementOverzichtData {
+  evenement: { id: string; titel: string; schooljaar: string };
+  inschrijvingen: OverzichtInschrijving[];
+  voorinschrijvingen: OverzichtVoorinschrijving[];
+  personen: Record<string, { naam: string; contactId: string }>;
+  gezinnen: Record<string, string[]>;
+  historiek: Record<string, HistoriekItem[]>;
+}
+
+export const historiekApi = {
+  maakVorigEvenement: (w: { schooljaar: string; titel: string; slug: string; bewaarTot: string }) => post<{ id: string }>('/api/beheer/historiek/evenementen', w),
+  controleerKinderen: (rijen: Pick<InschrijvingImportRij, 'email' | 'kindVoornaam' | 'kindNaam' | 'dagdeel'>[]) =>
+    post<PersoonControle[]>('/api/beheer/historiek/kinderen', { rijen }),
+  importeerInschrijvingen: (evenementId: string, body: { programma: ProgrammaDag[]; rijen: InschrijvingImportRij[] }) =>
+    post<ImportVerslag>(`/api/beheer/historiek/evenementen/${evenementId}/inschrijvingen`, body),
+  importeerSessiegevers: (evenementId: string, rijen: { voornaam: string; naam: string; email: string; lesjes: string | null }[]) =>
+    post<SessiegeverVerslag>(`/api/beheer/historiek/evenementen/${evenementId}/sessiegevers`, { rijen }),
+  overzicht: (evenementId: string) => call<EvenementOverzichtData>(`/api/beheer/historiek/evenementen/${evenementId}/overzicht`),
+  voegSamen: (evenementId: string, behoud: string, weg: string[]) =>
+    post<{ ok: true; geannuleerd: number }>(`/api/beheer/historiek/evenementen/${evenementId}/dubbels/samenvoegen`, { behoud, weg }),
+  mailVraag: (evenementId: string, deelnemers: string[], onderwerp: string, tekst: string) =>
+    post<{ verstuurd: number; mislukt: number; aan: string[] }>(`/api/beheer/historiek/evenementen/${evenementId}/dubbels/mail`, { deelnemers, onderwerp, tekst }),
+  koppelImportAanEvenement: (importId: string, evenementId: string | null) =>
+    call<{ ok: true }>(`/api/beheer/voorinschrijvingen/importen/${importId}`, { method: 'PATCH', body: { evenementId } }),
 };

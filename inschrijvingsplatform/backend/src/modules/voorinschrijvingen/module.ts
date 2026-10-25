@@ -1,6 +1,6 @@
 import { botcontroleMislukt, controleerTurnstile, json, teSnel, teVeelAanvragen } from '../../kern/http';
 import { defineModule } from '../../kern/module';
-import { anonimiseer, controleerPersonen, importeer, importen, koppelBestaandeRijen, statistieken, uitnodigingOverzicht, verstuurUitnodigingen, verwijder } from './db';
+import { anonimiseer, controleerPersonen, importeer, importen, koppelBestaandeRijen, koppelEvenement, statistieken, uitnodigingOverzicht, verstuurUitnodigingen, verwijder } from './db';
 import { bewaarVoorinschrijving, formulieren, maakFormulier, publiekFormulier, SJABLONEN, wijzigFormulier } from './formulier';
 
 /**
@@ -97,6 +97,14 @@ export default defineModule({
       toegang: 'beheer',
       recht: 'voorinschrijvingen.beheren',
       handler: async (ctx) => verstuurUitnodigingen(ctx.env, ctx.gebruiker, ctx.params.id, ctx.params.evenement, await ctx.leesJson(1024), ctx.ip),
+    },
+    {
+      // Bij welk evenement (schooljaar) de import hoort, voor het overzicht van dat evenement.
+      methode: 'PATCH',
+      pad: '/voorinschrijvingen/importen/:id:uuid',
+      toegang: 'beheer',
+      recht: 'voorinschrijvingen.beheren',
+      handler: async (ctx) => koppelEvenement(ctx.env, ctx.gebruiker, ctx.params.id, await ctx.leesJson(1024), ctx.ip),
     },
     {
       methode: 'POST',
