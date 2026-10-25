@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { Profiel } from '../services/beheerApi';
 import { Account } from './Account';
+import { Contacten } from './Contacten';
 import { Etiketten } from './Etiketten';
 import { Help } from './help/Help';
 import { EvenementOverzicht } from './EvenementOverzicht';
@@ -60,10 +61,12 @@ export const DASHBOARD_MODULES: DashboardModule[] = [
   {
     id: 'kern',
     menu: [
+      { href: '/dashboard/contacten', label: 'Contacten', volgorde: 18, recht: 'kern.contacten.bekijken', actief: (p) => p.startsWith('/dashboard/contacten') },
       { href: '/dashboard/medewerkers', label: 'Medewerkers', volgorde: 20, recht: 'kern.gebruikers.beheren', actief: (p) => p.startsWith('/dashboard/medewerkers') },
       { href: '/dashboard/account', label: 'Mijn account', volgorde: 90, actief: (p) => p.startsWith('/dashboard/account') },
     ],
     paginas: [
+      { patroon: /^\/dashboard\/contacten$/, recht: 'kern.contacten.bekijken', toon: (_m, c) => <Contacten profiel={c.profiel} /> },
       { patroon: /^\/dashboard\/medewerkers$/, recht: 'kern.gebruikers.beheren', toon: (_m, c) => <Medewerkers profiel={c.profiel} /> },
       { patroon: /^\/dashboard\/medewerkers\/rechten$/, recht: 'kern.gebruikers.beheren', toon: () => <RollenRechten /> },
       { patroon: /^\/dashboard\/account$/, toon: (_m, c) => <Account profiel={c.profiel} naVerandering={c.naVerandering} /> },

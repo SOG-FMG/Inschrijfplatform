@@ -57,6 +57,12 @@ export interface Recht {
   rollen: Rol[];
   /** Aan te passen per rol in Medewerkers → Rollen en rechten (tabel rol_rechten). Zonder: vast volgens `rollen`. */
   instelbaar?: boolean;
+  /**
+   * Geldt ook voor de platformbeheerder (die anders altijd alles mag): standaard enkel als 'platformbeheerder' in
+   * `rollen` staat, en aan te zetten in Rollen en rechten. Voor iets dat een organisatie bewust moet aanzetten,
+   * zoals de contactgegevens van ouders in de contactenlijst. Enkel samen met `instelbaar`.
+   */
+  ookPlatformbeheerder?: boolean;
 }
 
 export interface Taak {
@@ -73,6 +79,37 @@ export interface Persoonsverwijzing {
   tabel: string;
   persoon?: string;
   contact?: string;
+}
+
+/**
+ * Waar iemand voorkomt, voor de contactenlijst (Dashboard → Contacten, kern/contactenlijst.ts). De kern voegt de
+ * vermeldingen van alle modules samen per persoon: één e-mailadres = één persoon.
+ */
+export interface Vermelding {
+  /** E-mailadres (medewerker, sessiegever), of een contact van de kern (ouder, inschrijver). Eén van beide. */
+  email?: string | null;
+  contactId?: string | null;
+  /** Persoon van het contact waar het over gaat (bv. het kind bij een inschrijving). */
+  persoonId?: string | null;
+  /** Naam als die niet uit het contact komt (medewerker, sessiegever). */
+  naam?: string | null;
+  /** Soort, kort: 'Medewerker', 'Lesgever', 'Inschrijving', 'Voorinschrijving' … */
+  soort: string;
+  /** Waar precies, bv. "Infodagen 2025-2026 · Domein Kunst (Zaterdag 24 januari, 10:10)". */
+  omschrijving: string;
+  /** Evenement waar de vermelding bij hoort: wie dat evenement niet mag lezen, ziet de vermelding niet. */
+  evenementId?: string | null;
+  /** Pagina in het dashboard. */
+  link?: string | null;
+  datum?: string | null;
+}
+
+export interface ContactBron {
+  id: string;
+  /** Ouders en inschrijvers (buiten de organisatie): enkel met het recht kern.contacten.extern. */
+  extern: boolean;
+  /** evenementen: wat de medewerker mag lezen (null = alles). De kern filtert ook zelf op evenementId. */
+  lees(env: Env, ctx: { gebruiker: Gebruiker; evenementen: Set<string> | null }): Promise<Vermelding[]>;
 }
 
 export interface Module {
@@ -92,6 +129,8 @@ export interface Module {
   taken?: Taak[];
   /** Waar deze module naar contacten/personen verwijst; zolang een rij verwijst, blijft het contact bestaan. */
   persoonsverwijzingen?: Persoonsverwijzing[];
+  /** Waar personen voorkomen in deze module, voor de contactenlijst. */
+  contactBronnen?: ContactBron[];
   /** Mails van deze module die beheerders kunnen nalezen en aanpassen (module mailsjablonen). */
   mailsjablonen?: SjabloonDefinitie[];
 }

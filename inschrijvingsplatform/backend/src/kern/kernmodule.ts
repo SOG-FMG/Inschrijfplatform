@@ -1,5 +1,8 @@
 import { ruimAanmeldingOp } from '../auth/sessie';
 import { ruimContactenOp } from './contacten';
+import { contactenlijst } from './contactenlijst';
+import { GROEPEN_BRONNEN, haalUitGroep, voegContactenToe } from './contactgroepen';
+import { MEDEWERKERS_BRON } from './medewerkersbron';
 import { audit } from './audit';
 import { testmail, verstuur } from '../mail';
 import { json } from './http';
@@ -20,9 +23,41 @@ export default defineModule({
   rechten: {
     'kern.mail.testen': { omschrijving: 'Een testmail naar zichzelf sturen', rollen: [] },
     'kern.gebruikers.beheren': { omschrijving: 'Medewerkers toevoegen, wijzigen en hun 2FA herstellen', rollen: [] },
+    'kern.contacten.bekijken': {
+      omschrijving: 'De contactenlijst bekijken: medewerkers en lesgevers, en waar ze voorkomen', rollen: ['schoolbeheerder'], instelbaar: true,
+    },
+    'kern.contacten.toevoegen': {
+      omschrijving: 'Contacten toevoegen door adressen te plakken, en uit een groep halen', rollen: ['schoolbeheerder'], instelbaar: true,
+    },
+    // Ook voor de platformbeheerder standaard uit: de organisatie zet het bewust aan (afspraak met de DPO).
+    'kern.contacten.extern': {
+      omschrijving: 'In de contactenlijst ook ouders en inschrijvers zien, met hun kinderen (enkel van de eigen evenementen)',
+      rollen: [], instelbaar: true, ookPlatformbeheerder: true,
+    },
   },
 
   routes: [
+    {
+      methode: 'GET',
+      pad: '/contacten',
+      toegang: 'beheer',
+      recht: 'kern.contacten.bekijken',
+      handler: ({ env, gebruiker, modules, ip }) => contactenlijst(env, gebruiker, modules, ip),
+    },
+    {
+      methode: 'POST',
+      pad: '/contacten/toevoegen',
+      toegang: 'beheer',
+      recht: 'kern.contacten.toevoegen',
+      handler: async (ctx) => voegContactenToe(ctx.env, ctx.gebruiker, await ctx.leesJson(512 * 1024), ctx.ip),
+    },
+    {
+      methode: 'POST',
+      pad: '/contacten/uit-groep',
+      toegang: 'beheer',
+      recht: 'kern.contacten.toevoegen',
+      handler: async (ctx) => haalUitGroep(ctx.env, ctx.gebruiker, await ctx.leesJson(1024), ctx.ip),
+    },
     // Rechten per rol (Medewerkers → Rollen en rechten); enkel de rechten die een module instelbaar maakt.
     {
       methode: 'GET',
@@ -67,6 +102,9 @@ export default defineModule({
     WACHTWOORD_INSTELLEN: [403, 'Stel eerst een wachtwoord in voor je account.'],
     GEEN_TOEGANG: [403, 'Je hebt geen toegang tot deze gegevens.'],
   },
+
+  contactBronnen: [MEDEWERKERS_BRON, ...GROEPEN_BRONNEN],
+  persoonsverwijzingen: [{ tabel: 'contact_groepen', contact: 'contact_id' }],
 
   // Volgorde: eerst de taken van de modules (bv. anonimiseren), daarna pas wat nergens meer gebruikt wordt opruimen.
   taken: [

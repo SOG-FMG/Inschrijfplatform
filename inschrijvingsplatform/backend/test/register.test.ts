@@ -68,7 +68,7 @@ describe('rechten', () => {
 
   test('rechtenVan geeft enkel rechten van actieve modules', () => {
     expect(r.rechtenVan(gebruiker('platformbeheerder'))).toEqual([
-      'kern.mail.testen', 'kern.gebruikers.beheren', 'evenementen.aanmaken', 'evenementen.sessiegevers.beheren', 'evenementen.inchecken',
+      'kern.mail.testen', 'kern.gebruikers.beheren', 'kern.contacten.bekijken', 'kern.contacten.toevoegen', 'evenementen.aanmaken', 'evenementen.sessiegevers.beheren', 'evenementen.inchecken',
       'evenementen.sessie_inzien', 'evenementen.lesje_wijzigen', 'evenementen.overboeken', 'evenementen.overzicht_aanwezigen',
       'meldingen.beheren', 'voorinschrijvingen.beheren', 'mailsjablonen.beheren', 'historiek.bekijken', 'historiek.importeren',
     ]);
@@ -76,6 +76,10 @@ describe('rechten', () => {
     expect(r.rechtenVan(gebruiker('onthaal'))).toEqual(['evenementen.inchecken', 'evenementen.sessie_inzien', 'evenementen.lesje_wijzigen', 'evenementen.overboeken', 'evenementen.overzicht_aanwezigen']);
     expect(r.rechtenVanRol('sessiegever')).toEqual(['evenementen.inchecken', 'evenementen.sessie_inzien']);
     expect(maakRegister(ALLE_MODULES, 'evenementen').rechtenVan(gebruiker('platformbeheerder'))).not.toContain('meldingen.beheren');
+    // Ouders in de contactenlijst: ook voor de platformbeheerder standaard uit, aan te zetten in Rollen en rechten.
+    expect(r.rechtenVan(gebruiker('platformbeheerder'))).not.toContain('kern.contacten.extern');
+    expect(r.rechtenVan(gebruiker('platformbeheerder'), new Map([['platformbeheerder kern.contacten.extern', true]]))).toContain('kern.contacten.extern');
+    expect(r.rechtenVan(gebruiker('platformbeheerder'), new Map([['platformbeheerder meldingen.beheren', false]]))).toContain('meldingen.beheren');
   });
 
   test('aanpassingen per rol gelden enkel voor instelbare rechten; de platformbeheerder houdt alles', () => {

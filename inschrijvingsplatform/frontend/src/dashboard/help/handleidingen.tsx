@@ -69,7 +69,7 @@ export const HANDLEIDINGEN: Handleiding[] = [
               <li><Naar pad="/dashboard">Evenementen</Naar>: de lijst, met per evenement Overzicht, Instellingen, Aanwezigheid, Sessiegevers, Rapporten, Etiketten en de export naar Excel.</li>
               <li><Naar pad="/dashboard/voorinschrijvingen">Voorinschrijvingen</Naar>: formulieren, imports, statistieken en uitnodigen.</li>
               <li><Naar pad="/dashboard/importeren">Importeren</Naar>: gegevens van een schooljaar inladen.</li>
-              <li>Medewerkers, Meldingen, Mailteksten en Privacy: voor beheerders.</li>
+              <li>Contacten, Medewerkers, Meldingen, Mailteksten en Privacy: voor beheerders.</li>
             </ul>
             <p>Onderaan het menu staat <strong>Help bij deze pagina</strong>: dat opent deze handleiding bij de stap over de pagina waar je bent.</p>
           </>
@@ -616,12 +616,32 @@ export const HANDLEIDINGEN: Handleiding[] = [
         ),
       },
       {
+        id: 'contacten',
+        titel: 'Contacten',
+        inhoud: (
+          <>
+            <p>Op <Naar pad="/dashboard/contacten">Contacten</Naar> staat iedereen die in het platform voorkomt, één keer per e-mailadres. Een leerkracht die medewerker én lesgever is, staat er één keer, met beide.</p>
+            <ul>
+              <li><strong>Medewerkers en lesgevers</strong>: met hun rol, de evenementen waaraan ze gekoppeld zijn en de lesjes die ze geven.</li>
+              <li><strong>Ouders en inschrijvers</strong>: met hun kinderen, en per kind de inschrijvingen, voorinschrijvingen en uitnodigingen. Dit tabblad staat standaard <em>uit</em>, ook voor platformbeheerders.</li>
+            </ul>
+            <p>Klik op een naam voor de details: elke vermelding linkt naar de pagina waar ze voorkomt (in een nieuw tabblad). Met <em>Excel</em> download je de lijst zoals je ze ziet.</p>
+            <p>Wie niet alle evenementen mag zien, ziet enkel vermeldingen van de eigen evenementen.</p>
+            <p><strong>+ Contacten plakken</strong>: plak adressen uit Outlook (bv. <code>"De Schepper Stijn" &lt;stijn.deschepper@onderwijs.gent.be&gt;</code>), losse adressen of rijen uit Excel. De voornaam is het deel van de naam dat vooraan in het e-mailadres staat. Kijk de namen na in de tabel en kies:</p>
+            <ul>
+              <li><strong>Contact</strong>, in een groep (bv. "Leerkrachten FMG"). Uit een groep halen kan in de details van het contact.</li>
+              <li><strong>Lesgever</strong>: komt in de lijst van sessiegevers; koppel ze daarna aan hun lesjes bij het evenement.</li>
+            </ul>
+          </>
+        ),
+      },
+      {
         id: 'rechten',
         titel: 'Rollen en rechten',
         inhoud: (
           <>
             <p>Op <Naar pad="/dashboard/medewerkers/rechten">Rollen en rechten</Naar> zet je per rol (organisator, schoolbeheerder, onthaal, sessiegever) rechten aan of uit, bv. inchecken, lesje wijzigen, overboeken, het overzicht met historiek bekijken of vorige jaren importeren.</p>
-            <p>Een platformbeheerder mag altijd alles. Welke evenementen iemand ziet, kies je bij de medewerker.</p>
+            <p>Een platformbeheerder mag altijd alles (vakje "altijd"), behalve wat ook voor hem aan te vinken is: <strong>In de contactenlijst ook ouders en inschrijvers zien</strong> staat standaard uit, voor elke rol. Zet het enkel aan na afspraak met de DPO. Welke evenementen iemand ziet, kies je bij de medewerker.</p>
           </>
         ),
       },
@@ -672,6 +692,7 @@ export const HELP_PER_PAD: [RegExp, string, string][] = [
   [/^\/dashboard\/evenementen\/[^/]+$/, 'evenement', 'algemeen'],
   [/^\/dashboard\/importeren/, 'vorigjaar', 'evenement'],
   [/^\/dashboard\/voorinschrijvingen/, 'voorinschrijvingen', 'formulier'],
+  [/^\/dashboard\/contacten/, 'beheer', 'contacten'],
   [/^\/dashboard\/medewerkers\/rechten/, 'beheer', 'rechten'],
   [/^\/dashboard\/medewerkers/, 'beheer', 'medewerkers'],
   [/^\/dashboard\/mailteksten/, 'beheer', 'mailteksten'],

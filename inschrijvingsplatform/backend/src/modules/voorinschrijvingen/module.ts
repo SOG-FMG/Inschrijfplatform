@@ -1,6 +1,7 @@
 import { botcontroleMislukt, controleerTurnstile, json, teSnel, teVeelAanvragen } from '../../kern/http';
 import { defineModule } from '../../kern/module';
 import { anonimiseer, controleerPersonen, importeer, importen, koppelBestaandeRijen, koppelEvenement, statistieken, uitnodigingOverzicht, verstuurUitnodigingen, verwijder } from './db';
+import { VOORINSCHRIJVINGEN_BRON } from './contactbronnen';
 import { bewaarVoorinschrijving, formulieren, maakFormulier, publiekFormulier, SJABLONEN, wijzigFormulier } from './formulier';
 
 /**
@@ -138,6 +139,8 @@ export default defineModule({
   taken: [{ naam: 'bestaande voorinschrijvingen aan contacten koppelen', uitvoeren: (env) => koppelBestaandeRijen(env) }],
 
   persoonsverwijzingen: [{ tabel: 'voorinschrijvingen', persoon: 'persoon_id', contact: 'contact_id' }],
+
+  contactBronnen: [VOORINSCHRIJVINGEN_BRON],
 
   mailsjablonen: SJABLONEN,
 });

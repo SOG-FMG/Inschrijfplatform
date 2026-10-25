@@ -300,6 +300,33 @@ export async function wijzigSessiegever(env: Env, g: Gebruiker, id: string, body
   return { ok: true };
 }
 
+/**
+ * Meerdere sessiegevers tegelijk (Contacten → Contacten plakken → als lesgever). Wie al bestaat (zelfde adres), blijft
+ * zoals hij is; adressen buiten de toegelaten domeinen worden overgeslagen. Koppelen aan sessies gebeurt per evenement.
+ */
+export async function voegSessiegeversToe(env: Env, g: Gebruiker, body: any, ip: string | null) {
+  const rijen: any[] = Array.isArray(body?.rijen) ? body.rijen.slice(0, 500) : [];
+  if (!rijen.length) throw new ValidatieFout({ rijen: 'Er zijn geen adressen om toe te voegen.' });
+  const { results } = await env.DB.prepare(`select email from sessiegevers where email is not null`).all<{ email: string }>();
+  const bestaand = new Set(results.map((x) => x.email.toLowerCase()));
+  const verslag = { nieuw: 0, bestaand: 0, buitenDomein: 0, ongeldig: 0 };
+  const stmts: D1PreparedStatement[] = [];
+  for (const r of rijen) {
+    const email = naamUitEmail(r?.email);
+    const voornaam = typeof r?.voornaam === 'string' ? r.voornaam.trim().slice(0, 100) : '';
+    const naam = typeof r?.naam === 'string' ? r.naam.trim().slice(0, 100) : '';
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || !voornaam) { verslag.ongeldig++; continue; }
+    if (!isToegelatenEmail(env, email)) { verslag.buitenDomein++; continue; }
+    if (bestaand.has(email)) { verslag.bestaand++; continue; }
+    bestaand.add(email);
+    stmts.push(env.DB.prepare(`insert into sessiegevers (sessiegever_id, voornaam, naam, email, created_at) values (?, ?, ?, ?, ?)`)
+      .bind(crypto.randomUUID(), voornaam, naam, email, isoNu()));
+    verslag.nieuw++;
+  }
+  await env.DB.batch([...stmts, audit(env, g, 'sessiegevers', '*', 'TOEGEVOEGD', verslag, ip)]);
+  return verslag;
+}
+
 /** Verwijderen: koppelingen en aanmeldingen verdwijnen mee (cascade), de toegang is meteen weg. */
 export async function verwijderSessiegever(env: Env, g: Gebruiker, id: string, ip: string | null) {
   await env.DB.batch([

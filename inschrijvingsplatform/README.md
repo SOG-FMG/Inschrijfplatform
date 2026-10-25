@@ -243,6 +243,12 @@ Persoonsgegevens staan versleuteld in D1. Rechtstreeks met SQL in de database ki
 - **Overzicht** (`/dashboard/evenementen/<id>/overzicht`, recht `historiek.bekijken`; standaard organisatoren en schoolbeheerders van het evenement): tellers, filters (school, leerjaar, moment, lesje, stroom, voorinschrijving), rapporten (inschrijvingen, voorinschrijvingen, per school, per leerjaar, per lesje, per week) met export naar Excel. Muis over een naam: historiek per schooljaar (voorinschrijving, inschrijving, aanwezig) en broers of zussen (andere kinderen van hetzelfde e-mailadres).
 - **Dubbels** (rapport *Dubbels nakijken*): zelfde kind, zelfde naam met een ander adres (en dezelfde school of hetzelfde leerjaar), of bijna dezelfde naam bij hetzelfde adres. Voorstel: de laatste inschrijving blijft; samenvoegen annuleert de andere. Verschillen stroom, moment of lesjes, dan stelt het platform een mail met de vraag voor, die je nakijkt en aanpast vóór het versturen.
 
+## Contacten en handleiding
+
+- **Contacten** (`/dashboard/contacten`): iedereen één keer per e-mailadres, met waar die persoon voorkomt (medewerker, lesgever, inschrijving, voorinschrijving …). Ouders en inschrijvers staan standaard uit, ook voor de platformbeheerder; aan te zetten in Medewerkers → Rollen en rechten. Zie [Plan_Contacten.md](Plan_Contacten.md).
+- **Handleiding** (`/dashboard/help`): stappen per onderwerp; *Help bij deze pagina* in de zijbalk opent de stap over de huidige pagina. Teksten in `frontend/src/dashboard/help/handleidingen.tsx`.
+- Op een computer staat het dashboard op 85% (`--d-zoom` in `dashboard.css`); op een smartphone en op de formulieren voor ouders niet.
+
 ## Nog te bouwen
 
 - Beheerdashboard: deelnemerslijst op het scherm, verplaatsen.

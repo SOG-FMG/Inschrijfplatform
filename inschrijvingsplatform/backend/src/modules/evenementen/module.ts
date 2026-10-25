@@ -7,6 +7,7 @@ import { annulatieGegevens, annuleerViaToken, mailGegevens, registratieViaToken,
 import { checkinUrl, leesVersie } from '../../kern/checkin';
 import { basisUrl, qrMailsTeVersturen, stuurEnLog, verstuurQrMails, verwittigNaWijzigingDoorSchool } from './checkin';
 import { AANWEZIGHEID_ROUTES } from './routes-aanwezigheid';
+import { INSCHRIJVINGEN_BRON, SESSIEGEVERS_BRON, UITNODIGINGEN_BRON } from './contactbronnen';
 import { qrPng } from '../../kern/qr';
 import { botcontroleMislukt, controleerTurnstile, csv, json, nietGevonden, nieuwToken, teSnel, teVeelAanvragen } from '../../kern/http';
 import { defineModule, type PubliekCtx } from '../../kern/module';
@@ -343,6 +344,8 @@ export default defineModule({
   ],
 
   persoonsverwijzingen: [{ tabel: 'deelnemers', persoon: 'persoon_id', contact: 'contact_id' }],
+
+  contactBronnen: [SESSIEGEVERS_BRON, INSCHRIJVINGEN_BRON, UITNODIGINGEN_BRON],
 
   mailsjablonen: SJABLONEN,
 });

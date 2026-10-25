@@ -119,7 +119,7 @@ export interface SessiegeverBeheer {
 
 export interface RollenRechten {
   rollen: { rol: string; naam: string }[];
-  rechten: { recht: string; module: string; omschrijving: string; per: Record<string, { toegestaan: boolean; standaard: boolean }> }[];
+  rechten: { recht: string; module: string; omschrijving: string; per: Record<string, { toegestaan: boolean; standaard: boolean; vast: boolean }> }[];
 }
 
 const patch = <T>(pad: string, body: unknown) => call<T>(pad, { method: 'PATCH', body });

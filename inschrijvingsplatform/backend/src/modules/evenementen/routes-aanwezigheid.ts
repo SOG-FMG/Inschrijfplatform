@@ -11,7 +11,7 @@ import { evenementVanDeelnemer } from './beheer';
 import { verwittigNaWijzigingDoorSchool } from './checkin';
 import {
   controleerSessieVanSessiegever, koppelSessiegevers, maakSessiegever, meldAanMetCode, meldAfSessiegever, mijnSessies, neemOverUitSessies,
-  nodigUit, sessiegeversVanEvenement, type Sessiegever, vereisSessiegever, verwijderSessiegever, vraagCode, wijzigSessiegever, zetVelden,
+  nodigUit, sessiegeversVanEvenement, type Sessiegever, vereisSessiegever, verwijderSessiegever, voegSessiegeversToe, vraagCode, wijzigSessiegever, zetVelden,
 } from './sessiegevers';
 
 /**
@@ -141,6 +141,13 @@ export const AANWEZIGHEID_ROUTES: Route[] = [
     toegang: 'beheer',
     recht: 'evenementen.sessiegevers.beheren',
     handler: async (ctx) => maakSessiegever(ctx.env, ctx.gebruiker, await ctx.leesJson(2048), ctx.ip),
+  },
+  {
+    methode: 'POST',
+    pad: '/sessiegevers/toevoegen',
+    toegang: 'beheer',
+    recht: 'evenementen.sessiegevers.beheren',
+    handler: async (ctx) => voegSessiegeversToe(ctx.env, ctx.gebruiker, await ctx.leesJson(256 * 1024), ctx.ip),
   },
   {
     methode: 'PATCH',

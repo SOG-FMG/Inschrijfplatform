@@ -536,3 +536,27 @@ export const historiekApi = {
   koppelImportAanEvenement: (importId: string, evenementId: string | null) =>
     call<{ ok: true }>(`/api/beheer/voorinschrijvingen/importen/${importId}`, { method: 'PATCH', body: { evenementId } }),
 };
+
+// ---------------------------------------------------------------------------
+// Contactenlijst (kern)
+// ---------------------------------------------------------------------------
+export interface ContactVermelding { soort: string; omschrijving: string; evenementId: string | null; link: string | null; datum: string | null }
+export interface Contact {
+  id: string;
+  naam: string;
+  email: string | null;
+  telefoon: string | null;
+  soorten: string[];
+  extern: boolean;
+  vermeldingen: ContactVermelding[];
+  personen: { naam: string; vermeldingen: ContactVermelding[] }[];
+}
+
+export const contactenApi = {
+  lijst: () => call<{ extern: boolean; contacten: Contact[] }>('/api/beheer/contacten'),
+  toevoegen: (groep: string, rijen: { voornaam: string; naam: string; email: string }[]) =>
+    post<{ groep: string; nieuw: number; bestaand: number; ongeldig: number; buitenOrganisatie: number }>('/api/beheer/contacten/toevoegen', { groep, rijen }),
+  lesgeversToevoegen: (rijen: { voornaam: string; naam: string; email: string }[]) =>
+    post<{ nieuw: number; bestaand: number; buitenDomein: number; ongeldig: number }>('/api/beheer/sessiegevers/toevoegen', { rijen }),
+  uitGroep: (id: string, groep: string) => post<{ ok: true }>('/api/beheer/contacten/uit-groep', { id, groep }),
+};

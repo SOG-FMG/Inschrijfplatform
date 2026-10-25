@@ -8,16 +8,22 @@ import { ValidatieFout } from '../validatie';
 
 /**
  * Rechten per rol aanpassen (Medewerkers → Rollen en rechten). Enkel rechten die een module als instelbaar markeert;
- * de rest blijft zoals in het manifest. De platformbeheerder heeft altijd alle rechten en staat niet in het raster.
+ * de rest blijft zoals in het manifest. De platformbeheerder heeft altijd alle rechten, behalve de rechten met
+ * ookPlatformbeheerder: die staan ook voor hem in het raster (en zijn standaard meestal uit).
  */
 
 /** De rollen in het raster, in deze volgorde. */
-export const INSTELBARE_ROLLEN: Rol[] = ['organisator', 'onthaal', 'sessiegever'];
+export const INSTELBARE_ROLLEN: Rol[] = ['platformbeheerder', 'schoolbeheerder', 'organisator', 'onthaal', 'sessiegever'];
+
+/** Kan dit vakje gewijzigd worden? Voor de platformbeheerder enkel bij rechten met ookPlatformbeheerder. */
+const wijzigbaar = (rol: Rol, r: { ookPlatformbeheerder?: boolean }) => rol !== 'platformbeheerder' || !!r.ookPlatformbeheerder;
 
 const hoofdletter = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 /** Naam van de rol op het scherm; de sessiegever heet zoals de installatie het noemt (bv. Lesgever). */
 const rolNaam = (env: Env, rol: Rol) =>
-  rol === 'sessiegever' ? hoofdletter(installatie(env).termen.sessiegever) : ({ organisator: 'Organisator', onthaal: 'Onthaal' } as Record<string, string>)[rol] ?? rol;
+  rol === 'sessiegever'
+    ? hoofdletter(installatie(env).termen.sessiegever)
+    : ({ platformbeheerder: 'Platformbeheerder', schoolbeheerder: 'Schoolbeheerder', organisator: 'Organisator', onthaal: 'Onthaal' } as Record<string, string>)[rol] ?? rol;
 
 /** Aanpassingen voor één rol. Werkt ook als de tabel nog niet bestaat (dan geen aanpassingen). */
 export async function leesAanpassingen(env: Env, rol: Rol): Promise<Aanpassingen> {
@@ -33,7 +39,7 @@ function instelbare(modules: Module[]) {
   return modules.flatMap((m) =>
     Object.entries(m.rechten ?? {})
       .filter(([, r]) => r.instelbaar)
-      .map(([recht, r]) => ({ recht, module: m.naam, omschrijving: r.omschrijving, standaard: r.rollen })),
+      .map(([recht, r]) => ({ recht, module: m.naam, omschrijving: r.omschrijving, standaard: r.rollen, ookPlatformbeheerder: !!r.ookPlatformbeheerder })),
   );
 }
 
@@ -49,9 +55,10 @@ export async function rollenEnRechten(env: Env, modules: Module[]) {
       omschrijving: r.omschrijving,
       per: Object.fromEntries(
         INSTELBARE_ROLLEN.map((rol) => {
+          if (!wijzigbaar(rol, r)) return [rol, { toegestaan: true, standaard: true, vast: true }];
           const standaard = r.standaard.includes(rol);
           const waarde = aangepast.get(`${rol} ${r.recht}`) ?? standaard;
-          return [rol, { toegestaan: waarde, standaard }];
+          return [rol, { toegestaan: waarde, standaard, vast: false }];
         }),
       ),
     })),
@@ -62,7 +69,7 @@ export async function rollenEnRechten(env: Env, modules: Module[]) {
 export async function zetRecht(env: Env, g: Gebruiker, modules: Module[], body: any, ip: string | null) {
   const rol = INSTELBARE_ROLLEN.find((r) => r === body?.rol);
   const recht = instelbare(modules).find((r) => r.recht === body?.recht);
-  if (!rol || !recht || typeof body?.toegestaan !== 'boolean') throw new ValidatieFout({ recht: 'Onbekend recht of rol.' });
+  if (!rol || !recht || typeof body?.toegestaan !== 'boolean' || !wijzigbaar(rol, recht)) throw new ValidatieFout({ recht: 'Onbekend recht of rol.' });
   const standaard = recht.standaard.includes(rol);
   await env.DB.batch([
     body.toegestaan === standaard

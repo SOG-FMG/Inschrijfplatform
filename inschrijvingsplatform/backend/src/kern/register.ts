@@ -118,8 +118,8 @@ export function maakRegister(alle: Module[], keuze?: string): Register {
   const actieveRechten = new Set(actief.flatMap((m) => Object.keys(m.rechten ?? {})));
   const magRol = (rol: Rol, recht: string, aanpassingen?: Aanpassingen) => {
     if (!actieveRechten.has(recht)) return false;
-    if (rol === 'platformbeheerder') return true;
     const r = rechten.get(recht);
+    if (rol === 'platformbeheerder' && !(r?.instelbaar && r.ookPlatformbeheerder)) return true;
     const aangepast = r?.instelbaar ? aanpassingen?.get(`${rol} ${recht}`) : undefined;
     return aangepast ?? r?.rollen.includes(rol) ?? false;
   };

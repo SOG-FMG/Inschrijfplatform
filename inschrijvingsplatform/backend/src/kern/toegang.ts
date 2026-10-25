@@ -68,6 +68,19 @@ export async function controleerToegang(env: Env, g: Gebruiker, evenementId: str
   if (!ok) throw new DbFout('GEEN_TOEGANG');
 }
 
+/** De evenementen die deze gebruiker mag lezen; null = alle (platformbeheerder). Zelfde regels als controleerToegang. */
+export async function leesbareEvenementen(env: Env, g: Gebruiker): Promise<Set<string> | null> {
+  if (g.rol === 'platformbeheerder') return null;
+  const { results } = await env.DB.prepare(
+    `select e.evenement_id from evenementen e
+     where exists (select 1 from evenement_beheerders b where b.evenement_id = e.evenement_id and b.gebruiker_id = ?1)
+        or (?2 = 'schoolbeheerder' and e.school_id = ?3)`,
+  )
+    .bind(g.gebruikerId, g.rol, g.schoolId)
+    .all<{ evenement_id: string }>();
+  return new Set(results.map((r) => r.evenement_id));
+}
+
 async function aangemeldEmail(request: Request, env: Env): Promise<{ email: string; viaSessie: boolean }> {
   const email = await sessieEmail(request, env);
   if (email) return { email, viaSessie: true };

@@ -1515,8 +1515,9 @@ describe('aanwezigheid op de dag zelf en sessiegevers', () => {
     const r = await zetRecht('onthaal', 'evenementen.inchecken', false);
     expect(r.status).toBe(200);
     const recht = r.data.rechten.find((x: any) => x.recht === 'evenementen.inchecken');
-    expect(recht.per.onthaal).toEqual({ toegestaan: false, standaard: true });
-    expect(r.data.rollen.map((x: any) => x.rol)).toEqual(['organisator', 'onthaal', 'sessiegever']);
+    expect(recht.per.onthaal).toEqual({ toegestaan: false, standaard: true, vast: false });
+    expect(recht.per.platformbeheerder).toEqual({ toegestaan: true, standaard: true, vast: true }); // platformbeheerder: altijd
+    expect(r.data.rollen.map((x: any) => x.rol)).toEqual(['platformbeheerder', 'schoolbeheerder', 'organisator', 'onthaal', 'sessiegever']);
     env.DEV_BEHEER_EMAIL = BALIE;
     expect((await scan(A.token, A.versie)).status).toBe(403);
     await zetRecht('onthaal', 'evenementen.inchecken', true);
@@ -1746,5 +1747,76 @@ describe('historiek: vorige jaren importeren en overzicht', () => {
     await sql(`update gebruikers set rol_id = (select rol_id from rollen where code = 'organisator') where email = ?`, HISTORIEK);
     expect((await api('GET', `/api/beheer/historiek/evenementen/${evId}/overzicht`)).status).toBe(403);
     await sql(`update gebruikers set rol_id = (select rol_id from rollen where code = 'platformbeheerder') where email = ?`, HISTORIEK);
+  });
+});
+
+describe('contactenlijst', () => {
+  const PLATFORM = 'historiek.test@onderwijs.gent.be'; // platformbeheerder uit de historiek-tests
+  const zet = (rol: string, recht: string, toegestaan: boolean) => api('PATCH', '/api/beheer/rollen-rechten', { rol, recht, toegestaan });
+  beforeAll(() => {
+    env.DEV_BEHEER_EMAIL = PLATFORM;
+  });
+
+  test('standaard enkel medewerkers en lesgevers, met waar ze voorkomen', async () => {
+    const r = await api('GET', '/api/beheer/contacten');
+    expect(r.status).toBe(200);
+    expect(r.data.extern).toBe(false);
+    const kim = r.data.contacten.find((c: any) => c.email === 'kim.kunst@onderwijs.gent.be');
+    expect(kim.soorten).toEqual(['Lesgever']);
+    expect(kim.vermeldingen.map((v: any) => v.omschrijving)).toEqual(expect.arrayContaining([expect.stringContaining('Infodagen 2024-2025 · Domein Kunst')]));
+    expect(r.data.contacten.find((c: any) => c.email === PLATFORM)).toMatchObject({ naam: 'T H', soorten: ['Medewerker'] });
+    expect(r.data.contacten.some((c: any) => c.extern)).toBe(false);
+  });
+
+  test('ouders na het aanzetten in Rollen en rechten: één contact, kinderen eronder', async () => {
+    expect((await zet('platformbeheerder', 'meldingen.beheren', false)).status).toBe(400); // niet instelbaar voor de platformbeheerder
+    const raster = await zet('platformbeheerder', 'kern.contacten.extern', true);
+    expect(raster.data.rechten.find((x: any) => x.recht === 'kern.contacten.extern').per.platformbeheerder).toMatchObject({ toegestaan: true, standaard: false, vast: false });
+    const r = await api('GET', '/api/beheer/contacten');
+    expect(r.data.extern).toBe(true);
+    const gezin = r.data.contacten.find((c: any) => c.email === 'hist@example.org');
+    expect(gezin.soorten).toEqual(expect.arrayContaining(['Inschrijving', 'Voorinschrijving']));
+    expect(gezin.personen.map((p: any) => p.naam).sort()).toEqual(['An Hist', 'Bo Hist']);
+    expect(gezin.personen.find((p: any) => p.naam === 'An Hist').vermeldingen.map((v: any) => v.soort)).toEqual(expect.arrayContaining(['Inschrijving', 'Voorinschrijving']));
+    await zet('platformbeheerder', 'kern.contacten.extern', false);
+  });
+
+  test('contacten plakken: in een groep, bestaande naam blijft, buiten de organisatie enkel bij ouders; uit de groep halen', async () => {
+    const r = await api('POST', '/api/beheer/contacten/toevoegen', { groep: 'Leerkrachten FMG', rijen: [
+      { voornaam: 'Stijn', naam: 'De Schepper', email: 'Stijn.DeSchepper@onderwijs.gent.be' },
+      { voornaam: 'Kim', naam: 'Anders', email: 'kim.kunst@onderwijs.gent.be' }, // bestaat als lesgever, nog geen contact
+      { voornaam: 'Extern', naam: 'Iemand', email: 'iemand@example.org' },
+      { voornaam: 'Fout', naam: 'Adres', email: 'geen-adres' },
+    ] });
+    expect(r.data).toEqual({ groep: 'Leerkrachten FMG', nieuw: 3, bestaand: 0, ongeldig: 1, buitenOrganisatie: 1 });
+    const l = (await api('GET', '/api/beheer/contacten')).data.contacten;
+    const stijn = l.find((c: any) => c.email === 'stijn.deschepper@onderwijs.gent.be');
+    expect(stijn).toMatchObject({ naam: 'Stijn De Schepper', soorten: ['Contact'], vermeldingen: [{ soort: 'Contact', omschrijving: 'Leerkrachten FMG' }] });
+    expect(l.find((c: any) => c.email === 'kim.kunst@onderwijs.gent.be')).toMatchObject({ naam: 'Kim Kunst', soorten: expect.arrayContaining(['Lesgever', 'Contact']) });
+    expect(l.some((c: any) => c.email === 'iemand@example.org')).toBe(false); // ouders en inschrijvers staan uit
+
+    // Opnieuw plakken met een andere naam: het contact bestaat, de naam blijft.
+    expect((await api('POST', '/api/beheer/contacten/toevoegen', { rijen: [{ voornaam: 'S', naam: 'X', email: 'stijn.deschepper@onderwijs.gent.be' }] })).data)
+      .toMatchObject({ groep: 'Met de hand toegevoegd', nieuw: 0, bestaand: 1 });
+    expect((await api('POST', '/api/beheer/contacten/uit-groep', { id: stijn.id, groep: 'Leerkrachten FMG' })).data).toEqual({ ok: true });
+    const na = (await api('GET', '/api/beheer/contacten')).data.contacten.find((c: any) => c.id === stijn.id);
+    expect(na).toMatchObject({ naam: 'Stijn De Schepper', vermeldingen: [{ omschrijving: 'Met de hand toegevoegd' }] });
+  });
+
+  test('lesgevers toevoegen zonder evenement', async () => {
+    const r = await api('POST', '/api/beheer/sessiegevers/toevoegen', { rijen: [
+      { voornaam: 'Stijn', naam: 'De Schepper', email: 'stijn.deschepper@onderwijs.gent.be' },
+      { voornaam: 'Kim', naam: 'Kunst', email: 'kim.kunst@onderwijs.gent.be' },
+      { voornaam: 'Ext', naam: 'Ern', email: 'ext@example.org' },
+    ] });
+    expect(r.data).toEqual({ nieuw: 1, bestaand: 1, buitenDomein: 1, ongeldig: 0 });
+    const stijn = (await api('GET', '/api/beheer/contacten')).data.contacten.find((c: any) => c.email === 'stijn.deschepper@onderwijs.gent.be');
+    expect(stijn.soorten).toEqual(expect.arrayContaining(['Lesgever', 'Contact']));
+  });
+
+  test('een organisator zonder het recht ziet de lijst niet', async () => {
+    await sql(`update gebruikers set rol_id = (select rol_id from rollen where code = 'organisator') where email = ?`, PLATFORM);
+    expect((await api('GET', '/api/beheer/contacten')).status).toBe(403);
+    await sql(`update gebruikers set rol_id = (select rol_id from rollen where code = 'platformbeheerder') where email = ?`, PLATFORM);
   });
 });

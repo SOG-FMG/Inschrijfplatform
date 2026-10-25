@@ -4,7 +4,8 @@ import { foutTekst, Link, Melding } from './ui';
 
 /**
  * Rechten per rol (/dashboard/medewerkers/rechten, enkel platformbeheer). Enkel de rechten die een module instelbaar
- * maakt; de platformbeheerder heeft altijd alles. Welk evenement of welke sessie iemand ziet, blijft apart geregeld
+ * maakt; de platformbeheerder heeft altijd alles, behalve wat een module bewust ook voor hem instelbaar maakt
+ * (bv. ouders in de contactenlijst): die vakjes zijn aan te vinken, de andere staan vast. Welk evenement of welke sessie iemand ziet, blijft apart geregeld
  * (koppeling aan een evenement, of voor een sessiegever aan een sessie).
  */
 export function RollenRechten() {
@@ -33,7 +34,7 @@ export function RollenRechten() {
       <header className="d-paginakop">
         <div>
           <h1>Rollen en rechten</h1>
-          <p className="d-sub">Wat elke rol mag. Een platformbeheerder mag altijd alles. Welke evenementen iemand ziet, kies je bij de medewerker.</p>
+          <p className="d-sub">Wat elke rol mag. Een platformbeheerder mag altijd alles, behalve wat hier ook voor hem aan te vinken is. Welke evenementen iemand ziet, kies je bij de medewerker.</p>
         </div>
       </header>
       {fout && <Melding soort="fout">{fout}</Melding>}
@@ -56,10 +57,10 @@ export function RollenRechten() {
                     const v = r.per[rol];
                     return (
                       <td key={rol} className="rr-rol">
-                        <label className="rr-vak">
-                          <input type="checkbox" checked={v.toegestaan} disabled={bezig === `${rol} ${r.recht}`} aria-label={`${naam}: ${r.omschrijving}`}
+                        <label className={`rr-vak${v.vast ? ' rr-vak--vast' : ''}`} title={v.vast ? 'Een platformbeheerder mag dit altijd' : undefined}>
+                          <input type="checkbox" checked={v.toegestaan} disabled={v.vast || bezig === `${rol} ${r.recht}`} aria-label={`${naam}: ${r.omschrijving}`}
                             onChange={(e) => zet(rol, r.recht, e.target.checked)} />
-                          {v.toegestaan !== v.standaard && <span className="rr-aangepast">aangepast</span>}
+                          {v.vast ? <span className="d-klein">altijd</span> : v.toegestaan !== v.standaard && <span className="rr-aangepast">aangepast</span>}
                         </label>
                       </td>
                     );

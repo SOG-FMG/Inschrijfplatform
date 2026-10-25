@@ -99,8 +99,9 @@ export async function personenVan(env: Env, contactIds: string[]): Promise<Map<s
       lijst.push({
         persoonId: r.persoon_id,
         contactId: r.contact_id,
-        voornaam: await ontsleutel(env, r.voornaam_enc),
-        naam: await ontsleutel(env, r.naam_enc),
+        // Onleesbaar (bv. een andere sleutel): de persoon blijft herkenbaar via naam_sleutel, enkel zonder naam.
+        voornaam: await ontsleutel(env, r.voornaam_enc).catch(() => null),
+        naam: await ontsleutel(env, r.naam_enc).catch(() => '(onleesbaar)'),
         sleutel: r.naam_sleutel,
       });
       uit.set(r.contact_id, lijst);
