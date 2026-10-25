@@ -23,10 +23,10 @@ export function willekeurigToken(bytes = 32): string {
     .replace(/=+$/, '');
 }
 
-const https = (env: Env) => new URL(env.PUBLIC_APP_URL).protocol === 'https:';
+export const https = (env: Env) => new URL(env.PUBLIC_APP_URL).protocol === 'https:';
 const cookieNaam = (env: Env) => (https(env) ? '__Host-beheer' : 'beheer');
 
-function leesCookie(request: Request, naam: string): string | null {
+export function leesCookie(request: Request, naam: string): string | null {
   for (const deel of (request.headers.get('Cookie') ?? '').split(';')) {
     const [k, ...v] = deel.trim().split('=');
     if (k === naam) return v.join('=');

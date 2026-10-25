@@ -171,10 +171,13 @@ export async function bewaarVoorinschrijving(env: Env, slug: string, body: any, 
 
   const formulierUrl = `${env.PUBLIC_APP_URL.replace(/\/$/, '')}/voorinschrijven/${f.slug}`;
   waitUntil(
-    verstuur(env, bevestigingsmail({
-      aan: v.email, ouder: v.ouderVoornaam, kind: `${v.kindVoornaam} ${v.kindNaam}`, formulier: f.titel, schooljaar: f.schooljaar,
-      formulierUrl, contactEmail: f.contact_email,
-    })).catch((e) => console.error('voorinschrijvingsmail', String(e).slice(0, 200))),
+    verstuur(env, {
+      ...bevestigingsmail({
+        aan: v.email, ouder: v.ouderVoornaam, kind: `${v.kindVoornaam} ${v.kindNaam}`, formulier: f.titel, schooljaar: f.schooljaar,
+        formulierUrl, contactEmail: f.contact_email,
+      }),
+      evenementId: f.evenement_id,
+    }).catch((e) => console.error('voorinschrijvingsmail', String(e).slice(0, 200))),
   );
   return { ok: true, bijgewerkt: !!bestaand };
 }

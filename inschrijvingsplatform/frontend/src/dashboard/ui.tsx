@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import qrcode from 'qrcode-generator';
 import type { Rol } from '../services/beheerApi';
 import { ApiFout } from '../types';
@@ -150,13 +150,13 @@ export function Venster({ titel, onSluit, children, breed }: { titel: string; on
 }
 
 // ---------------------------------------------------------------------------
-// QR-code voor de authenticator-app
+// QR-code (authenticator-app, of een link om een pagina op de smartphone te openen)
 // ---------------------------------------------------------------------------
-export function Qr({ tekst }: { tekst: string }) {
+export function Qr({ tekst, label = 'QR-code voor je authenticator-app', className = 'd-qr', style }: { tekst: string; label?: string; className?: string; style?: CSSProperties }) {
   const qr = qrcode(0, 'M');
   qr.addData(tekst);
   qr.make();
-  return <div className="d-qr" role="img" aria-label="QR-code voor je authenticator-app" dangerouslySetInnerHTML={{ __html: qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true }) }} />;
+  return <div className={className} style={style} role="img" aria-label={label} dangerouslySetInnerHTML={{ __html: qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true }) }} />;
 }
 
 export function Koppelen({ geheim, otpauth }: { geheim: string; otpauth: string }) {

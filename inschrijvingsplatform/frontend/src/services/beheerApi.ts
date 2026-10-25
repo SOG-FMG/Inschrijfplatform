@@ -2,7 +2,7 @@ import { ApiFout } from '../types';
 import { BASIS } from './api';
 
 /** Aanroepen voor het beheer. De sessie zit in een HttpOnly-cookie; hier is geen token om te bewaren. */
-async function call<T>(pad: string, init?: { method?: string; body?: unknown; ruw?: { data: Blob; type: string } }): Promise<T> {
+export async function call<T>(pad: string, init?: { method?: string; body?: unknown; ruw?: { data: Blob; type: string } }): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${BASIS}${pad}`, {
@@ -181,7 +181,7 @@ export interface Mailsjabloon {
   aangepast: { onderwerp: string; tekst: string; gewijzigdOp: string; gewijzigdDoor: string | null } | null;
 }
 
-const post = <T>(pad: string, body: unknown = {}) => call<T>(pad, { method: 'POST', body });
+export const post = <T>(pad: string, body: unknown = {}) => call<T>(pad, { method: 'POST', body });
 
 export const beheerApi = {
   profiel: () => call<Profiel>('/api/beheer/ik'),
@@ -373,6 +373,8 @@ export interface EtiketInstellingen {
   tussen: { horizontaal: number; verticaal: number };
   binnen: number;
   regels: EtiketRegel[];
+  /** QR-code voor de check-in rechts op het etiket (grootte in mm); null of ontbrekend = geen. */
+  qr?: { mm: number } | null;
 }
 
 export interface EtiketLesje {
@@ -392,6 +394,8 @@ export interface EtiketDeelnemer {
   doelgroep: string;
   dagdelen: string[];
   lesjes: EtiketLesje[];
+  /** Check-in-link (zelfde als de QR-code in de mail), voor de QR-code op het etiket. */
+  checkin: string;
 }
 
 export interface EtiketLokaal {

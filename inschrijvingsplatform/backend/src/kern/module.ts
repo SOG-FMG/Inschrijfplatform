@@ -48,10 +48,15 @@ export type Route =
   | { methode: Methode; pad: string; toegang: 'publiek'; handler: (ctx: PubliekCtx) => Promise<Antwoord> }
   | { methode: Methode; pad: string; toegang: 'beheer'; recht?: string; handler: (ctx: BeheerCtx) => Promise<Antwoord> };
 
+/** Rollen voor rechten: die van medewerkers, en de sessiegever (geen medewerker, zie modules/evenementen/sessiegevers.ts). */
+export type Rol = Gebruiker['rol'] | 'sessiegever';
+
 export interface Recht {
   omschrijving: string;
-  /** Rollen die dit recht krijgen tot rollen instelbaar worden (stap 0.7). */
-  rollen: Gebruiker['rol'][];
+  /** Rollen die dit recht standaard krijgen. */
+  rollen: Rol[];
+  /** Aan te passen per rol in Medewerkers → Rollen en rechten (tabel rol_rechten). Zonder: vast volgens `rollen`. */
+  instelbaar?: boolean;
 }
 
 export interface Taak {

@@ -5,6 +5,7 @@ import { cors, json, leesJson, nietGevonden } from './kern/http';
 import { installatie } from './kern/installatie';
 import type { BeheerCtx, PubliekCtx } from './kern/module';
 import { maakRegister, type Register } from './kern/register';
+import { leesAanpassingen } from './kern/rollen';
 import { huidigeGebruiker } from './kern/toegang';
 import { ALLE_MODULES } from './modules';
 import type { Env } from './types';
@@ -42,7 +43,7 @@ const naarResponse = (a: unknown) => (a instanceof Response ? a : json(a));
 
 async function beheerRoute(request: Request, env: Env, ctx: ExecutionContext, reg: Register, pad: string): Promise<Response> {
   const aangemeld = await huidigeGebruiker(request, env);
-  const gebruiker = { ...aangemeld, rechten: reg.rechtenVan(aangemeld) };
+  const gebruiker = { ...aangemeld, rechten: reg.rechtenVan(aangemeld, await leesAanpassingen(env, aangemeld.rol)) };
 
   // Account, passkeys en medewerkers (kern). Daarna moet een account zonder wachtwoord er eerst één instellen.
   const kern = await aanmeldBeheerRoute(request, env, gebruiker, pad);

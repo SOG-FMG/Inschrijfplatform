@@ -82,6 +82,8 @@ export function Evenementen({ profiel, naVerandering }: { profiel: Profiel; naVe
                   </td>
                   <td className="d-acties">
                     <Link href={`/dashboard/evenementen/${e.id}`}>Instellingen</Link>
+                    {profiel.rechten.includes('evenementen.overzicht_aanwezigen') && <Link href={`/dashboard/evenementen/${e.id}/aanwezigheid`}>Aanwezigheid</Link>}
+                    <Link href={`/dashboard/evenementen/${e.id}/sessiegevers`}>{hoofdletter(installatie.termen.sessiegevers)}</Link>
                     {isModuleActief(installatie, 'rapporten') && <Link href={rapportUrl(e.id)}>Rapporten</Link>}
                     {isModuleActief(installatie, 'etiketten') && <Link href={etiketUrl(e.id)}>Etiketten</Link>}
                     <a href={beheerApi.csvUrl(e.id)} download>Deelnemers (Excel)</a>
@@ -98,6 +100,8 @@ export function Evenementen({ profiel, naVerandering }: { profiel: Profiel; naVe
     </>
   );
 }
+
+const hoofdletter = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 const maakSlug = (t: string) =>
   t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80);

@@ -9,15 +9,22 @@ export interface Installatie {
   organisatie: string;
   /** Toegelaten e-maildomeinen voor medewerkers, in kleine letters. ['*'] = elk adres (enkel op uitnodiging). */
   aanmeldDomeinen: string[];
+  /**
+   * Hoe deze organisatie dingen noemt. Intern heet het altijd zo (sessiegever); op het scherm en in mails de term
+   * van de installatie, bv. lesgever (school) of spreker/artiest (cultuurcentrum). Kleine letters.
+   */
+  termen: { sessiegever: string; sessiegevers: string };
 }
 
 export function installatie(env: Env): Installatie {
+  const enkel = env.TERM_SESSIEGEVER?.trim().toLowerCase() || 'sessiegever';
   return {
     organisatie: env.ORGANISATIE_NAAM?.trim() || 'Inschrijvingsplatform',
     aanmeldDomeinen: (env.AANMELD_DOMEINEN ?? '')
       .split(',')
       .map((d) => d.trim().toLowerCase().replace(/^@/, ''))
       .filter(Boolean),
+    termen: { sessiegever: enkel, sessiegevers: env.TERM_SESSIEGEVERS?.trim().toLowerCase() || `${enkel}s` },
   };
 }
 

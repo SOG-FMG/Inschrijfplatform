@@ -12,7 +12,7 @@ import {
 } from '../services/beheerApi';
 import { etiketUrl } from './Etiketten';
 import { download, maakXlsx, type Blad, type Cel } from './excel';
-import { foutTekst, Link, Melding } from './ui';
+import { foutTekst, Link, Melding, Qr } from './ui';
 
 /**
  * Rapporten van een evenement (/dashboard/evenementen/<id>/rapporten?r=dagdeel|moment|lesje).
@@ -375,12 +375,13 @@ export function Rapporten({ evenementId, profiel }: { evenementId: string; profi
             {soort === 'dagdeel' && (
               <OverzichtDagdeel
                 p={p}
+                evenementId={evenementId}
                 metWijz={metWijz}
                 locaties={data.locaties}
                 wijzigSessie={(id, w) => setSessieWijz((oud) => ({ ...oud, [id]: { ...oud[id], ...w } }))}
               />
             )}
-            {soort === 'moment' && <PerMoment p={p} metWijz={metWijz} />}
+            {soort === 'moment' && <PerMoment p={p} metWijz={metWijz} evenementId={evenementId} />}
             {soort === 'lesje' && <Klaslijst p={p} metWijz={metWijz} />}
             <footer className="r-voet">{voettekst}</footer>
           </section>
@@ -390,11 +391,20 @@ export function Rapporten({ evenementId, profiel }: { evenementId: string; profi
   );
 }
 
+/**
+ * Kleine QR-code op elk rapport: de klaslijst opent de live tabel van dat lesje (/les/<id>, voor de sessiegever),
+ * de overzichten openen de aanwezigheid van het hele evenement (onthaal).
+ */
+function OverzichtQr({ evenementId }: { evenementId: string }) {
+  return <Qr tekst={`${location.origin}/dashboard/evenementen/${evenementId}/aanwezigheid`} label="QR-code: live aanwezigheid" className="r-qr r-qr--kop" />;
+}
+
 // ---------------------------------------------------------------------------
 // 1. Overzicht per dagdeel
 // ---------------------------------------------------------------------------
-function OverzichtDagdeel({ p, metWijz, locaties, wijzigSessie }: {
+function OverzichtDagdeel({ p, metWijz, locaties, wijzigSessie, evenementId }: {
   p: Pagina;
+  evenementId: string;
   metWijz: (s: RapportSessie) => RapportSessie;
   locaties: Rapport['locaties'];
   wijzigSessie: (id: string, w: SessieWijziging) => void;
@@ -406,6 +416,7 @@ function OverzichtDagdeel({ p, metWijz, locaties, wijzigSessie }: {
       <header className="r-kop">
         <h2><T k={`dd:${dagdeel.id}.r1`} s={`${dag.naam} – ${dagdeel.naam}`} /></h2>
         <span className="r-kop__totaal"><T k="r1.totaal" s="Totaal ingeschreven" />: {dagdeel.ingeschreven}{dagdeel.capaciteit != null && ` / ${dagdeel.capaciteit}`}</span>
+        <OverzichtQr evenementId={evenementId} />
       </header>
       {dagdeel.tijdsblokken.length === 0 && <p>Geen keuzemomenten in dit dagdeel.</p>}
       {dagdeel.tijdsblokken.map((tb) => (
@@ -484,7 +495,7 @@ function momentKolommen(tb: RapportTijdsblok, metWijz: (s: RapportSessie) => Rap
   return kolommen;
 }
 
-function PerMoment({ p, metWijz }: { p: Pagina; metWijz: (s: RapportSessie) => RapportSessie }) {
+function PerMoment({ p, metWijz, evenementId }: { p: Pagina; metWijz: (s: RapportSessie) => RapportSessie; evenementId: string }) {
   const b = useContext(BewerkContext);
   const tb = p.tijdsblok!;
   const kolommen = momentKolommen(tb, metWijz, b.tekst);
@@ -494,6 +505,7 @@ function PerMoment({ p, metWijz }: { p: Pagina; metWijz: (s: RapportSessie) => R
       <header className="r-kop">
         <h2><T k={`tb:${tb.id}.r2`} s={`${p.dagdeel.naam} ${tb.naam} – start ${tb.startUur}`} /></h2>
         <span className="r-kop__totaal">{p.dag.naam}</span>
+        <OverzichtQr evenementId={evenementId} />
       </header>
       <table className="r-tabel r-tabel--kolommen">
         <thead>
@@ -536,6 +548,7 @@ function Klaslijst({ p, metWijz }: { p: Pagina; metWijz: (s: RapportSessie) => R
   return (
     <>
       <header className="r-balk">
+        <Qr tekst={`${location.origin}/les/${s.id}`} label={`QR-code: live aanwezigheid van ${s.titel}`} className="r-qr" />
         <h2><T k={`tb:${tb.id}.r3`} s={`${p.dagdeel.naam.toUpperCase()} ${tb.naam}: ${tb.startUur} – ${tb.eindUur}`} /></h2>
         <p className="r-balk__lesje">{s.titel}</p>
         <p className="r-balk__info">

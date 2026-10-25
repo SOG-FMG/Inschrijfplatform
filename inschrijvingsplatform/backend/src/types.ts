@@ -9,6 +9,9 @@ export interface Env {
   ORGANISATIE_NAAM?: string;
   /** Komma-gescheiden e-maildomeinen voor medewerkers, bv. "onderwijs.gent.be". "*" = elk adres (enkel op uitnodiging). Leeg = niemand. */
   AANMELD_DOMEINEN?: string;
+  /** Hoe deze organisatie een sessiegever noemt (lesgever, spreker, artiest). Enkel en meervoud. */
+  TERM_SESSIEGEVER?: string;
+  TERM_SESSIEGEVERS?: string;
   /** Komma-gescheiden ids van de actieve modules (src/modules/index.ts). Ontbreekt het, dan zijn alle modules actief. */
   MODULES?: string;
   /** Optioneel: mailbox die een seintje krijgt bij een nieuwe melding (enkel een adres van AANMELD_DOMEINEN). */

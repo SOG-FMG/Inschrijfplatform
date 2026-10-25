@@ -8,17 +8,21 @@ import { BASIS, isDemo } from './api';
 export interface Installatie {
   organisatie: string;
   aanmeldDomeinen: string[];
+  /** Hoe deze organisatie dingen noemt (kleine letters), bv. sessiegever = lesgever of spreker. */
+  termen: { sessiegever: string; sessiegevers: string };
   /** Actieve modules (backend/src/modules); leeg zolang het profiel laadt. */
   modules: string[];
 }
 
-const LEEG: Installatie = { organisatie: '', aanmeldDomeinen: [], modules: [] };
+const STANDAARD_TERMEN = { sessiegever: 'sessiegever', sessiegevers: 'sessiegevers' };
+const LEEG: Installatie = { organisatie: '', aanmeldDomeinen: [], termen: STANDAARD_TERMEN, modules: [] };
 let geladen: Promise<Installatie> | null = null;
 
 export function laadInstallatie(): Promise<Installatie> {
-  if (isDemo) return Promise.resolve({ organisatie: 'Demo', aanmeldDomeinen: ['*'], modules: [] });
+  if (isDemo) return Promise.resolve({ organisatie: 'Demo', aanmeldDomeinen: ['*'], termen: STANDAARD_TERMEN, modules: [] });
   geladen ??= fetch(`${BASIS}/api/installatie`)
     .then((r) => (r.ok ? (r.json() as Promise<Installatie>) : LEEG))
+    .then((i) => ({ ...i, termen: i.termen ?? STANDAARD_TERMEN }))
     .catch(() => {
       geladen = null; // later opnieuw proberen
       return LEEG;

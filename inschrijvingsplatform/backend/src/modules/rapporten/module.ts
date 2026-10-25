@@ -22,7 +22,7 @@ async function mailKlaslijsten(env: Env, g: Gebruiker, evenementId: string, body
       lijsten: lijsten.map((l) => ({ titel: l.sessie.titel, moment: l.moment, uur: l.uur, lokaal: l.sessie.lokaal, capaciteit: l.sessie.capaciteit, deelnemers: l.sessie.deelnemers })),
     });
     try {
-      await verstuur(env, mail);
+      await verstuur(env, { ...mail, evenementId });
       verzonden++;
     } catch (e) {
       console.error('klaslijstmail', String(e).slice(0, 200));

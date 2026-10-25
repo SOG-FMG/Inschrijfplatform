@@ -41,5 +41,15 @@ test('GET /api/installatie geeft naam, domeinen en actieve modules, zonder aanme
   const env = { ORGANISATIE_NAAM: 'Cultureel Centrum Meulestede', AANMELD_DOMEINEN: 'meulestede.be', MODULES: 'evenementen,meldingen', ALLOWED_ORIGINS: '' } as Env;
   const res = await worker.fetch(new Request('http://localhost/api/installatie'), env, {} as ExecutionContext);
   expect(res.status).toBe(200);
-  expect(await res.json()).toEqual({ organisatie: 'Cultureel Centrum Meulestede', aanmeldDomeinen: ['meulestede.be'], modules: ['kern', 'evenementen', 'meldingen'] });
+  expect(await res.json()).toEqual({ organisatie: 'Cultureel Centrum Meulestede', aanmeldDomeinen: ['meulestede.be'], termen: { sessiegever: 'sessiegever', sessiegevers: 'sessiegevers' }, modules: ['kern', 'evenementen', 'meldingen'],
+  });
+});
+
+test('de term voor een sessiegever volgt de installatie', async () => {
+  const env = { ORGANISATIE_NAAM: 'CC', AANMELD_DOMEINEN: 'meulestede.be', MODULES: 'evenementen', ALLOWED_ORIGINS: '', TERM_SESSIEGEVER: ' Artiest ', TERM_SESSIEGEVERS: 'artiesten' } as Env;
+  const res = await worker.fetch(new Request('http://localhost/api/installatie'), env, {} as ExecutionContext);
+  expect(((await res.json()) as any).termen).toEqual({ sessiegever: 'artiest', sessiegevers: 'artiesten' });
+  const zonderMeervoud = { ...env, TERM_SESSIEGEVERS: undefined, TERM_SESSIEGEVER: 'spreker' } as Env;
+  expect(((await (await worker.fetch(new Request('http://localhost/api/installatie'), zonderMeervoud, {} as ExecutionContext)).json()) as any).termen)
+    .toEqual({ sessiegever: 'spreker', sessiegevers: 'sprekers' });
 });

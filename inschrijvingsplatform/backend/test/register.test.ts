@@ -67,9 +67,28 @@ describe('rechten', () => {
   });
 
   test('rechtenVan geeft enkel rechten van actieve modules', () => {
-    expect(r.rechtenVan(gebruiker('platformbeheerder'))).toEqual(['kern.mail.testen', 'kern.gebruikers.beheren', 'evenementen.aanmaken', 'meldingen.beheren', 'voorinschrijvingen.beheren', 'mailsjablonen.beheren']);
-    expect(r.rechtenVan(gebruiker('organisator'))).toEqual([]);
+    expect(r.rechtenVan(gebruiker('platformbeheerder'))).toEqual([
+      'kern.mail.testen', 'kern.gebruikers.beheren', 'evenementen.aanmaken', 'evenementen.sessiegevers.beheren', 'evenementen.inchecken',
+      'evenementen.sessie_inzien', 'evenementen.lesje_wijzigen', 'evenementen.overboeken', 'evenementen.overzicht_aanwezigen',
+      'meldingen.beheren', 'voorinschrijvingen.beheren', 'mailsjablonen.beheren',
+    ]);
+    expect(r.rechtenVan(gebruiker('organisator'))).not.toContain('meldingen.beheren');
+    expect(r.rechtenVan(gebruiker('onthaal'))).toEqual(['evenementen.inchecken', 'evenementen.sessie_inzien', 'evenementen.lesje_wijzigen', 'evenementen.overboeken', 'evenementen.overzicht_aanwezigen']);
+    expect(r.rechtenVanRol('sessiegever')).toEqual(['evenementen.inchecken', 'evenementen.sessie_inzien']);
     expect(maakRegister(ALLE_MODULES, 'evenementen').rechtenVan(gebruiker('platformbeheerder'))).not.toContain('meldingen.beheren');
+  });
+
+  test('aanpassingen per rol gelden enkel voor instelbare rechten; de platformbeheerder houdt alles', () => {
+    const a = new Map([
+      ['onthaal evenementen.overboeken', false],
+      ['sessiegever evenementen.lesje_wijzigen', true],
+      ['organisator meldingen.beheren', true], // niet instelbaar: genegeerd
+      ['platformbeheerder evenementen.inchecken', false],
+    ]);
+    expect(r.rechtenVan(gebruiker('onthaal'), a)).not.toContain('evenementen.overboeken');
+    expect(r.rechtenVanRol('sessiegever', a)).toContain('evenementen.lesje_wijzigen');
+    expect(r.rechtenVan(gebruiker('organisator'), a)).not.toContain('meldingen.beheren');
+    expect(r.rechtenVan(gebruiker('platformbeheerder'), a)).toContain('evenementen.inchecken');
   });
 });
 

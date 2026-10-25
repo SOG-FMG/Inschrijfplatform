@@ -3,13 +3,15 @@ import { anonimiseerEvenement, anonimiseerVerlopenEvenementen, deelnemerslijst, 
 import { meldAf, voorinvulling } from './uitnodigingen';
 import { publiekEvenement } from './evenement';
 import { bewaarLogo, instellingen, isSoort, kopieerDagdeel, kopieerSessies, maak, verwijder, verwijderLogo, wijzig } from './instellingen';
-import { annulatieGegevens, annuleerViaToken, registratieViaToken, registreer, wijzigKeuzesViaToken } from './registratie';
-import { checkinUrl } from '../../kern/checkin';
+import { annulatieGegevens, annuleerViaToken, mailGegevens, registratieViaToken, registreer, wijzigKeuzesViaToken } from './registratie';
+import { checkinUrl, leesVersie } from '../../kern/checkin';
+import { basisUrl, qrMailsTeVersturen, stuurEnLog, verstuurQrMails, verwittigNaWijzigingDoorSchool } from './checkin';
+import { AANWEZIGHEID_ROUTES } from './routes-aanwezigheid';
 import { qrPng } from '../../kern/qr';
 import { botcontroleMislukt, controleerTurnstile, csv, json, nietGevonden, nieuwToken, teSnel, teVeelAanvragen } from '../../kern/http';
 import { defineModule, type PubliekCtx } from '../../kern/module';
 import { type Mail, verstuur } from '../../mail';
-import { annulatiemail, bevestigingsmail, SJABLONEN, wijzigingsmail } from './mails';
+import { annulatiemail, bevestigingsmail, overzichtsmail, SJABLONEN, wijzigingsmail } from './mails';
 import type { Env } from '../../types';
 import { isUuid, ValidatieFout, valideerRegistratie } from '../../validatie';
 
@@ -19,20 +21,6 @@ import { isUuid, ValidatieFout, valideerRegistratie } from '../../validatie';
  * inschrijvingen zitten hier nog samen; ze worden gesplitst in fase 3 (bestelling + tickets).
  */
 
-/** Verstuurt een mail op de achtergrond en bewaart het resultaat (zonder inhoud) in mail_berichten. */
-function stuurEnLog(env: Env, ctx: PubliekCtx, deelnemerId: string, mail: Mail) {
-  const log = (status: string, fout?: string) =>
-    env.DB.prepare(`insert into mail_berichten (bericht_id, deelnemer_id, type, status, fout) values (?, ?, ?, ?, ?)`)
-      .bind(crypto.randomUUID(), deelnemerId, mail.type ?? 'bericht', status, fout ?? null)
-      .run();
-  ctx.waitUntil(
-    verstuur(env, mail)
-      .then((status) => log(status))
-      .catch((e) => log('mislukt', String(e).slice(0, 500))),
-  );
-}
-
-const basisUrl = (env: Env) => env.PUBLIC_APP_URL.replace(/\/$/, '');
 const ids = (x: unknown) => (Array.isArray(x) && x.length >= 1 && x.length <= 200 && x.every((i) => typeof i === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(i)) ? (x as string[]) : null);
 
 export default defineModule({
@@ -43,9 +31,29 @@ export default defineModule({
 
   rechten: {
     'evenementen.aanmaken': { omschrijving: 'Een nieuw evenement aanmaken', rollen: [] },
+    'evenementen.sessiegevers.beheren': { omschrijving: 'Sessiegevers toevoegen, wijzigen en verwijderen', rollen: ['schoolbeheerder', 'organisator'] },
+    // Voor de dag zelf; aan te passen in Medewerkers → Rollen en rechten. Het bereik (welk evenement, welke sessie) blijft apart.
+    'evenementen.inchecken': {
+      omschrijving: 'Aanwezigheid registreren en ongedaan maken (scannen, balie, in de klas)',
+      rollen: ['schoolbeheerder', 'organisator', 'onthaal', 'sessiegever'], instelbaar: true,
+    },
+    'evenementen.sessie_inzien': {
+      omschrijving: 'De deelnemers van een sessie bekijken (sessiegever: enkel de eigen sessies)',
+      rollen: ['schoolbeheerder', 'organisator', 'onthaal', 'sessiegever'], instelbaar: true,
+    },
+    'evenementen.lesje_wijzigen': {
+      omschrijving: 'Het lesje van een deelnemer aanpassen, binnen de vrije plaatsen',
+      rollen: ['schoolbeheerder', 'organisator', 'onthaal'], instelbaar: true,
+    },
+    'evenementen.overboeken': { omschrijving: 'Een lesje kiezen dat vol zit (overboeken)', rollen: ['schoolbeheerder', 'organisator', 'onthaal'], instelbaar: true },
+    'evenementen.overzicht_aanwezigen': {
+      omschrijving: 'Het aanwezigheidsoverzicht van het hele evenement zien',
+      rollen: ['schoolbeheerder', 'organisator', 'onthaal'], instelbaar: true,
+    },
   },
 
   routes: [
+    ...AANWEZIGHEID_ROUTES,
     // ---- publiek ----
     {
       methode: 'GET',
@@ -73,7 +81,8 @@ export default defineModule({
         const resultaat = await registreer(env, params.slug, invoer, await sha256(token), checkinToken);
 
         const beheerUrl = `${basisUrl(env)}/beheer/${token}`;
-        const checkin = { basisUrl: basisUrl(env), token: checkinToken };
+        // Een nieuwe inschrijving heeft versie 1 (registreer() zet dat zo).
+        const checkin = { basisUrl: basisUrl(env), token: checkinToken, versie: 1 };
         stuurEnLog(env, ctx, resultaat.deelnemerId, bevestigingsmail(resultaat, invoer.deelnemer.email, invoer.deelnemer.voornaam, beheerUrl, checkin));
 
         const { deelnemerId: _intern, ...publiek } = resultaat;
@@ -102,10 +111,11 @@ export default defineModule({
       methode: 'GET',
       pad: '/checkin/:token:token/qr.png',
       toegang: 'publiek',
-      async handler({ env, params }) {
+      async handler({ env, request, params }) {
         const dn = await env.DB.prepare(`select 1 as ok from deelnemers where checkin_token = ? and geanonimiseerd_op is null`).bind(params.token).first();
         if (!dn) return nietGevonden();
-        return new Response(await qrPng(checkinUrl(basisUrl(env), params.token)), {
+        const versie = leesVersie(new URL(request.url).searchParams.get('v')) ?? 1;
+        return new Response(await qrPng(checkinUrl({ basisUrl: basisUrl(env), token: params.token, versie })), {
           headers: { 'Content-Type': 'image/png', 'Cache-Control': 'private, max-age=3600', 'Content-Security-Policy': "default-src 'none'" },
         });
       },
@@ -153,10 +163,12 @@ export default defineModule({
         }
         const { gewijzigd } = await wijzigKeuzesViaToken(env, hash, sessies);
         const overzicht = await registratieViaToken(env, hash);
-        const gegevens = gewijzigd ? await annulatieGegevens(env, hash) : null;
-        if (gegevens?.email && overzicht) {
+        const id = gewijzigd ? (await annulatieGegevens(env, hash))?.deelnemerId : null;
+        const gegevens = id ? await mailGegevens(env, id) : null;
+        if (gegevens && overzicht) {
           const beheerUrl = `${basisUrl(env)}/beheer/${params.token}`;
-          stuurEnLog(env, ctx, gegevens.deelnemerId, wijzigingsmail({ ...gegevens, aan: gegevens.email, keuzes: overzicht.keuzes, beheerUrl }));
+          const checkin = { basisUrl: basisUrl(env), ...gegevens.checkin };
+          stuurEnLog(env, ctx, gegevens.deelnemerId, wijzigingsmail({ ...gegevens, aan: gegevens.email, keuzes: overzicht.keuzes, beheerUrl, checkin }), true);
         }
         return json(overzicht);
       },
@@ -268,7 +280,9 @@ export default defineModule({
       async handler(ctx) {
         const body = await ctx.leesJson(4096);
         if (!isUuid(body?.van) || !isUuid(body?.naar)) throw new ValidatieFout({ dagdeel: 'Geef van en naar op.' });
-        return verplaatsDagdeel(ctx.env, ctx.gebruiker, ctx.params.id, body.van, body.naar, body?.forceer === true);
+        const r = await verplaatsDagdeel(ctx.env, ctx.gebruiker, ctx.params.id, body.van, body.naar, body?.forceer === true);
+        if (body?.verwittig !== false) await verwittigNaWijzigingDoorSchool(ctx.env, ctx, ctx.params.id);
+        return r;
       },
     },
     {
@@ -278,8 +292,23 @@ export default defineModule({
       async handler(ctx) {
         const body = await ctx.leesJson(4096);
         if (!isUuid(body?.sessieId)) throw new ValidatieFout({ sessieId: 'Geef een sessie op.' });
-        return kenSessieToe(ctx.env, ctx.gebruiker, ctx.params.id, body.sessieId, body?.forceer === true);
+        const r = await kenSessieToe(ctx.env, ctx.gebruiker, ctx.params.id, body.sessieId, body?.forceer === true);
+        if (body?.verwittig !== false) await verwittigNaWijzigingDoorSchool(ctx.env, ctx, ctx.params.id);
+        return r;
       },
+    },
+    // QR-code mailen aan inschrijvingen van vóór de QR-code (per klik QR_MAILS_PER_KEER)
+    {
+      methode: 'GET',
+      pad: '/evenementen/:id:uuid/qrcode-mails',
+      toegang: 'beheer',
+      handler: ({ env, gebruiker, params }) => qrMailsTeVersturen(env, gebruiker, params.id),
+    },
+    {
+      methode: 'POST',
+      pad: '/evenementen/:id:uuid/qrcode-mails',
+      toegang: 'beheer',
+      handler: ({ env, gebruiker, params, ip }) => verstuurQrMails(env, gebruiker, params.id, basisUrl(env), ip),
     },
   ],
 

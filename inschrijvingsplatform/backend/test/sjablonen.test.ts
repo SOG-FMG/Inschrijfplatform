@@ -58,7 +58,7 @@ describe('de sjablonen van alle modules', () => {
   const alle = ALLE_MODULES.flatMap((m) => m.mailsjablonen ?? []);
 
   test('er zijn sjablonen, met unieke sleutels', () => {
-    expect(alle.map((s) => s.sleutel).sort()).toEqual(['annulatie', 'bevestiging', 'herinnering', 'klaslijst', 'uitnodiging', 'voorinschrijving', 'wijziging']);
+    expect(alle.map((s) => s.sleutel).sort()).toEqual(['aanmeldcode', 'annulatie', 'bevestiging', 'herinnering', 'klaslijst', 'qrcode', 'schoolwijziging', 'sessiegever', 'uitnodiging', 'voorinschrijving', 'wijziging']);
   });
 
   test.each(alle.map((s) => [s.sleutel, s] as const))('%s: standaardtekst gebruikt enkel bestaande velden en geeft een volledige mail', (_, s) => {

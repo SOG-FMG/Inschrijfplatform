@@ -414,18 +414,16 @@ export async function verstuurUitnodigingen(env: Env, g: Gebruiker, importId: st
     const kinderenInMail = c.links.filter((l) => l.persoonId);
     const ander = c.links.find((l) => !l.persoonId);
     try {
-      await verstuur(
-        env,
-        uitnodigingsmail({
-          aan: c.email,
-          evenement: ev.titel,
-          inschrijvingTot: ev.inschrijving_tot,
-          contactEmail: ev.contact_email,
-          herinnering: soort === 'herinnering',
-          kinderen: kinderenInMail.map((l) => ({ naam: volledigeNaam(l), inschrijven: link(l.token), afmelden: link(l.token, '&afmelden=1') })),
-          anderKind: ander ? link(ander.token) : null,
-        }),
-      );
+      const mail = uitnodigingsmail({
+        aan: c.email,
+        evenement: ev.titel,
+        inschrijvingTot: ev.inschrijving_tot,
+        contactEmail: ev.contact_email,
+        herinnering: soort === 'herinnering',
+        kinderen: kinderenInMail.map((l) => ({ naam: volledigeNaam(l), inschrijven: link(l.token), afmelden: link(l.token, '&afmelden=1') })),
+        anderKind: ander ? link(ander.token) : null,
+      });
+      await verstuur(env, { ...mail, evenementId });
       await markeerVerstuurd(env, c.uitnodigingIds);
       verstuurd++;
     } catch (e) {

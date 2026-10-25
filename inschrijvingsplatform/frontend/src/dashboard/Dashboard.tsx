@@ -34,7 +34,12 @@ export function Dashboard() {
   const laad = useCallback(() => {
     beheerApi
       .profiel()
-      .then(setProfiel)
+      .then((p) => {
+        // ?na=/checkin/… : na het aanmelden terug naar de pagina die erom vroeg (enkel een pad op deze site).
+        const na = new URLSearchParams(location.search).get('na');
+        if (na && /^\/(?!\/)/.test(na)) return location.replace(na);
+        setProfiel(p);
+      })
       .catch(() => setProfiel(null));
   }, []);
   useEffect(() => {

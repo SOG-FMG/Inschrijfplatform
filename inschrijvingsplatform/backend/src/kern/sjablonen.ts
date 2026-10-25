@@ -140,19 +140,37 @@ export const VOETTEKST_VELDEN: SjabloonVeld[] = [
 ];
 
 /**
- * Verpakt de inhoud van een mail: banner bovenaan, inhoud, banner onderaan, eigen voettekst en altijd de regel
+ * Verpakt de inhoud van een mail: banner bovenaan (of anders het logo van het evenement), inhoud, banner onderaan, eigen voettekst en altijd de regel
  * wie de mail stuurt, via welk platform en waarom. Tabellen en inline stijl: zo tonen ook Outlook en Gmail het goed.
  */
-export function verpakMail(inhoud: string, p: { opmaak: Mailopmaak; organisatie: string; basisUrl: string; reden: string | undefined }): string {
+/** Logo van het formulier: bovenaan de mail als er geen eigen banner is (zie verstuur()). */
+export interface MailLogo {
+  /** Publiek pad, bv. /api/logo/<evenement>?v=… */
+  pad: string;
+  hoogte: number | null;
+  /** Hoofdkleur van het evenement (#rrggbb), als lijn onder het logo. */
+  kleur: string | null;
+}
+
+/** Hoogste logo in een mail (px); het formulier toont standaard 135. */
+const MAX_LOGO_HOOGTE = 120;
+
+export function verpakMail(inhoud: string, p: { opmaak: Mailopmaak; organisatie: string; basisUrl: string; reden: string | undefined; logo?: MailLogo | null }): string {
   const website = p.basisUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
   const beeld = (pad: string, alt: string, breedte: number) =>
     `<img src="${esc(p.basisUrl.replace(/\/$/, '') + pad)}" alt="${esc(alt)}" width="${breedte}" style="display:block;width:100%;max-width:${breedte}px;height:auto;border:0">`;
+  const logoRij = (l: MailLogo) => {
+    const h = Math.min(l.hoogte ?? MAX_LOGO_HOOGTE, MAX_LOGO_HOOGTE);
+    const lijn = l.kleur && /^#[0-9a-f]{6}$/i.test(l.kleur) ? `border-bottom:4px solid ${l.kleur};` : '';
+    return `<tr><td align="center" style="padding:16px 24px;${lijn}"><img src="${esc(p.basisUrl.replace(/\/$/, '') + l.pad)}" alt="${esc(p.organisatie)}" height="${h}" style="display:block;height:${h}px;width:auto;max-width:100%;border:0"></td></tr>`;
+  };
+  const kop = p.opmaak.kopBanner ? `<tr><td>${beeld(p.opmaak.kopBanner, p.organisatie, 600)}</td></tr>` : p.logo ? logoRij(p.logo) : '';
   const eigen = p.opmaak.voettekst ? maakHtml(p.opmaak.voettekst, { organisatie: p.organisatie, website }) : '';
   const vast = `<p>Deze mail werd verstuurd door ${esc(p.organisatie)} via het inschrijvingsplatform <a href="${esc(p.basisUrl)}">${esc(website)}</a>.
 Je ontvangt ze omdat ${esc(p.reden ?? `je via dit platform contact had met ${p.organisatie}`)}.</p>`;
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9"><tr><td align="center" style="padding:16px 8px">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#ffffff;border-collapse:collapse">
-${p.opmaak.kopBanner ? `<tr><td>${beeld(p.opmaak.kopBanner, p.organisatie, 600)}</td></tr>` : ''}
+${kop}
 <tr><td style="padding:20px 24px;font:15px/1.5 Arial,Helvetica,sans-serif;color:#1b1f24">
 ${inhoud}
 </td></tr>

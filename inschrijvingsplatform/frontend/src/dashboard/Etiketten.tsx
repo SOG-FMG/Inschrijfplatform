@@ -7,7 +7,8 @@ import {
   type EtiketRegel,
   type Etiketten as EtikettenData,
 } from '../services/beheerApi';
-import { foutTekst, Link, Melding } from './ui';
+import { useInstallatie } from '../services/installatie';
+import { foutTekst, Link, Melding, Qr } from './ui';
 
 /**
  * Etiketten van een evenement (/dashboard/evenementen/<id>/etiketten): één etiket per deelnemer.
@@ -31,6 +32,7 @@ export const STANDAARD: EtiketInstellingen = {
     { tekst: '{nr}) {verdieping}', pt: 10, vet: false, passend: false, perLesje: true },
     { tekst: '{lesje}', pt: 10, vet: true, passend: false, perLesje: true },
   ],
+  qr: { mm: 14 },
 };
 
 const VELDEN: [string, string][] = [
@@ -92,6 +94,7 @@ const mm = (n: number) => `${Math.round(n * 100) / 100}mm`;
 const getal = (n: number) => n.toLocaleString('nl-BE', { maximumFractionDigits: 1 });
 
 export function Etiketten({ evenementId }: { evenementId: string }) {
+  const installatie = useInstallatie();
   const [data, setData] = useState<EtikettenData | null>(null);
   const [fout, setFout] = useState<string | null>(null);
   const [inst, setInst] = useState<EtiketInstellingen>(STANDAARD);
@@ -138,11 +141,11 @@ export function Etiketten({ evenementId }: { evenementId: string }) {
     return data.deelnemers
       .filter((d) => dagdeelId === 'alle' || d.dagdelen.includes(dagdeelId))
       .sort((a, b) => (sorteer === 'school' ? nl.compare(a.school, b.school) : 0) || nl.compare(a.naam, b.naam) || nl.compare(a.voornaam, b.voornaam))
-      .map((d) => regelsVan(d, d.lesjes.filter((l) => dagdeelId === 'alle' || l.dagdeelId === dagdeelId), inst.regels, lok, data.evenement.titel));
+      .map((d) => ({ checkin: d.checkin, regels: regelsVan(d, d.lesjes.filter((l) => dagdeelId === 'alle' || l.dagdeelId === dagdeelId), inst.regels, lok, data.evenement.titel) }));
   }, [data, lokalen, dagdeelId, sorteer, inst.regels]);
 
   // Lege plaatsen vooraan (voor een blad dat al deels gebruikt is), dan per blad verdelen
-  const vakjes: (Regel[] | null)[] = [...Array(Math.min(Math.max(start, 1), perBlad) - 1).fill(null), ...etiketten];
+  const vakjes: ({ checkin: string; regels: Regel[] } | null)[] = [...Array(Math.min(Math.max(start, 1), perBlad) - 1).fill(null), ...etiketten];
   const bladen = pastNiet ? [] : Array.from({ length: Math.ceil(vakjes.length / perBlad) }, (_, i) => vakjes.slice(i * perBlad, (i + 1) * perBlad));
 
   // Passende regels verkleinen tot ze op één lijn passen; tellen hoeveel etiketten overlopen
@@ -298,6 +301,13 @@ export function Etiketten({ evenementId }: { evenementId: string }) {
               <br />
               Opeenvolgende regels met “Per lesje” worden samen herhaald voor elk lesje, in de volgorde van de dag.
             </p>
+            <div className="d-inline">
+              <label className="d-keuze">
+                <input type="checkbox" checked={!!inst.qr} disabled={!data.kanSchrijven} onChange={(e) => zet({ qr: e.target.checked ? { mm: 14 } : null })} />
+                QR-code voor de check-in (de {installatie.termen.sessiegever} scant ze in de klas)
+              </label>
+              {inst.qr && nummer(inst.qr.mm, (n) => zet({ qr: { mm: Math.min(40, Math.max(8, n)) } }), 'Grootte (mm)', 1)}
+            </div>
           </section>
 
           {lokalen.length > 0 && (
@@ -367,8 +377,8 @@ export function Etiketten({ evenementId }: { evenementId: string }) {
       <div className="e-voorbeeld" ref={voorbeeld}>
         {bladen.map((blad, b) => (
           <div key={b} className="e-blad" style={{ width: mm(inst.blad.breedte), height: mm(inst.blad.hoogte) }}>
-            {blad.map((regels, i) =>
-              regels && (
+            {blad.map((etiket, i) =>
+              etiket && (
                 <div
                   key={i}
                   className="e-etiket"
@@ -378,9 +388,15 @@ export function Etiketten({ evenementId }: { evenementId: string }) {
                     width: mm(breedte),
                     height: mm(hoogte),
                     padding: mm(inst.binnen),
+                    // Ruimte voor de QR-code rechts, zodat de tekst er niet onder loopt
+                    paddingRight: inst.qr ? mm(inst.binnen + inst.qr.mm + 1) : undefined,
                   }}
                 >
-                  {regels.map((x, n) => (
+                  {inst.qr && (
+                    <Qr tekst={etiket.checkin} label="QR-code voor de check-in" className="e-qr"
+                      style={{ top: mm(inst.binnen), right: mm(inst.binnen), width: mm(inst.qr.mm), height: mm(inst.qr.mm) }} />
+                  )}
+                  {etiket.regels.map((x, n) => (
                     <div
                       key={n}
                       className={x.r.passend ? 'e-regel e-regel--passend' : 'e-regel'}

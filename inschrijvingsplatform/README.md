@@ -236,10 +236,6 @@ Persoonsgegevens staan versleuteld in D1. Rechtstreeks met SQL in de database ki
 
 - Beheerdashboard: deelnemerslijst op het scherm, verplaatsen.
 - Herinneringsmail en mail bij doorschuiven van de wachtlijst.
-- QR-check-in op de dag zelf (fase 2): de scanner voor het onthaal. Wat al bestaat:
-  - Elke nieuwe inschrijving krijgt een eigen `checkin_token` (los van de beheerlink). Bestaande inschrijvingen hebben er geen.
-  - De bevestigingsmail bevat onderaan een QR-code, ook onder een aangepaste mailtekst. De code bevat enkel `<PUBLIC_APP_URL>/checkin/<token>`, zonder persoonsgegevens (`src/kern/checkin.ts`).
-  - De afbeelding komt van `GET /api/checkin/<token>/qr.png`. `/checkin/<token>` toont voorlopig enkel uitleg.
-  - De velden `aanwezig` en `checkin_datum` (per moment, in `inschrijvingen`) bestaan al. Bij het anonimiseren wordt de token gewist.
+- Check-in op de dag zelf: gebouwd, zie [Plan_Checkin_en_Aanwezigheid.md](Plan_Checkin_en_Aanwezigheid.md). Nog te doen: testen op echte toestellen, mail bij het doorschuiven van de wachtlijst, instelbare termen en talen per organisatie.
 - Officiële lijst van Belgische gemeenten (NIS-codes).
 - Sleutelrotatie voor `ENCRYPTION_KEY`. Het formaat (`v1.`) is erop voorzien, de rotatie zelf nog niet.

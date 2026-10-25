@@ -8,6 +8,9 @@ import { Mailteksten } from './Mailteksten';
 import { Medewerkers } from './Medewerkers';
 import { Meldingen } from './Meldingen';
 import { Privacy } from './Privacy';
+import { Aanwezigheid } from './Aanwezigheid';
+import { RollenRechten } from './RollenRechten';
+import { Sessiegevers } from './Sessiegevers';
 import { Rapporten } from './Rapporten';
 import { Voorinschrijvingen } from './Voorinschrijvingen';
 
@@ -59,6 +62,7 @@ export const DASHBOARD_MODULES: DashboardModule[] = [
     ],
     paginas: [
       { patroon: /^\/dashboard\/medewerkers$/, recht: 'kern.gebruikers.beheren', toon: (_m, c) => <Medewerkers profiel={c.profiel} /> },
+      { patroon: /^\/dashboard\/medewerkers\/rechten$/, recht: 'kern.gebruikers.beheren', toon: () => <RollenRechten /> },
       { patroon: /^\/dashboard\/account$/, toon: (_m, c) => <Account profiel={c.profiel} naVerandering={c.naVerandering} /> },
     ],
   },
@@ -72,6 +76,8 @@ export const DASHBOARD_MODULES: DashboardModule[] = [
       { patroon: /^\/dashboard(\/activeren)?$/, toon: (_m, c) => <Evenementen profiel={c.profiel} naVerandering={c.naVerandering} /> },
       { patroon: new RegExp(`^/dashboard/evenementen/${EV}$`), toon: (m, c) => <Instellingen evenementId={m[1]} naVerandering={c.naVerandering} /> },
       { patroon: /^\/dashboard\/privacy$/, toon: (_m, c) => <Privacy profiel={c.profiel} /> },
+      { patroon: new RegExp(`^/dashboard/evenementen/${EV}/aanwezigheid$`), recht: 'evenementen.overzicht_aanwezigen', toon: (m, c) => <Aanwezigheid key={m[1]} evenementId={m[1]} profiel={c.profiel} /> },
+      { patroon: new RegExp(`^/dashboard/evenementen/${EV}/sessiegevers$`), toon: (m, c) => <Sessiegevers key={m[1]} evenementId={m[1]} profiel={c.profiel} /> },
     ],
   },
   {

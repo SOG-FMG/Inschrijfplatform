@@ -6,7 +6,7 @@ import { audit } from '../../kern/audit';
 import { koppelAanContact } from '../../kern/contacten';
 import { DbFout, schrijf } from '../../kern/fouten';
 
-async function evenementVanDeelnemer(env: Env, deelnemerId: string, enkelActief: boolean) {
+export async function evenementVanDeelnemer(env: Env, deelnemerId: string, enkelActief: boolean) {
   const dn = await env.DB.prepare(`select evenement_id from deelnemers where deelnemer_id = ?${enkelActief ? ` and status = 'actief'` : ''}`)
     .bind(deelnemerId)
     .first<{ evenement_id: string }>();
@@ -88,6 +88,10 @@ export async function deelnemerslijst(env: Env, g: Gebruiker, evenementId: strin
 // ---------------------------------------------------------------------------
 // Verplaatsen naar een ander dagdeel of een andere sessie
 // ---------------------------------------------------------------------------
+/** Wie de inschrijving wijzigde (het versienummer zelf houden de triggers bij, zie migraties/checkin_versie.sql). */
+export const door = (db: D1Database, deelnemerId: string, wie: 'ouder' | 'school') =>
+  db.prepare(`update deelnemers set gewijzigd_door = ? where deelnemer_id = ?`).bind(wie, deelnemerId);
+
 export async function verplaatsDagdeel(env: Env, g: Gebruiker, deelnemerId: string, van: string, naar: string, forceer = false) {
   const db = env.DB;
   const evenementId = await evenementVanDeelnemer(env, deelnemerId, false);
@@ -126,15 +130,20 @@ export async function verplaatsDagdeel(env: Env, g: Gebruiker, deelnemerId: stri
     // Sessies van het oude dagdeel vervallen; daarna nieuwe kiezen met kenSessieToe
     ...oudeSessies.results.map((i: any) => db.prepare(`update inschrijvingen set status = 'geannuleerd' where inschrijving_id = ?`).bind(i.inschrijving_id)),
     ...oudeSessies.results.map((i: any) => promoveerWachtlijst(db, i.sessie_id)),
+    door(db, deelnemerId, 'school'),
     audit(env, g, 'deelnemers', deelnemerId, 'VERPLAATS_DAGDEEL', { van, naar, forceer }),
   ]);
   return { verplaatst: true, sessiesGeannuleerd: oudeSessies.results.length };
 }
 
-export async function kenSessieToe(env: Env, g: Gebruiker, deelnemerId: string, sessieId: string, forceer = false) {
+/**
+ * Een lesje toekennen (vervangt de keuze in hetzelfde tijdsblok). `gecontroleerd`: de oproeper controleerde de rechten
+ * al (aanwezigheid: onthaal met evenementen.lesje_wijzigen, of een sessiegever); anders moet g organisator zijn.
+ */
+export async function kenSessieToe(env: Env, g: Gebruiker | null, deelnemerId: string, sessieId: string, forceer = false, gecontroleerd = false) {
   const db = env.DB;
   const evenementId = await evenementVanDeelnemer(env, deelnemerId, true);
-  await controleerToegang(env, g, evenementId, true);
+  if (!gecontroleerd) await controleerToegang(env, g!, evenementId, true);
 
   const s = await db
     .prepare(
@@ -173,6 +182,7 @@ export async function kenSessieToe(env: Env, g: Gebruiker, deelnemerId: string, 
       )
       .bind(crypto.randomUUID(), deelnemerId, evenementId, sessieId, forceer ? 1 : 0),
     ...(vorige ? [promoveerWachtlijst(db, vorige.sessie_id)] : []),
+    door(db, deelnemerId, 'school'),
     audit(env, g, 'deelnemers', deelnemerId, 'KEN_SESSIE_TOE', { sessieId, vorige: vorige?.sessie_id ?? null, forceer }),
   ]);
   return { status: (res[vorige ? 1 : 0].results[0] as { status: string }).status };

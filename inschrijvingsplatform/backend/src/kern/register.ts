@@ -1,6 +1,6 @@
 import type { Gebruiker } from './toegang';
 import { isUuid } from '../validatie';
-import { KERN_VERSIE, type Module, type Recht, type Route, type Taak } from './module';
+import { KERN_VERSIE, type Module, type Recht, type Rol, type Route, type Taak } from './module';
 
 /**
  * Het module-register: welke modules actief zijn in deze installatie (MODULES in wrangler.toml), en
@@ -25,6 +25,9 @@ interface GecompileerdeRoute {
   uuids: string[];
 }
 
+/** Aanpassingen uit rol_rechten: sleutel `<rol> <recht>`, waarde = toegestaan. */
+export type Aanpassingen = Map<string, boolean>;
+
 export interface Treffer {
   module: Module;
   route: Route;
@@ -38,8 +41,10 @@ export interface Register {
   /** Foutcodes van alle modules (ook niet-actieve: een code blijft herkenbaar). */
   fouten: Record<string, [number, string]>;
   heeftRecht(g: Gebruiker, recht: string): boolean;
-  /** Alle rechten van deze gebruiker in de actieve modules. */
-  rechtenVan(g: Gebruiker): string[];
+  /** Alle rechten van deze gebruiker in de actieve modules, met de aanpassingen uit rol_rechten (kern/rollen.ts). */
+  rechtenVan(g: Gebruiker, aanpassingen?: Aanpassingen): string[];
+  /** Zelfde, voor een rol zonder gebruiker (de sessiegever). */
+  rechtenVanRol(rol: Rol, aanpassingen?: Aanpassingen): string[];
   taken: { module: Module; taak: Taak }[];
 }
 
@@ -108,10 +113,17 @@ export function maakRegister(alle: Module[], keuze?: string): Register {
     }
   }
 
-  // De platformbeheerder van een organisatie heeft alle rechten; andere rollen volgens het manifest (Recht.rollen).
+  // De platformbeheerder van een organisatie heeft alle rechten; andere rollen volgens het manifest (Recht.rollen),
+  // behalve voor instelbare rechten met een aanpassing in rol_rechten.
   const actieveRechten = new Set(actief.flatMap((m) => Object.keys(m.rechten ?? {})));
-  const heeft = (g: Gebruiker, recht: string) =>
-    actieveRechten.has(recht) && (g.rol === 'platformbeheerder' || (rechten.get(recht)?.rollen.includes(g.rol) ?? false));
+  const magRol = (rol: Rol, recht: string, aanpassingen?: Aanpassingen) => {
+    if (!actieveRechten.has(recht)) return false;
+    if (rol === 'platformbeheerder') return true;
+    const r = rechten.get(recht);
+    const aangepast = r?.instelbaar ? aanpassingen?.get(`${rol} ${recht}`) : undefined;
+    return aangepast ?? r?.rollen.includes(rol) ?? false;
+  };
+  const heeft = (g: Gebruiker, recht: string, aanpassingen?: Aanpassingen) => magRol(g.rol, recht, aanpassingen);
 
   const sjablonen = new Set<string>();
   for (const m of alle) {
@@ -161,8 +173,11 @@ export function maakRegister(alle: Module[], keuze?: string): Register {
     heeftRecht(g, recht) {
       return heeft(g, recht);
     },
-    rechtenVan(g) {
-      return [...actieveRechten].filter((r) => heeft(g, r));
+    rechtenVan(g, aanpassingen) {
+      return [...actieveRechten].filter((r) => heeft(g, r, aanpassingen));
+    },
+    rechtenVanRol(rol, aanpassingen) {
+      return [...actieveRechten].filter((r) => magRol(rol, r, aanpassingen));
     },
   };
 }

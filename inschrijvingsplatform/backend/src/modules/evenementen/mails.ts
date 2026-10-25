@@ -1,4 +1,4 @@
-import { checkinSectieHtml } from '../../kern/checkin';
+import { checkinSectieHtml, type Checkin } from '../../kern/checkin';
 import { esc, type SjabloonDefinitie, type Velden } from '../../kern/sjablonen';
 import { mailVolgensSjabloon, type Mail } from '../../mail';
 import type { Keuze, Moment } from '../../types';
@@ -112,6 +112,109 @@ Toch komen? {{formulierlink}}.
 {{#contactEmail}}Vragen? Mail naar {{contactEmail}}.{{/contactEmail}}`,
     },
   },
+  {
+    sleutel: 'schoolwijziging',
+    reden: 'de school je inschrijving voor {{evenement}} aanpaste',
+    naam: 'Inschrijving aangepast door de school',
+    omschrijving: 'Na een wijziging van het moment of de lesjes door de school (onthaal of organisator). Met een nieuwe QR-code.',
+    velden: [
+      V.voornaam, V.evenement, V.referentie,
+      { naam: 'momenten', omschrijving: 'Lijst van de momenten (blok)', voorbeeld: VOORBEELD_MOMENTEN },
+      { naam: 'keuzes', omschrijving: 'Lijst van de lesjes, met wachtlijst (blok; leeg zonder keuzes)', voorbeeld: VOORBEELD_KEUZES },
+      V.contactEmail,
+    ],
+    standaard: {
+      onderwerp: 'Inschrijving aangepast: {{evenement}} ({{referentie}})',
+      tekst: `Beste,
+
+De school heeft de inschrijving van **{{voornaam}}** voor **{{evenement}}** aangepast. Dit is het nieuwe overzicht:
+
+{{momenten}}
+
+{{#keuzes}}Gekozen onderdelen:
+
+{{keuzes}}{{/keuzes}}
+
+Referentie: **{{referentie}}**
+
+Toon op de dag zelf de QR-code uit deze mail, niet die uit een vorige mail. Je inschrijving bekijken of annuleren doe je met de persoonlijke link uit je eerste bevestigingsmail.
+
+{{#contactEmail}}Vragen? Mail naar {{contactEmail}}.{{/contactEmail}}`,
+    },
+  },
+  {
+    sleutel: 'qrcode',
+    reden: 'je ingeschreven bent voor {{evenement}}',
+    naam: 'QR-code voor het onthaal',
+    omschrijving: 'Voor inschrijvingen van vóór de QR-code: verstuurd met de knop "QR-code mailen" bij het evenement.',
+    velden: [
+      V.voornaam, V.evenement, V.referentie,
+      { naam: 'momenten', omschrijving: 'Lijst van de momenten (blok)', voorbeeld: VOORBEELD_MOMENTEN },
+      { naam: 'keuzes', omschrijving: 'Lijst van de lesjes, met wachtlijst (blok; leeg zonder keuzes)', voorbeeld: VOORBEELD_KEUZES },
+      V.contactEmail,
+    ],
+    standaard: {
+      onderwerp: 'Je QR-code voor {{evenement}} ({{referentie}})',
+      tekst: `Beste,
+
+Binnenkort is het zover: **{{voornaam}}** komt naar **{{evenement}}**.
+
+{{momenten}}
+
+{{#keuzes}}Gekozen onderdelen:
+
+{{keuzes}}{{/keuzes}}
+
+Referentie: **{{referentie}}**
+
+Om het aanmelden aan het onthaal vlot te laten verlopen, vind je hieronder een QR-code. Toon die bij aankomst, op je smartphone of afgedrukt.
+
+{{#contactEmail}}Vragen? Mail naar {{contactEmail}}.{{/contactEmail}}`,
+    },
+  },
+  {
+    sleutel: 'sessiegever',
+    reden: 'je geregistreerd bent als {{rol}} voor {{evenement}}',
+    naam: 'Uitnodiging voor een sessiegever (lesgever, spreker)',
+    omschrijving: 'Met de knop "Uitnodigen" bij de sessiegevers van een evenement. Hoe de sessiegever heet, volgt de installatie.',
+    velden: [
+      V.voornaam, V.evenement,
+      { naam: 'rol', omschrijving: 'Hoe deze organisatie een sessiegever noemt (bv. lesgever)', voorbeeld: 'lesgever' },
+      { naam: 'sessies', omschrijving: 'Lijst van de eigen sessies (blok)', voorbeeld: lijst(['<li>Zaterdag 23 januari, 09:30 – Proeflesje Frans</li>']) },
+      { naam: 'link', omschrijving: 'Link naar de pagina om aan te melden', voorbeeld: link('https://inschrijven.example/sessiegever', 'Mijn sessies') },
+    ],
+    standaard: {
+      onderwerp: '{{evenement}}: je sessies en je aanwezigheidslijst',
+      tekst: `Beste {{voornaam}},
+
+Je bent geregistreerd als **{{rol}}** voor **{{evenement}}**:
+
+{{sessies}}
+
+Via {{link}} zie je vooraf wie er ingeschreven is. Op de dag zelf duid je daar aan wie er in je sessie zit; je kan ook de QR-code op het etiket van een deelnemer scannen.
+
+Aanmelden gaat met je e-mailadres en een code die je per mail krijgt. Je hoeft geen wachtwoord te onthouden.`,
+    },
+  },
+  {
+    sleutel: 'aanmeldcode',
+    reden: 'iemand met dit adres een aanmeldcode vroeg',
+    naam: 'Aanmeldcode voor een sessiegever',
+    omschrijving: 'Een code van 6 cijfers om aan te melden op de pagina voor sessiegevers.',
+    velden: [
+      V.voornaam,
+      { naam: 'code', omschrijving: 'De code van 6 cijfers', voorbeeld: '493 027' },
+      { naam: 'minuten', omschrijving: 'Hoe lang de code geldig is', voorbeeld: '10' },
+    ],
+    standaard: {
+      onderwerp: 'Je aanmeldcode: {{code}}',
+      tekst: `Beste {{voornaam}},
+
+Je aanmeldcode is **{{code}}**. Ze is {{minuten}} minuten geldig en werkt één keer.
+
+Vroeg je geen code aan? Dan kan je deze mail negeren.`,
+    },
+  },
   ...(['uitnodiging', 'herinnering'] as const).map((soort): SjabloonDefinitie => ({
     sleutel: soort,
     reden: 'je eerder interesse toonde (voorinschrijving) en nog niet ingeschreven bent voor {{evenement}}',
@@ -150,25 +253,38 @@ function kinderenHtml(k: { naam: string; inschrijven: string; afmelden: string }
 <br><small><a href="${esc(x.afmelden)}">${esc(x.naam)} komt niet</a> (dan sturen we geen herinnering meer)</small></li>`));
 }
 
-/** `checkin`: de QR-code voor het onthaal (kern/checkin.ts), als vaste sectie onder de (aanpasbare) tekst. */
+/** De QR-code voor het onthaal (kern/checkin.ts) als vaste sectie onder de (aanpasbare) tekst. */
+const metQr = (mail: Mail, checkin: Checkin | null | undefined): Mail => (checkin ? { ...mail, onderaan: checkinSectieHtml(checkin) } : mail);
+
 export function bevestigingsmail(
   r: { referentie: string; evenement: string; contactEmail: string | null; momenten: Moment[]; keuzes: Keuze[] },
-  aan: string, voornaam: string, beheerUrl: string, checkin?: { basisUrl: string; token: string },
+  aan: string, voornaam: string, beheerUrl: string, checkin?: Checkin,
 ): Mail {
   const velden: Velden = {
     voornaam, evenement: r.evenement, referentie: r.referentie, momenten: momentenHtml(r.momenten), keuzes: keuzesHtml(r.keuzes),
     beheerlink: link(beheerUrl, 'deze persoonlijke link'), contactEmail: mailto(r.contactEmail),
   };
-  const mail = mailVolgensSjabloon(sjabloon('bevestiging'), velden, { aan, type: 'bevestiging', referentie: r.referentie });
-  return checkin ? { ...mail, onderaan: checkinSectieHtml(checkin.basisUrl, checkin.token) } : mail;
+  return metQr(mailVolgensSjabloon(sjabloon('bevestiging'), velden, { aan, type: 'bevestiging', referentie: r.referentie }), checkin);
 }
 
-export function wijzigingsmail(p: { aan: string; voornaam: string; evenement: string; referentie: string; keuzes: Keuze[]; beheerUrl: string; contactEmail: string | null }): Mail {
+export function wijzigingsmail(p: { aan: string; voornaam: string; evenement: string; referentie: string; keuzes: Keuze[]; beheerUrl: string; contactEmail: string | null; checkin?: Checkin | null }): Mail {
   const velden: Velden = {
     voornaam: p.voornaam, evenement: p.evenement, referentie: p.referentie, keuzes: keuzesHtml(p.keuzes),
     beheerlink: link(p.beheerUrl, 'je persoonlijke link'), contactEmail: mailto(p.contactEmail),
   };
-  return mailVolgensSjabloon(sjabloon('wijziging'), velden, { aan: p.aan, type: 'wijziging', referentie: p.referentie });
+  return metQr(mailVolgensSjabloon(sjabloon('wijziging'), velden, { aan: p.aan, type: 'wijziging', referentie: p.referentie }), p.checkin);
+}
+
+/** Wijziging door de school, of de QR-code voor een inschrijving van vóór de QR-code: overzicht + QR. */
+export function overzichtsmail(
+  soort: 'schoolwijziging' | 'qrcode',
+  p: { aan: string; voornaam: string; evenement: string; referentie: string; momenten: Moment[]; keuzes: Keuze[]; contactEmail: string | null; checkin: Checkin },
+): Mail {
+  const velden: Velden = {
+    voornaam: p.voornaam, evenement: p.evenement, referentie: p.referentie, momenten: momentenHtml(p.momenten), keuzes: keuzesHtml(p.keuzes),
+    contactEmail: mailto(p.contactEmail),
+  };
+  return metQr(mailVolgensSjabloon(sjabloon(soort), velden, { aan: p.aan, type: soort, referentie: p.referentie }), p.checkin);
 }
 
 export function annulatiemail(p: { aan: string; voornaam: string; evenement: string; referentie: string; formulierUrl: string; contactEmail: string | null }): Mail {
@@ -192,4 +308,21 @@ export function uitnodigingsmail(p: {
     anderKind: p.anderKind ? link(p.anderKind, 'Gebruik deze link') : null, contactEmail: mailto(p.contactEmail),
   };
   return mailVolgensSjabloon(sjabloon(soort), velden, { aan: p.aan, type: soort });
+}
+
+export function sessiegevermail(p: {
+  aan: string; voornaam: string; evenement: string; term: string; link: string;
+  sessies: { titel: string; dag: string; startUur: string }[];
+}): Mail {
+  const velden: Velden = {
+    voornaam: p.voornaam, evenement: p.evenement, rol: p.term,
+    sessies: lijst(p.sessies.map((s) => `<li>${esc(s.dag)}, ${esc(s.startUur)} – ${esc(s.titel)}</li>`)),
+    link: link(p.link, 'deze pagina'),
+  };
+  return mailVolgensSjabloon(sjabloon('sessiegever'), velden, { aan: p.aan, type: 'sessiegever' });
+}
+
+export function aanmeldcodemail(p: { aan: string; voornaam: string; code: string; minuten: number }): Mail {
+  const velden: Velden = { voornaam: p.voornaam, code: `${p.code.slice(0, 3)} ${p.code.slice(3)}`, minuten: String(p.minuten) };
+  return mailVolgensSjabloon(sjabloon('aanmeldcode'), velden, { aan: p.aan, type: 'aanmeldcode' });
 }

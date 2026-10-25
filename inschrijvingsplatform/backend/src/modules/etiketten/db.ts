@@ -4,6 +4,8 @@ import type { Env } from '../../types';
 import { ValidatieFout } from '../../validatie';
 import { audit } from '../../kern/audit';
 import { DbFout } from '../../kern/fouten';
+import { checkinUrl } from '../../kern/checkin';
+import { nieuwToken } from '../../kern/http';
 
 /**
  * Etiketten van een evenement (/dashboard/evenementen/<id>/etiketten): één etiket per deelnemer met
@@ -29,6 +31,8 @@ export interface EtiketInstellingen {
   tussen: { horizontaal: number; verticaal: number }; // mm tussen de etiketten
   binnen: number; // mm witruimte binnen een etiket
   regels: EtiketRegel[];
+  /** QR-code voor de check-in rechts op het etiket (grootte in mm), of geen. Sessiegevers scannen ze in de klas. */
+  qr?: { mm: number } | null;
 }
 
 export async function etiketten(env: Env, g: Gebruiker, evenementId: string, ip: string | null) {
@@ -48,7 +52,8 @@ export async function etiketten(env: Env, g: Gebruiker, evenementId: string, ip:
        where d.evenement_id = ? order by l.naam, l.lokaal`,
     ).bind(evenementId),
     db.prepare(
-      `select dn.deelnemer_id, dn.voornaam_enc, dn.naam_enc, dn.school_andere_enc, dn.leerjaar, sc.naam as school, dg.naam as doelgroep
+      `select dn.deelnemer_id, dn.voornaam_enc, dn.naam_enc, dn.school_andere_enc, dn.leerjaar, sc.naam as school, dg.naam as doelgroep,
+              dn.checkin_token, dn.checkin_versie
        from deelnemers dn left join scholen sc on sc.school_id = dn.school_id left join doelgroepen dg on dg.doelgroep_id = dn.doelgroep_id
        where dn.evenement_id = ? and dn.status = 'actief'`,
     ).bind(evenementId),
@@ -67,6 +72,14 @@ export async function etiketten(env: Env, g: Gebruiker, evenementId: string, ip:
   const perDeelnemer = new Map<string, any[]>();
   for (const i of inschrijvingen.results) perDeelnemer.set(i.deelnemer_id, [...(perDeelnemer.get(i.deelnemer_id) ?? []), i]);
 
+  // Check-intoken voor de QR-code op het etiket; inschrijvingen van vóór de QR-code krijgen er hier een.
+  const zonder = deelnemers.results.filter((dn: any) => !dn.checkin_token && perDeelnemer.has(dn.deelnemer_id));
+  if (zonder.length) {
+    for (const dn of zonder) dn.checkin_token = nieuwToken();
+    await db.batch(zonder.map((dn: any) => db.prepare(`update deelnemers set checkin_token = ? where deelnemer_id = ? and checkin_token is null`).bind(dn.checkin_token, dn.deelnemer_id)));
+  }
+  const basis = env.PUBLIC_APP_URL.replace(/\/$/, '');
+
   const o = (v: string | null) => ontsleutel(env, v);
   const lijst = await Promise.all(
     deelnemers.results
@@ -80,6 +93,7 @@ export async function etiketten(env: Env, g: Gebruiker, evenementId: string, ip:
           school: dn.school ?? schoolAndere ?? '',
           leerjaar: dn.leerjaar ?? '',
           doelgroep: dn.doelgroep ?? '',
+          checkin: checkinUrl({ basisUrl: basis, token: dn.checkin_token, versie: dn.checkin_versie }),
           dagdelen: [...new Set(rijen.map((i) => i.dagdeel_id as string))],
           lesjes: rijen
             .filter((i) => i.titel != null)
@@ -129,6 +143,7 @@ function valideer(x: any): EtiketInstellingen {
       if (typeof rg?.tekst !== 'string' || rg.tekst.length > 200) throw fout('Een regel is te lang (max. 200 tekens).');
       return { tekst: rg.tekst, pt: getal(rg.pt, 4, 72, 'Lettergrootte'), vet: rg.vet === true, passend: rg.passend === true, perLesje: rg.perLesje === true };
     }),
+    qr: x.qr ? { mm: getal(x.qr.mm, 8, 40, 'Grootte QR-code') } : null,
   };
   const breedte = r.blad.breedte - r.marge.links - r.marge.rechts - (r.kolommen - 1) * r.tussen.horizontaal;
   const hoogte = r.blad.hoogte - r.marge.boven - r.marge.onder - (r.rijen - 1) * r.tussen.verticaal;

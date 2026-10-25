@@ -320,10 +320,15 @@ describe('beheer', () => {
     expect(d.lesjes.length).toBeGreaterThan(0);
     expect(d.lesjes[0]).toHaveProperty('titel');
     expect(JSON.stringify(r.data)).not.toContain('v1.');
+    // QR-code voor de check-in op het etiket: ook voor inschrijvingen van vóór de QR-code
+    expect(d.checkin).toMatch(/^http:\/\/localhost:5173\/checkin\/[A-Za-z0-9_-]{43}\?v=\d+$/);
+    expect(await een(`select count(*) as n from deelnemers where evenement_id = ? and status = 'actief' and checkin_token is null
+                      and deelnemer_id in (select deelnemer_id from inschrijvingen where status = 'bevestigd')`, ev.evenementId)).toEqual({ n: 0 });
 
     const opmaak = {
       blad: { breedte: 210, hoogte: 297 }, kolommen: 3, rijen: 8, marge: { boven: 0, onder: 0, links: 0, rechts: 0 },
       tussen: { horizontaal: 0, verticaal: 0 }, binnen: 3, regels: [{ tekst: '{voornaam} {achternaam}', pt: 20, vet: false, passend: true, perLesje: false }],
+      qr: { mm: 14 },
     };
     expect((await api('PATCH', `${pad}/instellingen`, { instellingen: opmaak })).data.instellingen).toEqual(opmaak);
     expect((await api('PATCH', `${pad}/instellingen`, { instellingen: { ...opmaak, kolommen: 0 } })).status).toBe(400);
@@ -873,6 +878,107 @@ describe('e-mail via de Power Automate-webhook', () => {
     await sql(`delete from mailsjablonen where sleutel = 'bevestiging'`);
   });
 
+  test('versienummer: elke wijziging door ouder of school geeft een mail met een nieuwe QR-code', async () => {
+    const { sha256 } = await import('../src/crypto/versleuteling');
+    const r = await registreer(deelnemer({ voornaam: 'Versie' }), [vm1.id], []);
+    await wacht();
+    const stand = async () =>
+      een(`select deelnemer_id, checkin_token, checkin_versie, gewijzigd_door, checkin_gemaild_op from deelnemers where beheer_token_hash = ?`, await sha256(token(r)));
+    const s1 = await stand();
+    expect(s1).toMatchObject({ checkin_versie: 1, gewijzigd_door: null });
+    expect(s1.checkin_gemaild_op).toBeTruthy();
+    expect(aanroepen[0].body.html).toContain(`/checkin/${s1.checkin_token}?v=1`);
+
+    // De ouder kiest een lesje via de persoonlijke link
+    aanroepen = [];
+    expect((await api('PATCH', `/api/registraties/${token(r)}`, { sessies: [sessie(k1, 'infomoment').id] })).status).toBe(200);
+    await wacht();
+    const s2 = await stand();
+    expect(s2.checkin_versie).toBeGreaterThan(1);
+    expect(s2.gewijzigd_door).toBe('ouder');
+    expect(aanroepen).toHaveLength(1);
+    expect(aanroepen[0].body.type).toBe('wijziging');
+    expect(aanroepen[0].body.html).toContain(`/checkin/${s1.checkin_token}?v=${s2.checkin_versie}`);
+
+    // De school kent een ander lesje toe: mail met overzicht en nieuwe QR, zonder de persoonlijke link
+    aanroepen = [];
+    expect((await api('POST', `/api/beheer/deelnemers/${s1.deelnemer_id}/sessie`, { sessieId: sessie(k1, 'kunst').id, forceer: true })).status).toBe(200);
+    await wacht();
+    const s3 = await stand();
+    expect(s3.checkin_versie).toBeGreaterThan(s2.checkin_versie);
+    expect(s3.gewijzigd_door).toBe('school');
+    expect(aanroepen).toHaveLength(1);
+    expect(aanroepen[0].body.type).toBe('schoolwijziging');
+    expect(aanroepen[0].body.html).toContain('Kunst');
+    expect(aanroepen[0].body.html).toContain(`/checkin/${s1.checkin_token}?v=${s3.checkin_versie}`);
+    expect(aanroepen[0].body.html).not.toContain(token(r));
+
+    // Zonder verwittigen: geen mail. Aanwezigheid registreren verandert het versienummer niet.
+    aanroepen = [];
+    await api('POST', `/api/beheer/deelnemers/${s1.deelnemer_id}/sessie`, { sessieId: sessie(k1, 'infomoment').id, verwittig: false });
+    await wacht();
+    expect(aanroepen).toHaveLength(0);
+    const s4 = await stand();
+    await sql(`update inschrijvingen set aanwezig = 1, checkin_datum = 'x' where deelnemer_id = ?`, s1.deelnemer_id);
+    expect((await stand()).checkin_versie).toBe(s4.checkin_versie);
+  });
+
+  test('QR-code mailen aan inschrijvingen van vóór de QR-code: één keer per inschrijving', async () => {
+    const r = await registreer(deelnemer({ voornaam: 'Oud' }), [vm1.id], []);
+    await wacht();
+    const { sha256 } = await import('../src/crypto/versleuteling');
+    const { deelnemer_id: id } = await een(`select deelnemer_id from deelnemers where beheer_token_hash = ?`, await sha256(token(r)));
+    // Zoals een inschrijving van vóór de QR-code; alle andere hebben er al een gekregen
+    await sql(`update deelnemers set checkin_token = null, checkin_gemaild_op = null where deelnemer_id = ?`, id);
+    await sql(`update deelnemers set checkin_gemaild_op = coalesce(checkin_gemaild_op, 'test') where deelnemer_id <> ?`, id);
+    const pad = `/api/beheer/evenementen/${ev.evenementId}/qrcode-mails`;
+    expect((await api('GET', pad)).data).toEqual({ teVersturen: 1 });
+
+    aanroepen = [];
+    expect((await api('POST', pad)).data).toEqual({ verstuurd: 1, mislukt: 0, teVersturen: 0 });
+    const { checkin_token } = await een(`select checkin_token from deelnemers where deelnemer_id = ?`, id);
+    expect(checkin_token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(aanroepen).toHaveLength(1);
+    expect(aanroepen[0].body.type).toBe('qrcode');
+    expect(aanroepen[0].body.html).toContain(`/checkin/${checkin_token}?v=1`);
+
+    aanroepen = [];
+    expect((await api('POST', pad)).data).toMatchObject({ verstuurd: 0, teVersturen: 0 });
+    expect(aanroepen).toHaveLength(0);
+  });
+
+  test('zonder eigen banner staat het logo van het formulier bovenaan (geen WebP)', async () => {
+    const id = ev.evenementId;
+    await sql(`update mailopmaak set kop_banner = null`);
+    await env.STORAGE.put(`logos/${id}`, new Uint8Array([0x89, 0x50, 0x4e, 0x47]), { httpMetadata: { contentType: 'image/png' } });
+    await sql(`update evenementen set logo = ?, logo_hoogte = 200, kleur_primair = '#123456' where evenement_id = ?`, `/api/logo/${id}?v=7`, id);
+    const mailVoor = async () => {
+      aanroepen = [];
+      await registreer(deelnemer(), [vm1.id], []);
+      await wacht();
+      return aanroepen[0].body.html as string;
+    };
+
+    let html = await mailVoor();
+    expect(html).toContain(`http://localhost:5173/api/logo/${id}?v=7`);
+    expect(html).toContain('height="120"'); // begrensd
+    expect(html).toContain('border-bottom:4px solid #123456');
+
+    await env.STORAGE.put(`logos/${id}`, new Uint8Array([1]), { httpMetadata: { contentType: 'image/webp' } });
+    expect(await mailVoor()).not.toContain('/api/logo/');
+
+    // Een eigen banner (Mailteksten) gaat voor
+    await env.STORAGE.put(`logos/${id}`, new Uint8Array([1]), { httpMetadata: { contentType: 'image/png' } });
+    await sql(`insert into mailopmaak (id, kop_banner) values (1, '/api/mailbeelden/kop-test') on conflict (id) do update set kop_banner = excluded.kop_banner`);
+    html = await mailVoor();
+    expect(html).toContain('/api/mailbeelden/kop-test');
+    expect(html).not.toContain('/api/logo/');
+
+    await sql(`update mailopmaak set kop_banner = null`);
+    await sql(`update evenementen set logo = null, logo_hoogte = null, kleur_primair = null where evenement_id = ?`, id);
+    await env.STORAGE.delete(`logos/${id}`);
+  });
+
   test('annuleren via de link stuurt een annulatiemail', async () => {
     const ev = (await api('GET', `/api/evenementen/${SLUG}`)).data;
     const r = await registreer(deelnemer(), [ev.dagen[0].dagdelen[0].id], []);
@@ -1108,6 +1214,7 @@ describe('contacten, personen en uitnodigingen', () => {
 
   test('afmelden en herinneringen: enkel wie nog niet reageerde', async () => {
     const pad = `/api/beheer/voorinschrijvingen/importen/${importB}/uitnodigingen/${evId}`;
+    await Promise.allSettled(wachtend.splice(0)); // bevestigingsmails van vorige tests eerst laten vertrekken
     mails = [];
     expect((await api('POST', pad, { soort: 'uitnodiging' })).data).toMatchObject({ verstuurd: 2, resterend: 0 });
     const naarGezin = mails.find((m) => m.aan === 'gezin@example.org');
@@ -1165,7 +1272,7 @@ describe('mailteksten aanpassen (module mailsjablonen)', () => {
 
   test('lijst met sjablonen, velden en standaardtekst; enkel met het recht', async () => {
     const r = await api('GET', '/api/beheer/mailsjablonen');
-    expect(r.data.map((s: any) => s.sleutel)).toEqual(['bevestiging', 'wijziging', 'annulatie', 'uitnodiging', 'herinnering', 'klaslijst', 'voorinschrijving']);
+    expect(r.data.map((s: any) => s.sleutel)).toEqual(['bevestiging', 'wijziging', 'annulatie', 'schoolwijziging', 'qrcode', 'sessiegever', 'aanmeldcode', 'uitnodiging', 'herinnering', 'klaslijst', 'voorinschrijving']);
     const b = r.data[0];
     expect(b).toMatchObject({ module: 'Evenementen en inschrijvingen', aangepast: null });
     expect(b.velden.map((v: any) => v.naam)).toContain('beheerlink');
@@ -1302,5 +1409,231 @@ describe('mailteksten aanpassen (module mailsjablonen)', () => {
     expect((await api('PATCH', `/api/beheer/voorinschrijvingen/formulieren/${f.data.id}`, { open: false })).data).toEqual({ ok: true });
     expect((await inzending({ kindVoornaam: 'Later' })).data.fout).toBe('FORMULIER_GESLOTEN');
     expect((await api('GET', '/api/voorinschrijven/voorinschrijving-2027')).data.open).toBe(false);
+  });
+});
+
+describe('aanwezigheid op de dag zelf en sessiegevers', () => {
+  const URL_FLOW = 'https://prod-12.westeurope.logic.azure.com:443/workflows/abc/triggers/manual/paths/invoke?sig=geheim';
+  const echteFetch = globalThis.fetch;
+  const BALIE = 'balie.test@onderwijs.gent.be';
+  const PLATFORM = 'import.test@onderwijs.gent.be';
+  const ORIGIN = 'http://localhost:5173';
+  let mails: any[] = [];
+  let oud: { datum: string; start: string; eind: string };
+  let A: { id: string; token: string; versie: number };
+  let E: { id: string; token: string };
+  let sessiegeverId: string;
+  let cookie = '';
+
+  const wacht = () => Promise.allSettled(wachtend.splice(0));
+  const sg = async (methode: string, pad: string, body?: unknown, metOrigin = true) => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (cookie) headers.Cookie = cookie;
+    if (metOrigin) headers.Origin = ORIGIN;
+    const res = await worker.fetch(new Request(`http://localhost${pad}`, { method: methode, headers, body: body === undefined ? undefined : JSON.stringify(body) }), env, ctx);
+    return { status: res.status, data: (await res.json()) as any, cookie: res.headers.get('Set-Cookie') };
+  };
+  const nieuweDeelnemer = async (voornaam: string, sessies: string[] = []) => {
+    const { sha256 } = await import('../src/crypto/versleuteling');
+    const r = await registreer(deelnemer({ voornaam }), [vm1.id], sessies);
+    expect(r.status).toBe(201);
+    return een(`select deelnemer_id as id, checkin_token as token, checkin_versie as versie from deelnemers where beheer_token_hash = ?`, await sha256(token(r)));
+  };
+  const scan = (t: string, v?: number) => api('GET', `/api/beheer/checkin/${t}${v ? `?v=${v}` : ''}`);
+  const zetRecht = (rol: string, recht: string, toegestaan: boolean) => {
+    env.DEV_BEHEER_EMAIL = PLATFORM;
+    return api('PATCH', '/api/beheer/rollen-rechten', { rol, recht, toegestaan });
+  };
+
+  beforeAll(async () => {
+    const { vandaag } = await import('../src/modules/evenementen/capaciteit');
+    env.MAIL_PROVIDER = 'webhook';
+    env.MAIL_WEBHOOK_URL = URL_FLOW;
+    globalThis.fetch = (async (url: any, init?: any) => {
+      if (String(url).startsWith('https://prod-12.westeurope.logic.azure.com')) {
+        mails.push(JSON.parse(init.body));
+        return new Response(null, { status: 202 });
+      }
+      return echteFetch(url, init);
+    }) as typeof fetch;
+    // Het evenement is vandaag, en het dagdeel loopt de hele dag (dan hangt de test niet af van het uur).
+    oud = await een(
+      `select d.datum, dd.start_uur as start, dd.eind_uur as eind from dagdelen dd join evenement_dagen d on d.dag_id = dd.dag_id where dd.dagdeel_id = ?`,
+      vm1.id,
+    );
+    await sql(`update evenement_dagen set datum = ? where dag_id = (select dag_id from dagdelen where dagdeel_id = ?)`, vandaag(), vm1.id);
+    await sql(`update dagdelen set start_uur = '00:00', eind_uur = '23:59' where dagdeel_id = ?`, vm1.id);
+    await sql(`insert into gebruikers (naam, voornaam, email, rol_id) select 'Balie', 'Test', ?, rol_id from rollen where code = 'onthaal'`, BALIE);
+    await sql(`insert into evenement_beheerders (evenement_id, gebruiker_id, rol) select ?, gebruiker_id, 'onthaal' from gebruikers where email = ?`, ev.evenementId, BALIE);
+  });
+  afterAll(async () => {
+    globalThis.fetch = echteFetch;
+    env.MAIL_PROVIDER = 'log';
+    await sql(`update evenement_dagen set datum = ? where dag_id = (select dag_id from dagdelen where dagdeel_id = ?)`, oud.datum, vm1.id);
+    await sql(`update dagdelen set start_uur = ?, eind_uur = ? where dagdeel_id = ?`, oud.start, oud.eind, vm1.id);
+  });
+  beforeEach(() => {
+    mails = [];
+  });
+
+  test('scan aan het onthaal: groen, geel (oude mail, wachtlijst), blauw, rood', async () => {
+    A = await nieuweDeelnemer('Scan', [sessie(k1, 'infomoment').id]);
+    expect(A.versie).toBe(1);
+    env.DEV_BEHEER_EMAIL = BALIE;
+    expect((await scan(A.token, 1)).data).toMatchObject({ kleur: 'groen', code: 'OK', deelnemer: { voornaam: 'Scan' } });
+    expect((await scan(A.token)).data).toMatchObject({ kleur: 'geel', code: 'OUDE_MAIL' }); // QR zonder versie
+    expect((await scan('x'.repeat(43), 1)).data).toMatchObject({ kleur: 'rood', code: 'ONBEKEND' });
+
+    expect((await api('POST', `/api/beheer/checkin/${A.token}`)).data).toEqual({ aangemeld: true });
+    expect((await api('POST', `/api/beheer/checkin/${A.token}`)).data).toEqual({ aangemeld: false }); // tweede scan wint niet
+    expect((await scan(A.token, 1)).data).toMatchObject({ kleur: 'blauw', code: 'AL_AANGEMELD' });
+    const rij = await een(`select aanwezig, aanmeld_via, checkin_datum from inschrijvingen where deelnemer_id = ? and sessie_id is null`, A.id);
+    expect(rij).toMatchObject({ aanwezig: 1, aanmeld_via: 'qr' });
+    expect((await een(`select checkin_versie from deelnemers where deelnemer_id = ?`, A.id)).checkin_versie).toBe(1);
+    await api('DELETE', `/api/beheer/checkin/${A.token}`);
+    expect((await scan(A.token, 1)).data.kleur).toBe('groen');
+
+    // Wachtlijst: de wijziging verhoogt de versie; met de nieuwe QR is het geel om een andere reden.
+    await sql(`update inschrijvingen set status = 'wachtlijst' where deelnemer_id = ? and sessie_id is not null`, A.id);
+    const v = (await een(`select checkin_versie from deelnemers where deelnemer_id = ?`, A.id)).checkin_versie;
+    expect((await scan(A.token, 1)).data.code).toBe('OUDE_MAIL');
+    expect((await scan(A.token, v)).data).toMatchObject({ kleur: 'geel', code: 'WACHTLIJST' });
+    await sql(`update inschrijvingen set status = 'bevestigd' where deelnemer_id = ? and sessie_id is not null`, A.id);
+    A.versie = (await een(`select checkin_versie from deelnemers where deelnemer_id = ?`, A.id)).checkin_versie;
+
+    // Een andere dag en een geannuleerde inschrijving: rood
+    const ander = await registreer(deelnemer({ voornaam: 'Middag' }), [ev.dagen[1].dagdelen[0].id], []);
+    const { sha256 } = await import('../src/crypto/versleuteling');
+    const am = await een(`select checkin_token from deelnemers where beheer_token_hash = ?`, await sha256(token(ander)));
+    expect((await scan(am.checkin_token, 1)).data).toMatchObject({ kleur: 'rood', code: 'ANDERE_DAG' });
+    await api('DELETE', `/api/registraties/${token(ander)}`);
+    expect((await scan(am.checkin_token, 1)).data).toMatchObject({ kleur: 'rood', code: 'GEANNULEERD' });
+    await wacht();
+  });
+
+  test('rechten per rol: in te stellen, enkel voor instelbare rechten', async () => {
+    const r = await zetRecht('onthaal', 'evenementen.inchecken', false);
+    expect(r.status).toBe(200);
+    const recht = r.data.rechten.find((x: any) => x.recht === 'evenementen.inchecken');
+    expect(recht.per.onthaal).toEqual({ toegestaan: false, standaard: true });
+    expect(r.data.rollen.map((x: any) => x.rol)).toEqual(['organisator', 'onthaal', 'sessiegever']);
+    env.DEV_BEHEER_EMAIL = BALIE;
+    expect((await scan(A.token, A.versie)).status).toBe(403);
+    await zetRecht('onthaal', 'evenementen.inchecken', true);
+    expect(await een(`select count(*) as n from rol_rechten`)).toEqual({ n: 0 }); // gelijk aan de standaard: geen rij
+    env.DEV_BEHEER_EMAIL = BALIE;
+    expect((await scan(A.token, A.versie)).status).toBe(200);
+    // Niet-instelbare rechten en onbekende rollen worden geweigerd; enkel de platformbeheerder mag het raster wijzigen
+    expect((await zetRecht('onthaal', 'evenementen.aanmaken', true)).status).toBe(400);
+    expect((await zetRecht('platformbeheerder', 'evenementen.inchecken', false)).status).toBe(400);
+    env.DEV_BEHEER_EMAIL = BALIE;
+    expect((await api('GET', '/api/beheer/rollen-rechten')).status).toBe(403);
+  });
+
+  test('overzicht voor het onthaal, balie, en lesje wijzigen met overboeken', async () => {
+    env.DEV_BEHEER_EMAIL = BALIE;
+    const o = await api('GET', `/api/beheer/evenementen/${ev.evenementId}/aanwezigheid`);
+    expect(o.status).toBe(200);
+    expect(o.data.dag.id).toBeTruthy();
+    const a = o.data.deelnemers.find((d: any) => d.id === A.id);
+    expect(a).toMatchObject({ voornaam: 'Scan', aanwezig: false, heeftQr: true });
+    expect(o.data.rechten).toEqual({ lesjeWijzigen: true, overboeken: true, inchecken: true });
+
+    expect((await api('POST', `/api/beheer/aanwezigheid/deelnemers/${A.id}`, { aanwezig: true })).data).toEqual({ aangemeld: true });
+    const na = (await api('GET', `/api/beheer/evenementen/${ev.evenementId}/aanwezigheid`)).data;
+    expect(na.deelnemers.find((d: any) => d.id === A.id)).toMatchObject({ aanwezig: true, via: 'balie' });
+    expect(na.dagdelen.find((d: any) => d.id === vm1.id).aanwezig).toBeGreaterThanOrEqual(1);
+
+    const opties = (await api('GET', `/api/beheer/aanwezigheid/deelnemers/${A.id}/lesjes`)).data;
+    const blok = opties.blokken.find((b: any) => b.id === k1.id);
+    const latijn = blok.sessies.find((s: any) => s.id === sessie(k1, 'latijn').id);
+    expect(latijn).toMatchObject({ vol: true, gekozen: null });
+    expect(blok.sessies.find((s: any) => s.gekozen)?.id).toBe(sessie(k1, 'infomoment').id);
+
+    const pad = `/api/beheer/aanwezigheid/deelnemers/${A.id}/lesje`;
+    expect((await api('POST', pad, { sessieId: latijn.id })).data.fout).toBe('SESSIE_VOLZET');
+    // Overboeken: het onthaal mag dat standaard; na het uitzetten niet meer
+    await zetRecht('onthaal', 'evenementen.overboeken', false);
+    env.DEV_BEHEER_EMAIL = BALIE;
+    expect((await api('POST', pad, { sessieId: latijn.id, forceer: true })).status).toBe(403);
+    await zetRecht('onthaal', 'evenementen.overboeken', true);
+    env.DEV_BEHEER_EMAIL = BALIE;
+    expect((await api('POST', pad, { sessieId: latijn.id, forceer: true })).data).toEqual({ status: 'bevestigd' });
+    await wacht();
+    expect(mails.map((m) => m.type)).toEqual(['schoolwijziging']);
+  });
+
+  test('sessiegever: registreren, aanmelden met code, enkel de eigen sessie', async () => {
+    const kunst = sessie(k1, 'kunst').id;
+    env.DEV_BEHEER_EMAIL = BEHEERDER;
+    expect((await api('POST', '/api/beheer/sessiegevers', { voornaam: 'Gast', naam: 'X', email: 'gast@gmail.com' })).data.velden.email).toBeDefined();
+    const m = await api('POST', '/api/beheer/sessiegevers', { voornaam: 'Lies', naam: 'Leraar', email: 'Lies.Leraar@onderwijs.gent.be' });
+    expect(m.status).toBe(200);
+    sessiegeverId = m.data.id;
+    expect((await api('PATCH', `/api/beheer/sessies/${kunst}/sessiegevers`, { sessiegevers: [sessiegeverId] })).data).toEqual({ ok: true });
+    const lijst = (await api('GET', `/api/beheer/evenementen/${ev.evenementId}/sessiegevers`)).data;
+    expect(lijst.termen).toEqual({ sessiegever: 'lesgever', sessiegevers: 'lesgevers' }); // TERM_SESSIEGEVER uit wrangler.toml
+    expect(lijst.sessiegevers.find((x: any) => x.id === sessiegeverId)).toMatchObject({ email: 'lies.leraar@onderwijs.gent.be', sessies: [kunst] });
+
+    // Een deelnemer in het lesje van de sessiegever (de school zet hem erin)
+    E = await nieuweDeelnemer('Klas');
+    await api('POST', `/api/beheer/deelnemers/${E.id}/sessie`, { sessieId: kunst, forceer: true, verwittig: false });
+    await wacht();
+    mails = [];
+
+    // Code aanvragen: altijd hetzelfde antwoord, enkel een mail voor een geregistreerd adres
+    expect((await sg('POST', '/api/sessiegever/code', { email: 'niemand@onderwijs.gent.be' })).data).toEqual({ ok: true });
+    await wacht();
+    expect(mails).toHaveLength(0);
+    expect((await sg('POST', '/api/sessiegever/code', { email: 'lies.leraar@onderwijs.gent.be' })).data).toEqual({ ok: true });
+    await wacht();
+    expect(mails.map((x) => x.type)).toEqual(['aanmeldcode']);
+    const code = /(\d{3}) (\d{3})/.exec(mails[0].html)!.slice(1).join('');
+
+    expect((await sg('POST', '/api/sessiegever/aanmelden', { email: 'lies.leraar@onderwijs.gent.be', code: code === '000000' ? '111111' : '000000' })).status).toBe(401);
+    const aan = await sg('POST', '/api/sessiegever/aanmelden', { email: 'lies.leraar@onderwijs.gent.be', code });
+    expect(aan.data).toEqual({ ok: true, voornaam: 'Lies' });
+    expect(aan.cookie).toMatch(/^sessiegever=[A-Za-z0-9_-]{43}; Path=\/; HttpOnly; SameSite=Strict; Max-Age=\d+/);
+    expect((await sg('POST', '/api/sessiegever/aanmelden', { email: 'lies.leraar@onderwijs.gent.be', code })).status).toBe(401); // één keer
+    cookie = aan.cookie!.split(';')[0];
+
+    const ik = (await sg('GET', '/api/sessiegever/ik')).data;
+    expect(ik.sessies.map((s: any) => s.id)).toEqual([kunst]);
+    expect(ik.rechten).toEqual(expect.arrayContaining(['evenementen.inchecken', 'evenementen.sessie_inzien']));
+    expect(ik.rechten).not.toContain('evenementen.lesje_wijzigen');
+
+    let tabel = (await sg('GET', `/api/sessiegever/sessies/${kunst}`)).data;
+    expect(tabel.vandaag).toBe(true);
+    const e = tabel.deelnemers.find((d: any) => d.id === E.id);
+    expect(e).toMatchObject({ voornaam: 'Klas', opSchool: false, klas: null, extra: {} });
+    expect((await sg('GET', `/api/sessiegever/sessies/${sessie(k1, 'latijn').id}`)).status).toBe(403); // niet de eigen sessie
+
+    // Extra velden: enkel wat de organisator openzet
+    await api('PATCH', `/api/beheer/evenementen/${ev.evenementId}/sessiegever-velden`, { velden: ['email', 'onbestaand'] });
+    tabel = (await sg('GET', `/api/sessiegever/sessies/${kunst}`)).data;
+    expect(tabel.deelnemers.find((d: any) => d.id === E.id).extra).toEqual({ email: expect.stringMatching(/@example\.org$/) });
+    await api('PATCH', `/api/beheer/evenementen/${ev.evenementId}/sessiegever-velden`, { velden: [] });
+
+    // In de klas aanduiden: ook aangemeld op school, via de klas
+    expect((await sg('POST', `/api/sessiegever/sessies/${kunst}/deelnemers/${E.id}`, { klas: 'aanwezig' }, false)).status).toBe(403); // zonder Origin
+    expect((await sg('POST', `/api/sessiegever/sessies/${kunst}/deelnemers/${E.id}`, { klas: 'aanwezig' })).data).toEqual({ ok: true });
+    expect(await een(`select aanwezig, aanmeld_via from inschrijvingen where deelnemer_id = ? and sessie_id is null`, E.id)).toEqual({ aanwezig: 1, aanmeld_via: 'klas' });
+    env.DEV_BEHEER_EMAIL = BALIE;
+    const o = (await api('GET', `/api/beheer/evenementen/${ev.evenementId}/aanwezigheid`)).data;
+    expect(o.deelnemers.find((d: any) => d.id === E.id)).toMatchObject({ aanwezig: true, via: 'klas' });
+
+    // Etiket scannen: wie op de lijst staat, wordt aangeduid; wie niet, kan de sessiegever niet toevoegen (standaard)
+    expect((await sg('POST', `/api/sessiegever/sessies/${kunst}/scan`, { token: E.token })).data).toMatchObject({ resultaat: 'aangeduid', naam: 'Klas Test' });
+    const nietOp = (await sg('POST', `/api/sessiegever/sessies/${kunst}/scan`, { token: A.token, toevoegen: true })).data;
+    expect(nietOp).toMatchObject({ resultaat: 'niet_op_lijst', kanToevoegen: false });
+    expect(nietOp.lesjes.length).toBeGreaterThan(0);
+    expect((await sg('POST', `/api/sessiegever/sessies/${kunst}/scan`, { token: 'y'.repeat(43) })).data).toEqual({ resultaat: 'onbekend' });
+
+    // Afmelden; een verwijderde sessiegever kan niet meer binnen
+    expect((await sg('POST', '/api/sessiegever/afmelden')).status).toBe(200);
+    expect((await sg('GET', '/api/sessiegever/ik')).status).toBe(401);
+    env.DEV_BEHEER_EMAIL = BEHEERDER;
+    expect((await api('DELETE', `/api/beheer/sessiegevers/${sessiegeverId}`)).data).toEqual({ ok: true });
+    expect(await een(`select count(*) as n from sessie_sessiegevers where sessiegever_id = ?`, sessiegeverId)).toEqual({ n: 0 });
   });
 });

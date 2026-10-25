@@ -1,5 +1,5 @@
 import { installatie } from './kern/installatie';
-import { aangepastSjabloon, esc, leesOpmaak, maakHtml, maakOnderwerp, verpakMail, type SjabloonDefinitie, type Velden } from './kern/sjablonen';
+import { aangepastSjabloon, esc, leesOpmaak, maakHtml, maakOnderwerp, verpakMail, type MailLogo, type SjabloonDefinitie, type Velden } from './kern/sjablonen';
 import type { Env } from './types';
 
 export interface Mail {
@@ -15,6 +15,23 @@ export interface Mail {
   sjabloon?: { sleutel: string; velden: Velden };
   /** Vaste HTML onder de tekst, ook onder een aangepaste tekst (bv. de QR-code voor de check-in). */
   onderaan?: string;
+  /** Evenement van de mail: zonder eigen banner (Mailteksten) staat het logo van het formulier bovenaan. */
+  evenementId?: string | null;
+}
+
+/** Logo van het formulier van dit evenement, of null. WebP slaan we over: Outlook en oudere mailprogramma's tonen het niet. */
+async function evenementLogo(env: Env, evenementId: string): Promise<MailLogo | null> {
+  try {
+    const e = await env.DB.prepare(`select logo, logo_hoogte, kleur_primair from evenementen where evenement_id = ?`)
+      .bind(evenementId)
+      .first<{ logo: string | null; logo_hoogte: number | null; kleur_primair: string | null }>();
+    if (!e?.logo) return null;
+    const obj = await env.STORAGE.head(`logos/${evenementId}`);
+    if (!obj || obj.httpMetadata?.contentType === 'image/webp') return null;
+    return { pad: e.logo, hoogte: e.logo_hoogte, kleur: e.kleur_primair };
+  } catch {
+    return null;
+  }
 }
 
 /** Bouwt een mail met de standaardtekst van het sjabloon; verstuur() vervangt die door de aangepaste tekst. */
@@ -135,8 +152,10 @@ export async function verstuur(env: Env, mail: Mail): Promise<'verzonden' | 'ove
       mail = { ...mail, onderwerp: maakOnderwerp(aangepast.onderwerp, mail.sjabloon.velden), html: maakHtml(aangepast.tekst, mail.sjabloon.velden) };
     }
   }
-  // Banner, voettekst en de vaste regel wie de mail stuurt en waarom.
-  mail = { ...mail, html: verpakMail(mail.html + (mail.onderaan ?? ''), { opmaak: await leesOpmaak(env), organisatie: installatie(env).organisatie, basisUrl: env.PUBLIC_APP_URL, reden: mail.reden }) };
+  // Banner (of anders het logo van het formulier), voettekst en de vaste regel wie de mail stuurt en waarom.
+  const opmaak = await leesOpmaak(env);
+  const logo = !opmaak.kopBanner && mail.evenementId ? await evenementLogo(env, mail.evenementId) : null;
+  mail = { ...mail, html: verpakMail(mail.html + (mail.onderaan ?? ''), { opmaak, organisatie: installatie(env).organisatie, basisUrl: env.PUBLIC_APP_URL, reden: mail.reden, logo }) };
   if (env.MAIL_PROVIDER === 'webhook') {
     await viaWebhook(env, mail);
     return 'verzonden';

@@ -5,6 +5,8 @@ import type { Env, Keuze, Moment, RegistratieInvoer, RegistratieResultaat } from
 import { plaatshouders, promoveerWachtlijst, referentie, STATUS_DAGDEEL, STATUS_SESSIE, vandaag } from './capaciteit';
 import { binnen, publiekEvenement } from './evenement';
 import { DbFout, schrijf } from '../../kern/fouten';
+import { door } from './beheer';
+import { nieuwToken } from '../../kern/http';
 
 /**
  * Atomische registratie: deelnemer + dagde(e)l(en) + sessies in één D1-batch.
@@ -123,11 +125,11 @@ export async function registreer(env: Env, slug: string, invoer: RegistratieInvo
       .prepare(
         `insert into deelnemers (deelnemer_id, evenement_id, doelgroep_id, naam_enc, voornaam_enc, email_enc,
            contact_voornaam_enc, contact_naam_enc, telefoon_enc, school_andere_enc, functie_enc, opmerkingen_enc,
-           email_hash, dubbel_hash, school_id, gemeente, leerjaar, privacy_akkoord_op, beheer_token_hash, contact_id, persoon_id, checkin_token)
-         values (${plaatshouders(22)})`,
+           email_hash, dubbel_hash, school_id, gemeente, leerjaar, privacy_akkoord_op, beheer_token_hash, contact_id, persoon_id, checkin_token, checkin_gemaild_op)
+         values (${plaatshouders(23)})`,
       )
       .bind(deelnemerId, eid, groep?.doelgroep_id ?? null, ...enc, d.schoolId ?? null, d.gemeente ?? null, d.leerjaar ?? null,
-        new Date(nu).toISOString(), tokenHash, koppeling.contactId, koppeling.persoonId, checkinToken),
+        new Date(nu).toISOString(), tokenHash, koppeling.contactId, koppeling.persoonId, checkinToken, new Date(nu).toISOString()),
     ...dagdelen.map((id) =>
       db
         .prepare(
@@ -150,6 +152,8 @@ export async function registreer(env: Env, slug: string, invoer: RegistratieInvo
     ),
     // Als laatste, zodat de resultaten van de sessies (hierboven) op hun plaats blijven.
     ...(uitnodiging ? [markeerGebruiktStmt(env, uitnodiging.uitnodigingId, deelnemerId)] : []),
+    // De triggers tellen elke ingevoegde rij als wijziging; een nieuwe inschrijving begint bij versie 1.
+    db.prepare(`update deelnemers set checkin_versie = 1, gewijzigd_op = null where deelnemer_id = ?`).bind(deelnemerId),
   ];
 
   let resultaten: D1Result[];
@@ -390,12 +394,68 @@ export async function wijzigKeuzesViaToken(env: Env, tokenHash: string, sessies:
           .bind(crypto.randomUUID(), id, s.sessie_id),
       ),
       ...weg.map((h) => promoveerWachtlijst(db, h.sessie_id)),
+      door(db, id, 'ouder'),
     ]);
   } catch (fout) {
     if (fout instanceof DbFout) await welkeIsVolzet(env, fout, [], erbij.map((s) => s.sessie_id));
     throw fout;
   }
   return { gewijzigd: true };
+}
+
+/**
+ * Alles voor een mail met het actuele overzicht en de QR-code (wijziging door ouder of school, QR voor een oude
+ * inschrijving). Null voor een geannuleerde of geanonimiseerde inschrijving of een zonder e-mailadres.
+ * Een inschrijving van vóór de QR-code krijgt hier haar check-intoken.
+ */
+export async function mailGegevens(env: Env, deelnemerId: string) {
+  const db = env.DB;
+  const dn = await db
+    .prepare(
+      `select dn.email_enc, dn.voornaam_enc, dn.checkin_token, dn.checkin_versie, e.evenement_id, e.titel, e.slug, e.contact_email
+       from deelnemers dn join evenementen e on e.evenement_id = dn.evenement_id
+       where dn.deelnemer_id = ? and dn.status = 'actief' and dn.geanonimiseerd_op is null`,
+    )
+    .bind(deelnemerId)
+    .first<{ email_enc: string | null; voornaam_enc: string | null; checkin_token: string | null; checkin_versie: number; evenement_id: string; titel: string; slug: string; contact_email: string | null }>();
+  if (!dn?.email_enc) return null;
+  if (!dn.checkin_token) {
+    await db.prepare(`update deelnemers set checkin_token = ? where deelnemer_id = ? and checkin_token is null`).bind(nieuwToken(), deelnemerId).run();
+    const r = await db.prepare(`select checkin_token from deelnemers where deelnemer_id = ?`).bind(deelnemerId).first<{ checkin_token: string }>();
+    dn.checkin_token = r!.checkin_token;
+  }
+  const [momenten, keuzes] = await db.batch<any>([
+    db
+      .prepare(
+        `select dd.dagdeel_id as dagdeelId, d.naam as dag, dd.naam as dagdeel, dd.start_uur as startUur, dd.eind_uur as eindUur, i.status
+         from inschrijvingen i join dagdelen dd on dd.dagdeel_id = i.dagdeel_id join evenement_dagen d on d.dag_id = i.dag_id
+         where i.deelnemer_id = ? and i.sessie_id is null and i.status <> 'geannuleerd'
+         order by d.datum, dd.start_uur`,
+      )
+      .bind(deelnemerId),
+    db
+      .prepare(
+        `select s.sessie_id as sessieId, s.titel, t.naam as tijdsblok, t.start_uur as startUur, l.naam as locatie, i.status
+         from inschrijvingen i join sessies s on s.sessie_id = i.sessie_id join tijdsblokken t on t.tijdsblok_id = i.tijdsblok_id
+         left join locaties l on l.locatie_id = s.locatie_id
+         where i.deelnemer_id = ? and i.status <> 'geannuleerd'
+         order by t.start_uur`,
+      )
+      .bind(deelnemerId),
+  ]);
+  return {
+    deelnemerId,
+    evenementId: dn.evenement_id,
+    email: (await ontsleutel(env, dn.email_enc))!,
+    voornaam: (await ontsleutel(env, dn.voornaam_enc)) ?? '',
+    evenement: dn.titel,
+    slug: dn.slug,
+    contactEmail: dn.contact_email,
+    referentie: referentie(deelnemerId),
+    momenten: momenten.results as Moment[],
+    keuzes: keuzes.results as Keuze[],
+    checkin: { token: dn.checkin_token, versie: dn.checkin_versie },
+  };
 }
 
 /** Gegevens voor de annulatiemail; op te halen vóór het annuleren. */

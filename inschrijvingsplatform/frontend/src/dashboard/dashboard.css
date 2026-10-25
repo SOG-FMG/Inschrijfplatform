@@ -362,3 +362,37 @@
 .d-schakelaar input:checked + span::after { transform: translateX(16px); }
 .d-schakelaar input:focus-visible + span { outline: 3px solid var(--focus, #f0b400); outline-offset: 2px; }
 .d-schakelaar input:disabled + span { opacity: .5; }
+
+/* ---------- Aanwezigheid (Aanwezigheid.tsx) ---------- */
+.aw-tellers { margin-bottom: 14px; }
+.aw-tellers h2 { margin-bottom: .2em; }
+.aw-teller { font-size: 1.2em; margin: 0 0 6px; }
+.aw-balk { height: 10px; border-radius: 5px; background: #fdecea; overflow: hidden; }
+.aw-balk span { display: block; height: 100%; background: var(--d-ok); }
+.aw-status { font-weight: 700; white-space: nowrap; }
+.aw-status--ja { color: var(--d-ok); }
+.aw-status--nee { color: var(--fout); }
+.aw-qr { display: flex; gap: 14px; align-items: flex-start; }
+.aw-qr .d-qr { width: 120px; }
+.d-raster + .d-raster, .d-tabelvak + .d-raster { margin-top: 14px; }
+
+/* ---------- Sessiegevers (Sessiegevers.tsx) ---------- */
+.sg-chip { display: inline-flex; align-items: center; gap: 4px; margin: 0 6px 4px 0; padding: 1px 4px 1px 10px; border-radius: 999px; background: var(--primair-licht); font-weight: 600; }
+.sg-chip button { border: 0; background: none; font-size: 1.2em; line-height: 1; cursor: pointer; color: inherit; padding: 0 4px; }
+.sg-kies { font: inherit; padding: 2px 6px; border: 1px dashed var(--d-rand); border-radius: 999px; background: var(--vlak); color: var(--primair); }
+
+/* ---------- Rollen en rechten (RollenRechten.tsx) ---------- */
+.d-tabel th.rr-rol, .d-tabel td.rr-rol { text-align: center; width: 9em; }
+.rr-vak { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; }
+.rr-vak input { width: 20px; height: 20px; }
+.rr-aangepast { font-size: .75em; color: var(--d-nee); font-weight: 700; }
+
+/* Kleine QR-code op de rapporten (Rapporten.tsx): klaslijst → live tabel van het lesje, overzicht → aanwezigheid */
+.r-qr { float: right; width: 72px; margin: 0 0 4px 10px; background: #fff; padding: 2px; border-radius: 3px; }
+.r-qr svg { display: block; width: 100%; height: auto; }
+.r-qr--kop { float: none; width: 60px; margin: 0 0 0 auto; align-self: center; }
+@media print { .r-qr { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+
+/* QR-code voor de check-in op een etiket (Etiketten.tsx) */
+.e-qr { position: absolute; background: #fff; }
+.e-qr svg { display: block; width: 100%; height: 100%; }

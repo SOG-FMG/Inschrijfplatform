@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { beheerApi, type BeheerGebruiker, type Profiel, type Rol, type Uitnodiging } from '../services/beheerApi';
 import { domeinTekst, isToegelatenEmail, useInstallatie, voorbeeldAdres } from '../services/installatie';
-import { datumTijd, EenmaligeCode, foutTekst, Invoer, Melding, ROLNAAM, Venster } from './ui';
+import { datumTijd, EenmaligeCode, foutTekst, Invoer, Link, Melding, ROLNAAM, Venster } from './ui';
 
 /** Medewerkers beheren (enkel platformbeheerders; de API controleert dat ook). */
 
 const ROLLEN: { rol: Rol; uitleg: string }[] = [
   { rol: 'organisator', uitleg: 'Stelt de gekozen evenementen in en downloadt deelnemers.' },
-  { rol: 'onthaal', uitleg: 'Bekijkt de gekozen evenementen en deelnemers, wijzigt niets.' },
+  { rol: 'onthaal', uitleg: 'Scant aan het onthaal, zet aanwezig en past lesjes aan bij de gekozen evenementen; wijzigt geen instellingen (zie Rollen en rechten).' },
   { rol: 'platformbeheerder', uitleg: 'Alle evenementen en medewerkers.' },
 ];
 
@@ -63,7 +63,10 @@ export function Medewerkers({ profiel }: { profiel: Profiel }) {
           <h1>Medewerkers</h1>
           <p className="d-sub">{domein ? `Enkel ${domein}-adressen. ` : ''}Nieuwe medewerkers krijgen een eenmalige code om hun account te activeren.</p>
         </div>
-        <button type="button" className="d-knop" onClick={() => setBewerk('nieuw')}>+ Medewerker toevoegen</button>
+        <div className="d-knoppen" style={{ marginTop: 0 }}>
+          <Link href="/dashboard/medewerkers/rechten" className="d-knop d-knop--secundair">Rollen en rechten</Link>
+          <button type="button" className="d-knop" onClick={() => setBewerk('nieuw')}>+ Medewerker toevoegen</button>
+        </div>
       </header>
       {fout && <Melding soort="fout">{fout}</Melding>}
 

@@ -3,6 +3,7 @@ import { ruimContactenOp } from './contacten';
 import { audit } from './audit';
 import { testmail, verstuur } from '../mail';
 import { json } from './http';
+import { rollenEnRechten, zetRecht } from './rollen';
 import { defineModule } from './module';
 
 /**
@@ -22,6 +23,21 @@ export default defineModule({
   },
 
   routes: [
+    // Rechten per rol (Medewerkers → Rollen en rechten); enkel de rechten die een module instelbaar maakt.
+    {
+      methode: 'GET',
+      pad: '/rollen-rechten',
+      toegang: 'beheer',
+      recht: 'kern.gebruikers.beheren',
+      handler: ({ env, modules }) => rollenEnRechten(env, modules),
+    },
+    {
+      methode: 'PATCH',
+      pad: '/rollen-rechten',
+      toegang: 'beheer',
+      recht: 'kern.gebruikers.beheren',
+      handler: async (ctx) => zetRecht(ctx.env, ctx.gebruiker, ctx.modules, await ctx.leesJson(1024), ctx.ip),
+    },
     {
       // Testmail naar jezelf: controleert de hele keten (Worker → flow → mailbox) zonder een inschrijving te doen.
       methode: 'POST',
