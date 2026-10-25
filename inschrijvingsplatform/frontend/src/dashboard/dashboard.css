@@ -419,3 +419,40 @@
 .h-verschil { background: var(--waarschuwing-licht); font-weight: 600; }
 .h-voorbeeld { background: var(--achtergrond); border: 1px solid var(--d-rand); border-radius: 4px; padding: 6px 12px; }
 .d-veld textarea, .d-veld select { font: inherit; padding: 6px 8px; border: 1px solid var(--d-rand); border-radius: 4px; background: var(--vlak); color: inherit; }
+
+/* ---------- Handleiding (/dashboard/help) ---------- */
+.dash__help { color: #fff; text-decoration: none; padding: 7px 10px; border: 1px solid rgba(255, 255, 255, .35); border-radius: 5px; text-align: center; font-weight: 600; }
+.dash__help:hover { background: rgba(255, 255, 255, .12); }
+.help { display: grid; grid-template-columns: minmax(14em, 20em) minmax(0, 1fr); gap: 16px; align-items: start; }
+.help__stappen { position: sticky; top: 12px; display: flex; flex-direction: column; gap: 4px; }
+.help__groep { padding: 6px 10px; border-radius: 6px; border: 1px solid transparent; }
+.help__groep.actief { background: var(--vlak); border-color: var(--d-rand); }
+.help__groep > span { display: block; }
+.help__titel { font-weight: 700; text-decoration: none; color: var(--primair); }
+.help__groep ol { margin: 6px 0 2px; padding-left: 0; list-style: none; counter-reset: stap; }
+.help__groep li { counter-increment: stap; display: flex; gap: 8px; align-items: baseline; padding: 3px 0; }
+.help__groep li::before {
+  content: counter(stap); flex: none; width: 1.6em; height: 1.6em; line-height: 1.6em; text-align: center; border-radius: 50%;
+  font-size: .85em; font-weight: 700; background: var(--primair-licht); color: var(--primair-donker);
+}
+.help__groep li.gedaan::before { content: '✓'; background: #d4f2e1; color: var(--d-ok); }
+.help__groep li.actief::before { background: var(--primair); color: #fff; }
+.help__groep li a { text-decoration: none; color: inherit; }
+.help__groep li.actief a { font-weight: 700; }
+.help__uitleg { min-height: 24em; margin: 0; }
+.help__uitleg:focus { outline: none; }
+.help__uitleg h2 { font-size: 1.5em; }
+.help__tekst { max-width: 46em; }
+.help__tekst li { margin: 4px 0; }
+.help-tip { margin-top: 10px; }
+.help-naar { font-weight: 600; }
+.help__volgende { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--d-rand); }
+.help__volgende .d-knop { text-decoration: none; }
+.help__kaarten { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.help__kaart { display: flex; flex-direction: column; gap: 4px; padding: 12px; border: 1px solid var(--d-rand); border-radius: 6px; text-decoration: none; color: inherit; }
+.help__kaart:hover { border-color: var(--primair); background: var(--primair-licht); }
+@media (max-width: 760px) {
+  .help { grid-template-columns: 1fr; }
+  .help__stappen { position: static; }
+  .help__uitleg { order: -1; min-height: 0; }
+}

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { Profiel } from '../services/beheerApi';
 import { Account } from './Account';
 import { Etiketten } from './Etiketten';
+import { Help } from './help/Help';
 import { EvenementOverzicht } from './EvenementOverzicht';
 import { Evenementen } from './Evenementen';
 import { Importeren } from './Importeren';
@@ -66,6 +67,7 @@ export const DASHBOARD_MODULES: DashboardModule[] = [
       { patroon: /^\/dashboard\/medewerkers$/, recht: 'kern.gebruikers.beheren', toon: (_m, c) => <Medewerkers profiel={c.profiel} /> },
       { patroon: /^\/dashboard\/medewerkers\/rechten$/, recht: 'kern.gebruikers.beheren', toon: () => <RollenRechten /> },
       { patroon: /^\/dashboard\/account$/, toon: (_m, c) => <Account profiel={c.profiel} naVerandering={c.naVerandering} /> },
+      { patroon: /^\/dashboard\/help(?:\/([a-z]+))?(?:\/([a-z]+))?$/, toon: (m) => <Help handleidingId={m[1]} stapId={m[2]} /> },
     ],
   },
   {

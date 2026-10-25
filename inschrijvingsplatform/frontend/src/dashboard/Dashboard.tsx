@@ -4,6 +4,7 @@ import { beheerApi, type Profiel } from '../services/beheerApi';
 import { isModuleActief, useInstallatie } from '../services/installatie';
 import { Aanmelden, Activeren, WachtwoordInstellen } from './Aanmelden';
 import './dashboard.css';
+import { helpUrl } from './help/handleidingen';
 import { DASHBOARD_MODULES } from './modules';
 import { Link, Melding, ROLNAAM, usePad } from './ui';
 
@@ -88,6 +89,11 @@ export function Dashboard() {
             <Link key={i.href} href={i.href} className={i.actief(pad) ? 'actief' : undefined}>{i.label}</Link>
           ))}
         </nav>
+        {/* Opent de handleiding bij de stap over deze pagina, in een nieuw tabblad (de pagina zelf blijft open). */}
+        <a className="dash__help" href={pad.startsWith('/dashboard/help') ? '/dashboard/help' : helpUrl(pad, location.search)}
+          target={pad.startsWith('/dashboard/help') ? undefined : '_blank'} rel="noopener">
+          {pad.startsWith('/dashboard/help') ? 'Alle handleidingen' : '? Help bij deze pagina'}
+        </a>
         <div className="dash__gebruiker">
           <strong>{profiel.voornaam} {profiel.naam}</strong>
           <span>{ROLNAAM[profiel.rol]}</span>
