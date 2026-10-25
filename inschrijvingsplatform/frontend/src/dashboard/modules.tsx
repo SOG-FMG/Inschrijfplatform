@@ -76,7 +76,7 @@ export const DASHBOARD_MODULES: DashboardModule[] = [
   {
     id: 'evenementen',
     menu: [
-      { href: '/dashboard', label: 'Evenementen', volgorde: 10, actief: (p) => p === '/dashboard' || p.startsWith('/dashboard/evenementen') },
+      { href: '/dashboard', label: 'Evenementen', volgorde: 10, actief: (p) => p === '/dashboard' || p.startsWith('/dashboard/evenementen') || p.startsWith('/dashboard/importeren') },
       { href: '/dashboard/privacy', label: 'Privacy', volgorde: 80, actief: (p) => p.startsWith('/dashboard/privacy') },
     ],
     paginas: [
@@ -107,7 +107,7 @@ export const DASHBOARD_MODULES: DashboardModule[] = [
   },
   {
     id: 'historiek',
-    menu: [{ href: '/dashboard/importeren', label: 'Importeren', volgorde: 16, recht: 'historiek.importeren', actief: (p) => p.startsWith('/dashboard/importeren') }],
+    // Geen menu-item: de knop Importeren staat rechtsboven bij Evenementen.
     paginas: [
       { patroon: /^\/dashboard\/importeren$/, toon: (_m, c) => <Importeren profiel={c.profiel} naVerandering={c.naVerandering} /> },
       { patroon: new RegExp(`^/dashboard/evenementen/${EV}/overzicht$`), recht: 'historiek.bekijken', toon: (m, c) => <EvenementOverzicht key={m[1]} evenementId={m[1]} profiel={c.profiel} /> },

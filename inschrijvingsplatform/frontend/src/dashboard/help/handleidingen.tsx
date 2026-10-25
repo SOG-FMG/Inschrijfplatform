@@ -68,7 +68,7 @@ export const HANDLEIDINGEN: Handleiding[] = [
             <ul>
               <li><Naar pad="/dashboard">Evenementen</Naar>: de lijst, met per evenement Overzicht, Instellingen, Aanwezigheid, Sessiegevers, Rapporten, Etiketten en de export naar Excel.</li>
               <li><Naar pad="/dashboard/voorinschrijvingen">Voorinschrijvingen</Naar>: formulieren, imports, statistieken en uitnodigen.</li>
-              <li><Naar pad="/dashboard/importeren">Importeren</Naar>: gegevens van een schooljaar inladen.</li>
+              <li>Rechtsboven bij Evenementen: <Naar pad="/dashboard/importeren">Importeren</Naar> (voor wie mag importeren), om de gegevens van een schooljaar in te laden.</li>
               <li>Contacten, Medewerkers, Meldingen, Mailteksten en Privacy: voor beheerders.</li>
             </ul>
             <p>Onderaan het menu staat <strong>Help bij deze pagina</strong>: dat opent deze handleiding bij de stap over de pagina waar je bent.</p>
@@ -277,7 +277,7 @@ export const HANDLEIDINGEN: Handleiding[] = [
         titel: 'Evenement voor dat schooljaar',
         inhoud: (
           <>
-            <p>Ga naar <Naar pad="/dashboard/importeren">Importeren</Naar> en klik <strong>+ Evenement voor een vorig schooljaar</strong>.</p>
+            <p>Ga naar <Naar pad="/dashboard">Evenementen</Naar> en klik rechtsboven op <strong><Naar pad="/dashboard/importeren">Importeren</Naar></strong>. Klik dan <strong>+ Evenement voor een vorig schooljaar</strong>.</p>
             <ol>
               <li>Kies het schooljaar (bv. 2025-2026). Titel en adres worden ingevuld.</li>
               <li>Kies <strong>Gegevens bewaren tot</strong>: daarna worden namen en contactgegevens automatisch gewist.</li>

@@ -28,9 +28,14 @@ export function Evenementen({ profiel, naVerandering }: { profiel: Profiel; naVe
           <h1>Evenementen</h1>
           <p className="d-sub">{profiel.evenementen.length} evenement(en) waar je toegang toe hebt.</p>
         </div>
-        {profiel.rechten.includes('evenementen.aanmaken') && (
-          <button type="button" className="d-knop" onClick={() => setNieuw(true)}>+ Nieuw evenement</button>
-        )}
+        <div className="d-knoppen d-knoppen--links">
+          {isModuleActief(installatie, 'historiek') && profiel.rechten.includes('historiek.importeren') && (
+            <Link href="/dashboard/importeren" className="d-knop d-knop--secundair">Importeren</Link>
+          )}
+          {profiel.rechten.includes('evenementen.aanmaken') && (
+            <button type="button" className="d-knop" onClick={() => setNieuw(true)}>+ Nieuw evenement</button>
+          )}
+        </div>
       </header>
 
       <div className="d-werkbalk">
