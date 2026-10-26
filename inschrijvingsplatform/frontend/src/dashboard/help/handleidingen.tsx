@@ -108,14 +108,16 @@ export const HANDLEIDINGEN: Handleiding[] = [
         titel: 'Algemene gegevens',
         inhoud: (
           <>
-            <p>In <Naar pad="/dashboard/evenementen/:ev">Instellingen</Naar>, blok <em>Algemeen</em>:</p>
+            <p><Naar pad="/dashboard/evenementen/:ev">Instellingen</Naar> heeft vijf tabbladen: <em>Sessies</em> (het werk dat terugkomt) en daarnaast <em>Algemeen</em>, <em>Doelgroepen</em>, <em>Dagen</em> en <em>Momenten</em>, die je meestal één keer instelt.</p>
+            <p>Op het tabblad <em>Algemeen</em> staan de velden in groepen; wat je zelden aanraakt begint ingeklapt:</p>
             <ul>
               <li><strong>Inschrijven vanaf / tot</strong>: leeg = meteen open, tot het evenement.</li>
               <li><strong>Keuzes voor leerjaar</strong>, gescheiden door komma's (bv. 5de leerjaar, 6de leerjaar).</li>
               <li><strong>E-mailadres voor vragen</strong>: staat op het formulier en in de bevestigingsmail.</li>
               <li><strong>Logo, hoofdkleur en accentkleur</strong> voor het formulier en de mails.</li>
             </ul>
-            <p>Met <em>Wijzigingen ongedaan maken</em> zet je een blok terug zoals het bewaard was.</p>
+            <p>Met <em>Wijzigingen ongedaan maken</em> zet je het formulier terug zoals het bewaard was.</p>
+            <Tip>Het tabblad waarop je staat, staat in het adres (<code>#sessies</code>, <code>#algemeen</code> …). Vernieuw je de pagina, dan kom je op hetzelfde tabblad terug.</Tip>
           </>
         ),
       },
@@ -124,7 +126,7 @@ export const HANDLEIDINGEN: Handleiding[] = [
         titel: 'Doelgroepen (A- en B-stroom)',
         inhoud: (
           <>
-            <p>Bij <em>Doelgroepen</em> in <Naar pad="/dashboard/evenementen/:ev">Instellingen</Naar> maak je bv. <strong>A-stroom</strong> en <strong>B-stroom</strong>. De ouder kiest er één op het formulier.</p>
+            <p>Op het tabblad <em>Doelgroepen</em> in <Naar pad="/dashboard/evenementen/:ev">Instellingen</Naar> maak je bv. <strong>A-stroom</strong> en <strong>B-stroom</strong>. De ouder kiest er één op het formulier.</p>
             <ul>
               <li>Een lesje met een doelgroep is enkel zichtbaar voor die doelgroep; zonder doelgroep ziet iedereen het.</li>
               <li>Zet <em>Kiest lesjes</em> uit als die doelgroep enkel een moment kiest (bv. de B-stroom).</li>
@@ -135,30 +137,33 @@ export const HANDLEIDINGEN: Handleiding[] = [
       },
       {
         id: 'momenten',
-        titel: 'Dagen en momenten',
+        titel: 'Dagen, momenten en tijdsblokken',
         inhoud: (
           <>
-            <p>Bij <em>Dagen, momenten en lesjes</em> in <Naar pad="/dashboard/evenementen/:ev">Instellingen</Naar>:</p>
+            <p>Op het tabblad <em>Dagen</em> in <Naar pad="/dashboard/evenementen/:ev">Instellingen</Naar> staat elke dag op een regel: naam (bv. Zaterdag 24 januari), datum en uren. Met <em>Lesjes kiezen tot</em> sluit je de keuze van sessies af, terwijl inschrijven voor een moment nog kan.</p>
+            <p>Op het tabblad <em>Momenten</em> krijg je per dag twee tabellen:</p>
             <ol>
-              <li><strong>Dag toevoegen</strong>: naam (bv. Zaterdag 24 januari), datum en uren. Met <em>Lesjes kiezen tot</em> sluit je de keuze van lesjes af, terwijl inschrijven voor een moment nog kan.</li>
-              <li><strong>Moment (dagdeel) toevoegen</strong>: bv. Voormiddag 10:00–12:10, met een maximum aantal deelnemers (leeg = onbeperkt).</li>
+              <li>De <strong>momenten</strong> (dagdelen): bv. Voormiddag 10:00–12:10, met een maximum aantal deelnemers (leeg = onbeperkt).</li>
+              <li>Onder elk moment de <strong>tijdsblokken</strong>: bv. Keuzelesje 1 om 10:10, Rondleiding om 10:50. Soort <em>Keuze</em> = de leerling kiest een sessie; <em>Programma</em> = voor iedereen.</li>
             </ol>
-            <Tip>Een moment met alle tijdsblokken en lesjes kopieer je naar een andere dag met <em>Kopiëren naar andere dag…</em>.</Tip>
+            <p>Je vult de velden rechtstreeks in de tabel in en klikt bovenaan op <strong>Bewaren</strong>. Al de rest van een regel staat achter <em>Meer…</em>, samen met <em>Verwijderen</em>.</p>
+            <Tip>Een moment met alle tijdsblokken en sessies kopieer je naar een andere dag met <em>Naar andere dag…</em>.</Tip>
           </>
         ),
       },
       {
         id: 'lesjes',
-        titel: 'Tijdsblokken en lesjes',
+        titel: 'Sessies (lesjes) invullen',
         inhoud: (
           <>
-            <p>Binnen een moment voeg je <strong>tijdsblokken</strong> toe (bv. Keuzelesje 1 om 10:10, Rondleiding om 10:50). Soort <em>Keuze</em> = de leerling kiest een lesje; <em>Programma</em> = voor iedereen.</p>
-            <p>In een keuzeblok voeg je <strong>lesjes</strong> toe met lokaal, maximum, leerkracht en e-mail leerkracht (die krijgt de klaslijst). Met <em>Wachtlijst</em> kunnen ouders zich op een volzet lesje toch aanmelden.</p>
+            <p>Op het tabblad <em>Sessies</em> klik je een dag open. Per moment krijg je een tabel per tijdsblok, met de kolommen <strong>Naam, Lokaal, Leerkracht, Ingeschreven en Maximum</strong> naast elkaar. Die vul je rechtstreeks in de tabel in; bovenaan verschijnt dan <strong>Bewaren</strong>, zodat je eerst alle lokalen of maxima kan aanpassen en daarna in één keer opslaat.</p>
+            <p>Achter <em>Meer…</em> staat de volledige sessie: code, doelgroep, soort, e-mail leerkracht (die krijgt de klaslijst), wachtlijst, zichtbaarheid, beschrijving en kleur.</p>
             <ul>
-              <li><strong>Code</strong>: dezelfde code in een ander tijdsblok = hetzelfde lesje; een leerling kan het dan maar één keer kiezen.</li>
-              <li>Een lesje met inschrijvingen kan je niet verwijderen: zet het op <em>gesloten</em> of <em>geannuleerd</em>.</li>
+              <li><strong>Code</strong>: dezelfde code in een ander tijdsblok = dezelfde sessie; een leerling kan ze dan maar één keer kiezen.</li>
+              <li>Een sessie met inschrijvingen kan je niet verwijderen: zet ze op <em>gesloten</em> of <em>geannuleerd</em>.</li>
+              <li>Met <em>Wachtlijst</em> kunnen ouders zich op een volzette sessie toch aanmelden.</li>
             </ul>
-            <Tip>Met <em>Lesjes kopiëren naar…</em> zet je dezelfde lesjes in andere keuzeblokken, ook op een andere dag. Inschrijvingen gaan nooit mee.</Tip>
+            <Tip>Met <em>⧉ Kopiëren</em> op een regel kies je naar welk moment én welk tijdsblok die sessie moet. Staan er meerdere in een blok, dan kopieer je ze samen met <em>Alle sessies kopiëren…</em>. Inschrijvingen gaan nooit mee.</Tip>
           </>
         ),
       },
@@ -167,7 +172,7 @@ export const HANDLEIDINGEN: Handleiding[] = [
         titel: 'Privacytekst en bewaartermijn',
         inhoud: (
           <>
-            <p>Op <Naar pad="/dashboard/privacy">Privacy</Naar> zie je per evenement of er een privacytekst is en hoe lang gegevens bewaard worden. Je vult beide in bij <Naar pad="/dashboard/evenementen/:ev">Instellingen</Naar> → Algemeen.</p>
+            <p>Op <Naar pad="/dashboard/privacy">Privacy</Naar> zie je per evenement of er een privacytekst is en hoe lang gegevens bewaard worden. Je vult beide in bij <Naar pad="/dashboard/evenementen/:ev">Instellingen</Naar> → tabblad Algemeen → <em>Contact, privacy en bewaren</em>.</p>
             <p>Na de bewaartermijn (dagen na de laatste dag) worden namen, e-mailadressen en telefoonnummers elke nacht automatisch gewist. De aantallen per school, leerjaar en lesje blijven.</p>
             <Let>De bewaartermijn en de privacytekst stem je af met de DPO.</Let>
           </>
@@ -182,7 +187,7 @@ export const HANDLEIDINGEN: Handleiding[] = [
               <li>Open het formulier via <em>Formulier ↗</em> op <Naar pad="/dashboard">Evenementen</Naar> en schrijf een testkind in.</li>
               <li>Kijk de bevestigingsmail na (met de persoonlijke link en de QR-code).</li>
               <li>Annuleer de test via de persoonlijke link.</li>
-              <li>Zet in <Naar pad="/dashboard/evenementen/:ev">Instellingen</Naar> de status op <strong>Gepubliceerd</strong>.</li>
+              <li>Zet in <Naar pad="/dashboard/evenementen/:ev">Instellingen</Naar> op het tabblad Algemeen de status op <strong>Gepubliceerd</strong>.</li>
             </ol>
             <p>Na het evenement zet je de status op <em>Gesloten</em> of <em>Gearchiveerd</em>.</p>
           </>
@@ -689,6 +694,7 @@ export const HELP_PER_PAD: [RegExp, string, string][] = [
   [/^\/dashboard\/evenementen\/[^/]+\/etiketten$/, 'rapporten', 'etiketten'],
   [/^\/dashboard\/evenementen\/[^/]+\/sessiegevers$/, 'dagzelf', 'sessiegevers'],
   [/^\/dashboard\/evenementen\/[^/]+\/aanwezigheid$/, 'dagzelf', 'aanwezigheid'],
+  [/^\/dashboard\/evenementen\/[^/]+\/instelOud$/, 'evenement', 'algemeen'],
   [/^\/dashboard\/evenementen\/[^/]+$/, 'evenement', 'algemeen'],
   [/^\/dashboard\/importeren/, 'vorigjaar', 'evenement'],
   [/^\/dashboard\/voorinschrijvingen/, 'voorinschrijvingen', 'formulier'],

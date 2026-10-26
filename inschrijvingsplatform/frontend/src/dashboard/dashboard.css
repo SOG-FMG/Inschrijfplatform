@@ -165,7 +165,56 @@
 .d-code__waarde code { font-size: 2em; font-weight: 800; letter-spacing: .08em; padding: 6px 10px; background: var(--primair-licht); border-radius: 5px; }
 
 /* =====================================================================
-   Instellingen van een evenement
+   Instellingen van een evenement: tabbladen met tabellen (Instellingen.tsx)
+   ===================================================================== */
+/* Tabbladen: eerst het werk dat terugkomt (Sessies), dan wat je één keer instelt. */
+.d-tabs, .r-tabs { display: flex; gap: 4px; border-bottom: 2px solid var(--d-rand); margin-bottom: 10px; flex-wrap: wrap; }
+.d-tabs button, .r-tabs button { font: inherit; font-weight: 600; background: none; border: 0; border-bottom: 3px solid transparent; margin-bottom: -2px; padding: 6px 12px; cursor: pointer; color: var(--d-zacht); }
+.d-tabs button.actief, .r-tabs button.actief { color: var(--primair); border-bottom-color: var(--primair); }
+.d-tabs button { font-size: 1.1em; }
+
+/* Eén dag, open te klikken op het tabblad Sessies. */
+.it-dag { background: var(--vlak); border: 1px solid var(--d-rand); border-radius: 6px; margin-bottom: 10px; }
+.it-dag > summary { cursor: pointer; padding: 9px 12px; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.it-dag > summary::marker { color: var(--d-zacht); }
+.it-dag[open] > summary { border-bottom: 1px solid var(--d-rand); background: var(--primair-licht); }
+.it-dag__naam { font-weight: 700; font-size: 1.25em; }
+.it-dag > *:not(summary) { margin: 10px 12px; }
+
+.it-dagdeel { border-left: 3px solid var(--primair); padding-left: 10px; }
+.it-dagdeel h3 { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin: 0 0 6px; font-size: 1.2em; }
+
+/* Tabel per tijdsblok ("Keuzelesje 1", "Keuzelesje 2"). */
+.it-tabel { margin-bottom: 12px; }
+.it-tabel__kop { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin: 10px 0 4px; }
+.it-tabel__kop h4 { margin: 0; font-size: 1.05em; }
+.it-tabel__acties { margin-left: auto; }
+.it-tabel .d-tabelvak { margin-bottom: 0; }
+.it-kol-acties { width: 13em; }
+
+/* Cellen die je rechtstreeks aanpast: zichtbaar als veld zodra je erover gaat of erin staat. */
+.it-cel { vertical-align: middle; }
+.it-cel input:not([type='checkbox']):not([type='color']), .it-cel select, .it-cel textarea {
+  font: inherit; width: 100%; min-width: 0; padding: 2px 4px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: inherit;
+}
+.it-cel input:hover:not(:disabled), .it-cel select:hover:not(:disabled), .it-cel textarea:hover:not(:disabled) { border-color: var(--d-rand); background: var(--vlak); }
+.it-cel input:focus, .it-cel select:focus, .it-cel textarea:focus { border-color: var(--primair); background: var(--vlak); outline: 2px solid var(--focus); outline-offset: 0; }
+.it-cel input:disabled, .it-cel select:disabled, .it-cel textarea:disabled { opacity: 1; }
+.it-cel--getal input { text-align: right; font-variant-numeric: tabular-nums; }
+.it-cel--jaNee { text-align: center; }
+.it-cel--anders { background: #fffbe6; }
+.it-cel--fout { background: var(--fout-licht); }
+
+/* Formulier achter "Meer…" en op het tabblad Algemeen. */
+.it-form__info { margin-bottom: 8px; }
+.it-groep { border: 1px solid var(--d-rand); border-radius: 5px; padding: 8px 12px; margin: 0 0 10px; }
+.it-groep > legend, .it-groep > summary { font-weight: 700; padding: 0 4px; }
+.it-groep--dicht > summary { cursor: pointer; padding: 0; }
+.it-groep--dicht[open] > summary { margin-bottom: 6px; }
+.it-oud { margin-top: 20px; border-top: 1px solid var(--d-rand); padding-top: 8px; }
+
+/* =====================================================================
+   Instellingen, alles onder elkaar (IntOud, InstellingenOud.tsx)
    ===================================================================== */
 .inst-blok { background: var(--vlak); border: 1px solid var(--d-rand); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
 
@@ -228,12 +277,19 @@
 .kopie__lijst { display: flex; flex-direction: column; max-height: 260px; overflow: auto; border: 1px solid var(--d-rand); border-radius: 4px; padding: 4px 8px; margin-bottom: 8px; }
 .kopie__uit { opacity: .5; }
 
+/* Doel kiezen: per dag de momenten, per moment de tijdsblokken. */
+.kopie__boom { max-height: 340px; overflow: auto; border: 1px solid var(--d-rand); border-radius: 4px; padding: 6px 10px; margin-bottom: 8px; }
+.kopie__dag + .kopie__dag { border-top: 1px solid var(--d-rand); margin-top: 8px; padding-top: 8px; }
+.kopie__dagdeel { display: grid; grid-template-columns: minmax(10em, 14em) minmax(0, 1fr); gap: 4px 12px; align-items: baseline; padding: 3px 0 3px 10px; }
+.kopie__moment { font-weight: 600; }
+.kopie__blokken { display: flex; gap: 14px; flex-wrap: wrap; }
+.kopie__blokken .d-keuze { padding: 0; }
+@media (max-width: 560px) { .kopie__dagdeel { grid-template-columns: 1fr; } }
+
 /* =====================================================================
    Rapporten: op het scherm als papier, bij afdrukken één rapport per blad
    ===================================================================== */
-.r-tabs { display: flex; gap: 4px; border-bottom: 2px solid var(--d-rand); margin-bottom: 10px; flex-wrap: wrap; }
-.r-tabs button { font: inherit; font-weight: 600; background: none; border: 0; border-bottom: 3px solid transparent; margin-bottom: -2px; padding: 6px 12px; cursor: pointer; color: var(--d-zacht); }
-.r-tabs button.actief { color: var(--primair); border-bottom-color: var(--primair); }
+/* De tabbladen zelf staan bij de instellingen (.d-tabs, .r-tabs). */
 .r-werkbalk { align-items: center; }
 .r-werkbalk__knoppen { display: flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }
 .r-bewaarbalk { position: sticky; top: 0; z-index: 2; display: flex; gap: 8px; align-items: center; padding: 8px 12px; margin-bottom: 10px; background: #fff1c2; border: 1px solid #e0c060; border-radius: 5px; }

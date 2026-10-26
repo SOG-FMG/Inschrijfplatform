@@ -8,6 +8,7 @@ import { EvenementOverzicht } from './EvenementOverzicht';
 import { Evenementen } from './Evenementen';
 import { Importeren } from './Importeren';
 import { Instellingen } from './Instellingen';
+import { InstellingenOud } from './InstellingenOud';
 import { Mailteksten } from './Mailteksten';
 import { Medewerkers } from './Medewerkers';
 import { Meldingen } from './Meldingen';
@@ -81,7 +82,9 @@ export const DASHBOARD_MODULES: DashboardModule[] = [
     ],
     paginas: [
       { patroon: /^\/dashboard(\/activeren)?$/, toon: (_m, c) => <Evenementen profiel={c.profiel} naVerandering={c.naVerandering} /> },
-      { patroon: new RegExp(`^/dashboard/evenementen/${EV}$`), toon: (m, c) => <Instellingen evenementId={m[1]} naVerandering={c.naVerandering} /> },
+      { patroon: new RegExp(`^/dashboard/evenementen/${EV}$`), toon: (m, c) => <Instellingen key={m[1]} evenementId={m[1]} naVerandering={c.naVerandering} /> },
+      // IntOud: de vorige instellingenpagina, met alles onder elkaar.
+      { patroon: new RegExp(`^/dashboard/evenementen/${EV}/instelOud$`), toon: (m, c) => <InstellingenOud key={m[1]} evenementId={m[1]} naVerandering={c.naVerandering} /> },
       { patroon: /^\/dashboard\/privacy$/, toon: (_m, c) => <Privacy profiel={c.profiel} /> },
       { patroon: new RegExp(`^/dashboard/evenementen/${EV}/aanwezigheid$`), recht: 'evenementen.overzicht_aanwezigen', toon: (m, c) => <Aanwezigheid key={m[1]} evenementId={m[1]} profiel={c.profiel} /> },
       { patroon: new RegExp(`^/dashboard/evenementen/${EV}/sessiegevers$`), toon: (m, c) => <Sessiegevers key={m[1]} evenementId={m[1]} profiel={c.profiel} /> },
