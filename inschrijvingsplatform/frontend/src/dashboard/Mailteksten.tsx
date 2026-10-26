@@ -136,8 +136,9 @@ function Editor({ sjabloon, naVerandering }: { sjabloon: Mailsjabloon; naVerande
       </div>
       {fouten.length > 0 && <Melding soort="fout">{fouten.join(' ')}</Melding>}
 
-      <details className="d-info">
-        <summary>Wat betekenen de velden?</summary>
+      {/* Open: hier staat ook wáár je de waarde van een veld instelt (bv. contactEmail bij de instellingen van het evenement). */}
+      <details className="d-info" open>
+        <summary>Wat betekenen de velden, en waar stel je ze in?</summary>
         <dl className="d-gegevens">
           {sjabloon.velden.map((v) => <Fragment key={v.naam}><dt><code>{`{{${v.naam}}}`}</code></dt><dd>{v.omschrijving}</dd></Fragment>)}
         </dl>

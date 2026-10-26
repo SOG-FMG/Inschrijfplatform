@@ -165,6 +165,8 @@ export function verpakMail(inhoud: string, p: { opmaak: Mailopmaak; organisatie:
     return `<tr><td align="center" style="padding:16px 24px;${lijn}"><img src="${esc(p.basisUrl.replace(/\/$/, '') + l.pad)}" alt="${esc(p.organisatie)}" height="${h}" style="display:block;height:${h}px;width:auto;max-width:100%;border:0"></td></tr>`;
   };
   const kop = p.opmaak.kopBanner ? `<tr><td>${beeld(p.opmaak.kopBanner, p.organisatie, 600)}</td></tr>` : p.logo ? logoRij(p.logo) : '';
+  // Staat er een banner onderaan, dan loopt die door in de voettekst: wit in plaats van een grijze streep eronder.
+  const voetLijn = p.opmaak.voetBanner ? '#ffffff' : '#cfd6df';
   const eigen = p.opmaak.voettekst ? maakHtml(p.opmaak.voettekst, { organisatie: p.organisatie, website }) : '';
   const vast = `<p>Deze mail werd verstuurd door ${esc(p.organisatie)} via het inschrijvingsplatform <a href="${esc(p.basisUrl)}">${esc(website)}</a>.
 Je ontvangt ze omdat ${esc(p.reden ?? `je via dit platform contact had met ${p.organisatie}`)}.</p>`;
@@ -175,7 +177,7 @@ ${kop}
 ${inhoud}
 </td></tr>
 ${p.opmaak.voetBanner ? `<tr><td>${beeld(p.opmaak.voetBanner, '', 600)}</td></tr>` : ''}
-<tr><td style="padding:12px 24px 18px;border-top:1px solid #cfd6df;font:12px/1.5 Arial,Helvetica,sans-serif;color:#545c66">
+<tr><td style="padding:12px 24px 18px;border-top:1px solid ${voetLijn};font:12px/1.5 Arial,Helvetica,sans-serif;color:#545c66">
 ${eigen}
 ${vast}
 </td></tr>

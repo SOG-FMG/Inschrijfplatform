@@ -840,6 +840,47 @@ describe('e-mail via de Power Automate-webhook', () => {
     expect(JSON.stringify(await een(`select * from mail_berichten order by created_at desc limit 1`))).not.toContain('example.org');
   });
 
+  test('{{contactEmail}} komt uit het evenement; zonder contactadres valt de regel weg', async () => {
+    const ev = (await api('GET', `/api/evenementen/${SLUG}`)).data;
+    const dagdeel = ev.dagen[0].dagdelen[0];
+    const adres = 'infodag@freinetmiddenschool.example'; // staat zo in de seed
+
+    expect((await registreer(deelnemer({ voornaam: 'Contactwel' }), [dagdeel.id], [])).status).toBe(201);
+    await wacht();
+    expect(aanroepen[0].body.html).toContain(`mailto:${adres}`);
+    expect(aanroepen[0].body.html).toContain('Vragen? Mail naar');
+
+    // Leeg laten in de instellingen van het evenement = geen contactregel in de mail.
+    await sql(`update evenementen set contact_email = null where slug = ?`, SLUG);
+    aanroepen.length = 0;
+    expect((await registreer(deelnemer({ voornaam: 'Contactniet' }), [dagdeel.id], [])).status).toBe(201);
+    await wacht();
+    expect(aanroepen[0].body.html).not.toContain('Vragen? Mail naar');
+    expect(aanroepen[0].body.html).not.toContain(adres);
+
+    await sql(`update evenementen set contact_email = ? where slug = ?`, adres, SLUG);
+  });
+
+  test('voetbanner: geen grijze streep tussen de banner en de voettekst', async () => {
+    const ev = (await api('GET', `/api/evenementen/${SLUG}`)).data;
+    const dagdeel = ev.dagen[0].dagdelen[0];
+    await sql(`insert or ignore into mailopmaak (id) values (1)`);
+    await sql(`update mailopmaak set voet_banner = '/api/mailbeelden/voet-test' where id = 1`);
+    aanroepen.length = 0;
+    expect((await registreer(deelnemer({ voornaam: 'Banner' }), [dagdeel.id], [])).status).toBe(201);
+    await wacht();
+    expect(aanroepen[0].body.html).toContain('/api/mailbeelden/voet-test');
+    expect(aanroepen[0].body.html).toContain('border-top:1px solid #ffffff');
+    expect(aanroepen[0].body.html).not.toContain('border-top:1px solid #cfd6df');
+
+    // Zonder banner blijft de lijn wel staan: die scheidt de inhoud van de voettekst.
+    await sql(`update mailopmaak set voet_banner = null where id = 1`);
+    aanroepen.length = 0;
+    expect((await registreer(deelnemer({ voornaam: 'Geenbanner' }), [dagdeel.id], [])).status).toBe(201);
+    await wacht();
+    expect(aanroepen[0].body.html).toContain('border-top:1px solid #cfd6df');
+  });
+
   test('bevestigingsmail: QR-code voor de check-in met een eigen token, zonder persoonsgegevens', async () => {
     const ev = (await api('GET', `/api/evenementen/${SLUG}`)).data;
     const r = await registreer(deelnemer({ voornaam: 'Qrtest', email: 'qrtest@example.org' }), [ev.dagen[0].dagdelen[0].id], []);

@@ -50,7 +50,7 @@ export const SJABLONEN: SjabloonDefinitie[] = [
       { naam: 'formulier', omschrijving: 'Titel van het formulier', voorbeeld: 'Voorinschrijving schooljaar 2026-2027' },
       { naam: 'schooljaar', omschrijving: 'Schooljaar (leeg als het niet ingesteld is)', voorbeeld: 'Schooljaar 2026 - 2027' },
       { naam: 'formulierlink', omschrijving: 'Link naar het formulier (om nog een kind toe te voegen)', voorbeeld: { html: '<a href="https://…">het formulier</a>' } },
-      { naam: 'contactEmail', omschrijving: 'Contactadres (als link; leeg als er geen is)', voorbeeld: { html: '<a href="mailto:info@school.example">info@school.example</a>' } },
+      { naam: 'contactEmail', omschrijving: 'Contactadres van het formulier, als link. Je vult het in bij het voorinschrijfformulier zelf. Is dat leeg, dan valt de hele regel {{#contactEmail}}…{{/contactEmail}} weg.', voorbeeld: { html: '<a href="mailto:info@school.example">info@school.example</a>' } },
     ],
     standaard: {
       onderwerp: 'Voorinschrijving ontvangen: {{kind}}',

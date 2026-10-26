@@ -26,7 +26,11 @@ const V = {
   voornaam: { naam: 'voornaam', omschrijving: 'Voornaam van de deelnemer (het kind)', voorbeeld: 'Lotte' },
   evenement: { naam: 'evenement', omschrijving: 'Naam van het evenement', voorbeeld: 'Infodagen 2027' },
   referentie: { naam: 'referentie', omschrijving: 'Referentie van de inschrijving', voorbeeld: '3F2A9C1E' },
-  contactEmail: { naam: 'contactEmail', omschrijving: 'Contactadres van het evenement (als link; leeg als er geen is)', voorbeeld: mailto('infodag@school.example') },
+  contactEmail: {
+    naam: 'contactEmail',
+    omschrijving: 'Contactadres van het evenement, als link. Je vult het in bij Instellingen van het evenement → tabblad Algemeen → "E-mailadres voor vragen". Is dat leeg, dan valt de hele regel {{#contactEmail}}…{{/contactEmail}} weg.',
+    voorbeeld: mailto('infodag@school.example'),
+  },
 } as const;
 
 export const SJABLONEN: SjabloonDefinitie[] = [

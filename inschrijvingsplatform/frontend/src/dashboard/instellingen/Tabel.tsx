@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
-import type { InstellingSoort } from '../../services/beheerApi';
-import { Venster } from '../ui';
+import { instellingenApi, type InstellingSoort } from '../../services/beheerApi';
+import { foutTekst, Melding, Venster } from '../ui';
 import { Formulier, type Groep } from './Formulier';
 import { type Gemeen, hoofdletter, ID, NIEUWNAAM, type Rij, SOORTNAAM, TITELKOLOM, veldVan, VeldInvoer, type Wijzigingen } from './velden';
 
@@ -39,15 +39,42 @@ interface TabelProps {
    * schermlezer twee sessies met dezelfde titel in verschillende blokken toch kan onderscheiden.
    */
   context?: string;
+  /** Pijltjes vooraan om de rijen te verslepen (vult het veld 'volgorde'). */
+  volgorde?: boolean;
 }
 
-export function Tabel({ soort, rijen, kolommen, gemeen, wijz, titel, acties, rijActies, ouderId, groepen, leeg, context }: TabelProps) {
+export function Tabel({ soort, rijen, kolommen, gemeen, wijz, titel, acties, rijActies, ouderId, groepen, leeg, context, volgorde }: TabelProps) {
   // Enkel het id bijhouden: na opslaan komen de gegevens opnieuw binnen en volgt het venster mee.
   const [bewerkId, setBewerkId] = useState<string | null>(null);
   const [nieuw, setNieuw] = useState(false);
+  const [schuift, setSchuift] = useState(false);
+  const [schuifFout, setSchuifFout] = useState<string | null>(null);
   const bewerk = rijen.find((r) => String(r[ID[soort]]) === bewerkId) ?? null;
   const naam = (rij: Rij) => String(rij[TITELKOLOM[soort]] ?? '');
-  const kolommenTotaal = kolommen.length + (gemeen.kanSchrijven ? 1 : 0);
+  const metVolgorde = !!volgorde && gemeen.kanSchrijven;
+  const kolommenTotaal = kolommen.length + (gemeen.kanSchrijven ? 1 : 0) + (metVolgorde ? 1 : 0);
+
+  /**
+   * Eén rij omhoog of omlaag. De hele lijst wordt hernummerd (1, 2, 3, …), zodat het ook werkt
+   * wanneer alle rijen nu dezelfde volgorde hebben — en er maar geschreven wordt wat echt wijzigt.
+   */
+  const verschuif = async (index: number, richting: -1 | 1) => {
+    const nieuweOrde = [...rijen];
+    const [rij] = nieuweOrde.splice(index, 1);
+    nieuweOrde.splice(index + richting, 0, rij);
+    setSchuift(true);
+    setSchuifFout(null);
+    try {
+      for (const [i, r] of nieuweOrde.entries()) {
+        if (r.volgorde !== i + 1) await instellingenApi.wijzig(soort, String(r[ID[soort]]), { volgorde: i + 1 });
+      }
+      gemeen.onKlaar();
+    } catch (e) {
+      setSchuifFout(foutTekst(e, 'De volgorde aanpassen is mislukt.'));
+    } finally {
+      setSchuift(false);
+    }
+  };
 
   return (
     <div className="it-tabel">
@@ -61,6 +88,7 @@ export function Tabel({ soort, rijen, kolommen, gemeen, wijz, titel, acties, rij
         <table className="d-tabel d-tabel--compact">
           <thead>
             <tr>
+              {metVolgorde && <th className="it-kol-volgorde"><span className="d-klein">Orde</span></th>}
               {kolommen.map((k, i) => {
                 const v = isVeldKolom(k) ? veldVan(gemeen.schema, soort, k.veld) : null;
                 return (
@@ -78,8 +106,16 @@ export function Tabel({ soort, rijen, kolommen, gemeen, wijz, titel, acties, rij
                 <td colSpan={kolommenTotaal} className="d-klein">{leeg ?? `Nog geen ${SOORTNAAM[soort]}.`}</td>
               </tr>
             )}
-            {rijen.map((rij) => (
+            {rijen.map((rij, rijIndex) => (
               <tr key={String(rij[ID[soort]])}>
+                {metVolgorde && (
+                  <td className="it-volgorde">
+                    <button type="button" className="d-icoonknop" aria-label={`${naam(rij)} naar boven`} title="Naar boven"
+                      disabled={schuift || rijIndex === 0} onClick={() => verschuif(rijIndex, -1)}>▲</button>
+                    <button type="button" className="d-icoonknop" aria-label={`${naam(rij)} naar onder`} title="Naar onder"
+                      disabled={schuift || rijIndex === rijen.length - 1} onClick={() => verschuif(rijIndex, 1)}>▼</button>
+                  </td>
+                )}
                 {kolommen.map((k, i) => {
                   if (!isVeldKolom(k)) {
                     return <td key={i} className={k.getal ? 'getal' : undefined}>{k.cel(rij)}</td>;
@@ -113,6 +149,7 @@ export function Tabel({ soort, rijen, kolommen, gemeen, wijz, titel, acties, rij
           </tbody>
         </table>
       </div>
+      {schuifFout && <Melding soort="fout">{schuifFout}</Melding>}
       {gemeen.kanSchrijven && ouderId && (
         <button type="button" className="d-link nieuw-knop" onClick={() => setNieuw(true)}>+ {hoofdletter(SOORTNAAM[soort])} toevoegen</button>
       )}

@@ -94,6 +94,7 @@ export function Sessies({ dagen, gemeen, wijz }: { dagen: Rij[]; gemeen: Gemeen;
                     gemeen={gemeen}
                     wijz={wijz}
                     groepen={GROEPEN}
+                    volgorde
                     ouderId={tijdsblok.tijdsblok_id}
                     context={`${dagdeel.naam} ${tijdsblok.naam}`}
                     leeg={<>Nog geen sessies in {tijdsblok.naam}.</>}

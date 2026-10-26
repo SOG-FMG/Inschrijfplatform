@@ -192,6 +192,13 @@
 .it-tabel .d-tabelvak { margin-bottom: 0; }
 .it-kol-acties { width: 13em; }
 
+/* Pijltjes om een rij te verschuiven (vult het veld 'volgorde'). */
+.it-kol-volgorde { width: 4.2em; }
+.it-volgorde { white-space: nowrap; vertical-align: middle; }
+.it-volgorde .d-icoonknop { font-size: 1em; line-height: 1; padding: 2px 3px; }
+.it-volgorde .d-icoonknop:hover:not(:disabled) { color: var(--primair); }
+.it-volgorde .d-icoonknop:disabled { opacity: .25; cursor: default; }
+
 /* Cellen die je rechtstreeks aanpast: zichtbaar als veld zodra je erover gaat of erin staat. */
 .it-cel { vertical-align: middle; }
 .it-cel input:not([type='checkbox']):not([type='color']), .it-cel select, .it-cel textarea {

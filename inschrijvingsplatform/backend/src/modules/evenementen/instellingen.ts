@@ -71,7 +71,7 @@ export const SCHEMA: Record<Soort, Definitie> = {
       { naam: 'leerjaar_opties', label: 'Keuzes voor leerjaar', type: 'lijst', standaard: [], hulp: 'Gescheiden door komma’s, bv. 5de leerjaar, 6de leerjaar' },
       { naam: 'max_dagdelen', label: 'Max. aantal momenten per inschrijving', type: 'getal', min: 1, verplicht: true, standaard: 1 },
       { naam: 'contact_email', label: 'E-mailadres voor vragen', type: 'email',
-        hulp: 'Voor extra info. Staat op het formulier, in de bevestigingsmail en op de persoonlijke pagina van de inschrijver.' },
+        hulp: 'Vult {{contactEmail}} in de mails. Leeg = die regel valt weg uit de bevestiging. Staat ook op het formulier en op de persoonlijke pagina van de inschrijver.' },
       { naam: 'privacy_tekst', label: 'Privacytekst', type: 'lang' },
       { naam: 'bewaartermijn_dagen', label: 'Bewaartermijn (dagen na het evenement)', type: 'getal', min: 0, verplicht: true, standaard: 30 },
       { naam: 'logo', label: 'Logo', type: 'logo', hulp: 'PNG, JPG of WebP, max. 500 kB. Verschijnt bovenaan het formulier.' },

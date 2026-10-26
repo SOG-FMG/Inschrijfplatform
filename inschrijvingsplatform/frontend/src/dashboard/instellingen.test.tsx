@@ -60,7 +60,9 @@ const sessie = (id: string, titel: string, lokaal: string, lesgever: string, max
 });
 
 const blok = (id: string, naam: string, start: string, eind: string, sessies: ReturnType<typeof sessie>[]) => ({
-  tijdsblok_id: id, naam, type: 'keuze', start_uur: start, eind_uur: eind, verplicht: 1, volgorde: 1, sessies,
+  tijdsblok_id: id, naam, type: 'keuze', start_uur: start, eind_uur: eind, verplicht: 1, volgorde: 1,
+  // De API levert de sessies al gesorteerd op volgorde; hier krijgt elke sessie haar eigen nummer.
+  sessies: sessies.map((s, i) => ({ ...s, volgorde: i + 1 })),
 });
 
 const moment = (id: string, naam: string, start: string, eind: string, bevestigd: number, tijdsblokken: ReturnType<typeof blok>[]) => ({
@@ -129,7 +131,7 @@ test('tabblad Sessies: per dagdeel een tabel per tijdsblok, met de kolommen naas
   // Per tijdsblok een eigen tabel, met de kolommen in de gevraagde volgorde.
   const blok1 = cel('Naam', 'Latijn').closest('.it-tabel') as HTMLElement;
   expect(within(blok1).getByRole('heading', { level: 4 }).textContent).toMatch(/Keuzelesje 1\s*10:30–11:15/);
-  expect(within(blok1).getAllByRole('columnheader').map((c) => c.textContent)).toEqual(['Naam', 'Lokaal', 'Leerkracht', 'Ingeschreven', 'Maximum', 'Acties']);
+  expect(within(blok1).getAllByRole('columnheader').map((c) => c.textContent)).toEqual(['Orde', 'Naam', 'Lokaal', 'Leerkracht', 'Ingeschreven', 'Maximum', 'Acties']);
   const rijen = within(blok1).getAllByRole('row').slice(1);
   expect(rijen).toHaveLength(2);
   expect(cel('Naam', 'Latijn')).toHaveProperty('value', 'Latijn');
@@ -189,6 +191,21 @@ test('een sessie kopiëren: eerst het moment, dan het tijdsblok', async () => {
   fireEvent.click(within(momenten[2]).getByLabelText(/Keuzelesje 1/)); // ander moment, andere dag
   fireEvent.click(kopieer);
   await waitFor(() => expect(kopieerApi.sessies).toHaveBeenCalledWith(['s1'], ['t2', 't4']));
+});
+
+test('volgorde van sessies met de pijltjes in de lijst zelf', async () => {
+  await toon();
+  const rijen = within(cel('Naam', 'Latijn').closest('.it-tabel') as HTMLElement).getAllByRole('row').slice(1);
+
+  // Bovenaan kan je niet hoger, onderaan niet lager.
+  expect(within(rijen[0]).getByRole('button', { name: 'Latijn naar boven' })).toHaveProperty('disabled', true);
+  expect(within(rijen[1]).getByRole('button', { name: 'Wetenschappen naar onder' })).toHaveProperty('disabled', true);
+
+  fireEvent.click(within(rijen[1]).getByRole('button', { name: 'Wetenschappen naar boven' }));
+  await waitFor(() => expect(instellingenApi.wijzig).toHaveBeenCalledWith('sessie', 's2', { volgorde: 1 }));
+  expect(instellingenApi.wijzig).toHaveBeenCalledWith('sessie', 's1', { volgorde: 2 });
+  expect(instellingenApi.wijzig).toHaveBeenCalledTimes(2); // enkel wat echt wijzigt
+  expect(instellingenApi.lees).toHaveBeenCalledTimes(2); // opnieuw ingelezen
 });
 
 test('“Meer…” opent de volledige sessie en blijft na opslaan de bijgewerkte rij volgen', async () => {
