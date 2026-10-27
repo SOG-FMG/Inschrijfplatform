@@ -23,6 +23,8 @@ export interface Tijdsblok {
   eindUur: string;
   type: 'keuze' | 'programma';
   verplicht: boolean;
+  /** Doelgroepen die dit tijdsblok mogen kiezen; null = allemaal. */
+  doelgroepen: string[] | null;
   sessies: Sessie[];
 }
 
@@ -33,6 +35,8 @@ export interface Dagdeel {
   eindUur: string;
   capaciteit: number | null;
   vrij: number | null;
+  /** Doelgroepen die dit moment mogen kiezen; null = allemaal. */
+  doelgroepen: string[] | null;
   tijdsblokken: Tijdsblok[];
 }
 

@@ -832,6 +832,39 @@ describe('instellingen van een evenement', () => {
     expect((await api('DELETE', `/api/beheer/instellingen/locatie/${nieuw.data.id}`)).status).toBe(200);
   });
 
+  test('momenten per doelgroep: een eigen keuze, en volgen gaat maar één stap diep', async () => {
+    const ev = (await api('GET', `/api/beheer/evenementen/${evId}/instellingen`)).data;
+    const [a, b] = ev.doelgroepen;
+    expect(b).toBeTruthy();
+    const zet = (id: string, waarden: any) => api('PATCH', `/api/beheer/instellingen/doelgroep/${id}`, { waarden });
+
+    // Doelgroep B krijgt enkel het namiddagmoment.
+    expect((await zet(b.doelgroep_id, { momenten_modus: 'eigen' })).status).toBe(200);
+    expect((await api('PATCH', `/api/beheer/instellingen/doelgroep/${b.doelgroep_id}/momenten`, { dagdelen: [nm1.id], tijdsblokken: [] })).status).toBe(200);
+
+    // Het formulier zegt per moment welke doelgroepen het mogen; null = allemaal.
+    const pub = (await api('GET', `/api/evenementen/${SLUG}`)).data;
+    const momenten = pub.dagen.flatMap((d: any) => d.dagdelen);
+    expect(momenten.find((dd: any) => dd.id === vm1.id).doelgroepen).not.toContain(b.doelgroep_id);
+    expect(momenten.find((dd: any) => dd.id === nm1.id).doelgroepen).toBeNull();
+
+    // En die regel geldt ook als iemand het moment rechtstreeks via de API probeert.
+    expect((await registreer(deelnemer({ doelgroepId: b.doelgroep_id }), [vm1.id], [])).data.fout).toBe('ONGELDIG_DAGDEEL');
+
+    // A mag B volgen, want B heeft een eigen keuze.
+    expect((await zet(a.doelgroep_id, { momenten_modus: 'volgt', volgt_doelgroep_id: b.doelgroep_id })).status).toBe(200);
+    // B mag A niet volgen: dat zou een kring zijn.
+    const kring = await zet(b.doelgroep_id, { momenten_modus: 'volgt', volgt_doelgroep_id: a.doelgroep_id });
+    expect(kring.status).toBe(400);
+    expect(kring.data.velden).toHaveProperty('volgt_doelgroep_id');
+    // En nooit naar zichzelf.
+    expect((await zet(a.doelgroep_id, { volgt_doelgroep_id: a.doelgroep_id })).data.velden).toHaveProperty('volgt_doelgroep_id');
+
+    // Opruimen voor de volgende tests.
+    for (const g of [a, b]) expect((await zet(g.doelgroep_id, { momenten_modus: 'alle', volgt_doelgroep_id: null })).status).toBe(200);
+    await api('PATCH', `/api/beheer/instellingen/doelgroep/${b.doelgroep_id}/momenten`, { dagdelen: [], tijdsblokken: [] });
+  });
+
   test('een verborgen tijdsblok verdwijnt uit het formulier, en komt terug als je het weer aanzet', async () => {
     const ev = (await api('GET', `/api/beheer/evenementen/${evId}/instellingen`)).data;
     const blok = ev.dagen

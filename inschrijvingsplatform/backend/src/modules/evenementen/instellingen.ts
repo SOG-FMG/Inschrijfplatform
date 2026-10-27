@@ -99,6 +99,11 @@ export const SCHEMA: Record<Soort, Definitie> = {
       { naam: 'naam', label: 'Naam', type: 'tekst', verplicht: true },
       { naam: 'beschrijving', label: 'Beschrijving', type: 'lang' },
       { naam: 'sessiekeuze', label: 'Kiest lesjes', type: 'jaNee', standaard: true, hulp: 'Uit = enkel een moment kiezen' },
+      { naam: 'momenten_modus', label: 'Momenten', type: 'keuze', verplicht: true, standaard: 'alle',
+        opties: opties(['alle', 'Alle momenten van het evenement'], ['eigen', 'Een eigen keuze'], ['volgt', 'Zelfde als een andere doelgroep']),
+        hulp: 'Welke momenten en tijdsblokken deze doelgroep op het formulier ziet.' },
+      { naam: 'volgt_doelgroep_id', label: 'Zelfde als', type: 'ref', ref: 'doelgroep',
+        hulp: 'Enkel bij “Zelfde als een andere doelgroep”. Die doelgroep mag zelf geen andere volgen.' },
       volgorde,
     ],
   },
@@ -420,7 +425,7 @@ export async function instellingen(env: Env, g: Gebruiker, evenementId: string) 
     () => false,
   );
   const db = env.DB;
-  const [ev, doelgroepen, dagen, dagdelen, tijdsblokken, sessies, tellingDagdeel, tellingSessie, soorten, locaties, lokalen] = await db.batch<any>([
+  const [ev, doelgroepen, dagen, dagdelen, tijdsblokken, sessies, tellingDagdeel, tellingSessie, soorten, locaties, lokalen, ddGroep, tbGroep] = await db.batch<any>([
     db.prepare(`select * from evenementen where evenement_id = ?`).bind(evenementId),
     db.prepare(`select * from doelgroepen where evenement_id = ? order by volgorde, naam`).bind(evenementId),
     db.prepare(`select * from evenement_dagen where evenement_id = ? order by volgorde, datum`).bind(evenementId),
@@ -453,6 +458,15 @@ export async function instellingen(env: Env, g: Gebruiker, evenementId: string) 
        where school_id is null or school_id = (select school_id from evenementen where evenement_id = ?) or ? = 'platformbeheerder'
        order by site, blok, naam`,
     ).bind(evenementId, g.rol),
+    // Welke momenten en tijdsblokken een doelgroep zelf gekozen heeft (modus 'eigen'), voor de subtabbladen.
+    db.prepare(
+      `select k.dagdeel_id, k.doelgroep_id from dagdeel_doelgroepen k
+       join doelgroepen g on g.doelgroep_id = k.doelgroep_id where g.evenement_id = ?`,
+    ).bind(evenementId),
+    db.prepare(
+      `select k.tijdsblok_id, k.doelgroep_id from tijdsblok_doelgroepen k
+       join doelgroepen g on g.doelgroep_id = k.doelgroep_id where g.evenement_id = ?`,
+    ).bind(evenementId),
   ]);
   if (!ev.results[0]) throw new DbFout('GEEN_TOEGANG');
 
@@ -474,6 +488,16 @@ export async function instellingen(env: Env, g: Gebruiker, evenementId: string) 
     evenement,
     locaties: lokalen.results.map((l: any) => ({ ...l, faciliteiten: JSON.parse(l.faciliteiten ?? '[]') })),
     doelgroepen: doelgroepen.results,
+    // Per doelgroep de eigen keuze; leeg = nog niets gekozen (en dan geldt alles, zie doelgroepmomenten.ts).
+    doelgroepMomenten: Object.fromEntries(
+      doelgroepen.results.map((d: any) => [
+        d.doelgroep_id,
+        {
+          dagdelen: ddGroep.results.filter((k: any) => k.doelgroep_id === d.doelgroep_id).map((k: any) => k.dagdeel_id),
+          tijdsblokken: tbGroep.results.filter((k: any) => k.doelgroep_id === d.doelgroep_id).map((k: any) => k.tijdsblok_id),
+        },
+      ]),
+    ),
     dagen: dagen.results.map((d: any) => ({
       ...d,
       dagdelen: dagdelen.results
@@ -502,6 +526,7 @@ export async function wijzig(env: Env, g: Gebruiker, soort: Soort, id: string, i
   const evenementId = await toegangVoor(env, g, def, soort, id);
   const waarden = await zetWaardenOm(env, def, invoer ?? {}, false, evenementId);
   await vulLesgeverAan(env, waarden);
+  await controleerVolgt(env, id, waarden);
   const kolommen = Object.keys(waarden);
   if (!kolommen.length) return { ok: true };
   const extra = def.gewijzigd ? `, modified_by = ?, modified_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')` : '';
@@ -532,6 +557,7 @@ export async function maak(env: Env, g: Gebruiker, soort: Soort, ouderId: string
   }
   const waarden = await zetWaardenOm(env, def, invoer ?? {}, true, evenementId);
   await vulLesgeverAan(env, waarden);
+  await controleerVolgt(env, null, waarden);
   const id = crypto.randomUUID();
   const kol: Record<string, unknown> = { [def.id]: id, ...waarden };
   if (def.ouder) kol[def.ouder.kolom] = ouderId;
@@ -600,6 +626,48 @@ export async function verwijderLogo(env: Env, g: Gebruiker, evenementId: string,
   await env.DB.batch([
     env.DB.prepare(`update evenementen set logo = null where evenement_id = ?`).bind(evenementId),
     audit(env, g, 'evenementen', evenementId, 'LOGO_VERWIJDERD', undefined, ip),
+  ]);
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Momenten per doelgroep
+// ---------------------------------------------------------------------------
+/**
+ * "Zelfde als een andere doelgroep" mag maar één stap diep en nooit naar zichzelf. Zonder die regel zou A naar
+ * B en B naar A kunnen wijzen, en dan is er geen antwoord op de vraag welke momenten gelden.
+ */
+async function controleerVolgt(env: Env, eigenId: string | null, waarden: Record<string, unknown>) {
+  const doel = waarden.volgt_doelgroep_id;
+  if (typeof doel !== 'string' || !doel) return;
+  if (eigenId && doel === eigenId) throw new ValidatieFout({ volgt_doelgroep_id: 'Een doelgroep kan niet naar zichzelf verwijzen.' });
+  const r = await env.DB.prepare(`select momenten_modus from doelgroepen where doelgroep_id = ?`).bind(doel).first<{ momenten_modus: string }>();
+  if (r?.momenten_modus === 'volgt') {
+    throw new ValidatieFout({ volgt_doelgroep_id: 'Die doelgroep volgt zelf een andere. Kies een doelgroep met een eigen keuze.' });
+  }
+}
+
+/** De momenten en tijdsblokken van één doelgroep ineens zetten (modus 'eigen'). Alles wat er niet bij staat, valt weg. */
+export async function zetDoelgroepMomenten(env: Env, g: Gebruiker, doelgroepId: string, dagdelen: string[], tijdsblokken: string[], ip: string | null) {
+  const evenementId = await evenementVan(env, 'doelgroep', doelgroepId);
+  await controleerToegang(env, g, evenementId, true);
+  const db = env.DB;
+  // De inserts filteren zelf op dit evenement: een id van een ander evenement komt er niet in.
+  await db.batch([
+    db.prepare(`delete from dagdeel_doelgroepen where doelgroep_id = ?`).bind(doelgroepId),
+    db.prepare(`delete from tijdsblok_doelgroepen where doelgroep_id = ?`).bind(doelgroepId),
+    db.prepare(
+      `insert or ignore into dagdeel_doelgroepen (dagdeel_id, doelgroep_id)
+       select dd.dagdeel_id, ?1 from dagdelen dd join evenement_dagen d on d.dag_id = dd.dag_id
+       where d.evenement_id = ?2 and dd.dagdeel_id in (select value from json_each(?3))`,
+    ).bind(doelgroepId, evenementId, JSON.stringify(dagdelen)),
+    db.prepare(
+      `insert or ignore into tijdsblok_doelgroepen (tijdsblok_id, doelgroep_id)
+       select t.tijdsblok_id, ?1 from tijdsblokken t join dagdelen dd on dd.dagdeel_id = t.dagdeel_id
+       join evenement_dagen d on d.dag_id = dd.dag_id
+       where d.evenement_id = ?2 and t.tijdsblok_id in (select value from json_each(?3))`,
+    ).bind(doelgroepId, evenementId, JSON.stringify(tijdsblokken)),
+    audit(env, g, 'doelgroepen', doelgroepId, 'MOMENTEN', { dagdelen: dagdelen.length, tijdsblokken: tijdsblokken.length }, ip),
   ]);
   return { ok: true };
 }

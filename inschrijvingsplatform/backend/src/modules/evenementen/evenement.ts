@@ -1,3 +1,4 @@
+import { bereikPerDoelgroep, doelgroepenVoor } from './doelgroepmomenten';
 import type { Env } from '../../types';
 
 interface EvenementRij {
@@ -66,6 +67,9 @@ export async function publiekEvenement(env: Env, slug: string) {
     ).bind(id),
   ]);
 
+  const bereik = await bereikPerDoelgroep(env, id);
+  const groepIds = (groepen.results as any[]).map((g) => g.doelgroep_id);
+
   const nu = Date.now();
   const vrij = (cap: number | null, bezet: number) => (cap == null ? null : Math.max(cap - bezet, 0));
   const perSleutel = <T>(rijen: T[], sleutel: (r: T) => string) => {
@@ -116,6 +120,8 @@ export async function publiekEvenement(env: Env, slug: string) {
         eindUur: dd.eind_uur,
         capaciteit: dd.capaciteit,
         vrij: vrij(dd.capaciteit, dd.bevestigd),
+        // Welke doelgroepen dit moment mogen kiezen; null = allemaal (zie doelgroepmomenten.ts).
+        doelgroepen: doelgroepenVoor(bereik, groepIds, 'dagdelen', dd.dagdeel_id),
         tijdsblokken: (blokkenPerDagdeel.get(dd.dagdeel_id) ?? []).map((t: any) => ({
           id: t.tijdsblok_id,
           naam: t.naam,
@@ -124,6 +130,7 @@ export async function publiekEvenement(env: Env, slug: string) {
           eindUur: t.eind_uur,
           type: t.type,
           verplicht: t.verplicht === 1,
+          doelgroepen: doelgroepenVoor(bereik, groepIds, 'tijdsblokken', t.tijdsblok_id),
           sessies: (sessiesPerBlok.get(t.tijdsblok_id) ?? [])
             .map((s: any) => ({ ...s, volzet: s.capaciteit != null && s.bevestigd >= s.capaciteit }))
             .filter((s: any) => !(s.volzet_weergave === 'verbergen' && !s.wachtlijst_toegelaten && s.volzet))

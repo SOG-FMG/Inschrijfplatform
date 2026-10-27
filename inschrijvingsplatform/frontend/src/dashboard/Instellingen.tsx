@@ -5,6 +5,7 @@ import { etiketUrl } from './Etiketten';
 import { Formulier, type Groep } from './instellingen/Formulier';
 import { KopieerDagdeel } from './instellingen/Kopieren';
 import { LokaalOpCode } from './instellingen/LokaalOpCode';
+import { MomentDoelgroepen } from './instellingen/MomentDoelgroepen';
 import { Sessies } from './instellingen/Sessies';
 import { Tabel, type Kolom } from './instellingen/Tabel';
 import { type Gemeen, type Opties, type Rij, type Schema, useWijzigingen } from './instellingen/velden';
@@ -112,6 +113,8 @@ export function Instellingen({ evenementId, naVerandering }: { evenementId: stri
   const [melding, setMelding] = useState<{ soort: 'ok' | 'fout'; tekst: ReactNode } | null>(null);
   const [kopie, setKopie] = useState<{ dagdeel: Rij; dag: Rij } | null>(null);
   const [opCode, setOpCode] = useState<Rij | null>(null);
+  // Subtabblad in Momenten: '' = de momenten zelf, anders de id van een doelgroep.
+  const [momentGroep, setMomentGroep] = useState('');
 
   const laad = useCallback(() => {
     instellingenApi
@@ -244,7 +247,43 @@ export function Instellingen({ evenementId, naVerandering }: { evenementId: stri
         </div>
       )}
 
-      {tab === 'momenten' && (
+      {tab === 'momenten' && data.doelgroepen.length > 0 && (
+        <div className="d-tabs d-tabs--fiche it-subtabs" role="tablist" aria-label="Doelgroep">
+          <button type="button" role="tab" aria-selected={momentGroep === ''} className={momentGroep === '' ? 'actief' : undefined} onClick={() => setMomentGroep('')}>
+            Alle doelgroepen
+          </button>
+          {(data.doelgroepen as Rij[]).map((g) => (
+            <button
+              key={String(g.doelgroep_id)}
+              type="button"
+              role="tab"
+              aria-selected={momentGroep === g.doelgroep_id}
+              className={momentGroep === g.doelgroep_id ? 'actief' : undefined}
+              onClick={() => setMomentGroep(String(g.doelgroep_id))}
+            >
+              {String(g.naam)}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {tab === 'momenten' && momentGroep !== '' && (() => {
+        const g = (data.doelgroepen as Rij[]).find((d) => d.doelgroep_id === momentGroep);
+        if (!g) return <Melding>Deze doelgroep bestaat niet meer.</Melding>;
+        return (
+          <MomentDoelgroepen
+            key={String(g.doelgroep_id)}
+            doelgroep={g}
+            doelgroepen={data.doelgroepen}
+            dagen={data.dagen}
+            selectie={data.doelgroepMomenten?.[String(g.doelgroep_id)] ?? { dagdelen: [], tijdsblokken: [] }}
+            gemeen={gemeen}
+            onKlaar={herlaad}
+          />
+        );
+      })()}
+
+      {tab === 'momenten' && momentGroep === '' && (
         <>
           {data.dagen.length === 0 ? (
             <Melding>Er zijn nog geen dagen. Voeg er eerst een toe op het tabblad <strong>Dagen</strong>.</Melding>

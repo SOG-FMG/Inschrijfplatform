@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { MomentKiezer } from '../components/MomentKiezer';
+import { MomentKiezer, voorDoelgroep } from '../components/MomentKiezer';
 import { Overzicht } from '../components/Overzicht';
 import { SchoolKiezer, schoolLabel as labelVanSchool } from '../components/SchoolKiezer';
 import { SessieKiezer, sessiesVoor } from '../components/SessieKiezer';
@@ -137,7 +137,9 @@ export function InschrijfPagina({ slug }: { slug: string }) {
       if (!dag.sessiekeuzeOpen) continue;
       for (const dd of dag.dagdelen) {
         if (!f.dagdelen.includes(dd.id)) continue;
+        if (!voorDoelgroep(dd.doelgroepen, f.doelgroepId)) continue;
         for (const tb of dd.tijdsblokken) {
+          if (!voorDoelgroep(tb.doelgroepen, f.doelgroepId)) continue;
           if (tb.type === 'keuze' && sessiesVoor(tb, f.doelgroepId).length > 0) blokken.push(tb);
         }
       }
@@ -519,7 +521,7 @@ export function InschrijfPagina({ slug }: { slug: string }) {
         )}
 
         {stapNaam === 'Moment' && (
-          <MomentKiezer evenement={evenement} gekozen={f.dagdelen} fout={fouten.dagdelen}
+          <MomentKiezer evenement={evenement} gekozen={f.dagdelen} fout={fouten.dagdelen} doelgroepId={f.doelgroepId}
             toonSessiekeuzeInfo={!doelgroep || doelgroep.sessiekeuze}
             onWijzig={(d) => { wijzig('dagdelen', d); setMelding(null); }} />
         )}

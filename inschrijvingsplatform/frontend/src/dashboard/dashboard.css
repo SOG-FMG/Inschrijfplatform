@@ -190,6 +190,11 @@
   border-bottom-color: var(--vlak);
 }
 .d-tabs--fiche button:focus-visible { outline: 2px solid var(--primair); outline-offset: -3px; }
+/* Subtabbladen (doelgroep binnen Momenten): zelfde fiche-look, iets kleiner. */
+.it-subtabs button { font-size: 1em; padding: 4px 11px; }
+.md-dag { margin-top: 14px; }
+.md-moment { padding: 6px 0 6px 2px; border-top: 1px solid var(--d-rand); }
+.md-blokken { margin: 2px 0 0 26px; display: flex; flex-direction: column; gap: 2px; }
 
 /* Eén dag, open te klikken op het tabblad Sessies. */
 .it-dag { background: var(--vlak); border: 1px solid var(--d-rand); border-radius: 6px; margin-bottom: 10px; }

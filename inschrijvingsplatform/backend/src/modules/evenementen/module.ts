@@ -2,7 +2,7 @@ import { sha256 } from '../../crypto/versleuteling';
 import { anonimiseerEvenement, anonimiseerVerlopenEvenementen, deelnemerslijst, kenSessieToe, koppelBestaandeDeelnemers, verplaatsDagdeel } from './beheer';
 import { meldAf, voorinvulling } from './uitnodigingen';
 import { publiekEvenement } from './evenement';
-import { bewaarLogo, instellingen, isSoort, kopieerDagdeel, kopieerSessies, maak, verwijder, verwijderLogo, wijzig, zetLokaalOpCode } from './instellingen';
+import { bewaarLogo, instellingen, isSoort, kopieerDagdeel, kopieerSessies, maak, verwijder, verwijderLogo, wijzig, zetDoelgroepMomenten, zetLokaalOpCode } from './instellingen';
 import { annulatieGegevens, annuleerViaToken, bevestigingOpnieuw, DubbeleInschrijving, mailGegevens, registratieViaToken, registreer, wijzigKeuzesViaToken } from './registratie';
 import { checkinUrl, leesVersie } from '../../kern/checkin';
 import { basisUrl, qrMailsTeVersturen, stuurEnLog, verstuurQrMails, verwittigNaWijzigingDoorSchool } from './checkin';
@@ -235,6 +235,17 @@ export default defineModule({
       pad: '/evenementen/:id/logo',
       toegang: 'beheer',
       handler: ({ env, gebruiker, params, ip }) => verwijderLogo(env, gebruiker, params.id, ip),
+    },
+    {
+      // De momenten en tijdsblokken van één doelgroep ineens zetten (tabblad Momenten, subtabblad per doelgroep).
+      methode: 'PATCH',
+      pad: '/instellingen/doelgroep/:id/momenten',
+      toegang: 'beheer',
+      async handler(ctx) {
+        const body = await ctx.leesJson(64 * 1024);
+        const lijst = (x: unknown) => (Array.isArray(x) ? (ids(x) ?? []) : []);
+        return zetDoelgroepMomenten(ctx.env, ctx.gebruiker, ctx.params.id, lijst(body?.dagdelen), lijst(body?.tijdsblokken), ctx.ip);
+      },
     },
     {
       // Vóór /instellingen/:soort, anders zou "lokaal-op-code" als soort gelezen worden.

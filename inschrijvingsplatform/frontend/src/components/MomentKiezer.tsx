@@ -6,7 +6,13 @@ interface Props {
   onWijzig: (dagdelen: string[]) => void;
   fout?: string;
   toonSessiekeuzeInfo: boolean;
+  /** Gekozen doelgroep: een moment dat niet voor haar bedoeld is, wordt niet getoond. */
+  doelgroepId: string;
 }
+
+/** Mag deze doelgroep dit moment of tijdsblok zien? `null` in doelgroepen betekent: iedereen mag. */
+export const voorDoelgroep = (doelgroepen: string[] | null | undefined, doelgroepId: string) =>
+  !doelgroepen || !doelgroepId || doelgroepen.includes(doelgroepId);
 
 export function plaatsenTekst(vrij: number | null, capaciteit: number | null): string | null {
   if (capaciteit === null || vrij === null) return null;
@@ -16,8 +22,9 @@ export function plaatsenTekst(vrij: number | null, capaciteit: number | null): s
 }
 
 /** Keuze van dag + dagdeel. Eén keuze (rondjes) of meerdere (vinkjes) volgens maxDagdelen. */
-export function MomentKiezer({ evenement, gekozen, onWijzig, fout, toonSessiekeuzeInfo }: Props) {
+export function MomentKiezer({ evenement, gekozen, onWijzig, fout, toonSessiekeuzeInfo, doelgroepId }: Props) {
   const meerdere = evenement.maxDagdelen > 1;
+  const dagdelenVan = (dag: Evenement['dagen'][number]) => dag.dagdelen.filter((dd) => voorDoelgroep(dd.doelgroepen, doelgroepId));
 
   const wissel = (id: string) => {
     if (!meerdere) return onWijzig([id]);
@@ -31,14 +38,14 @@ export function MomentKiezer({ evenement, gekozen, onWijzig, fout, toonSessiekeu
         {meerdere ? `Kies je moment(en) – maximaal ${evenement.maxDagdelen}` : 'Kies de datum en het dagdeel dat jou past'}
         <span className="verplicht" aria-hidden="true"> *</span>
       </legend>
-      {evenement.dagen.map((dag) => (
+      {evenement.dagen.filter((dag) => dagdelenVan(dag).length > 0).map((dag) => (
         <div key={dag.id} className="dag">
           <h3 className="dag__naam">{dag.naam}</h3>
           {toonSessiekeuzeInfo && !dag.sessiekeuzeOpen && (
             <p className="info info--klein">Voor deze dag kan je geen onderdelen meer kiezen. Je kan wel nog inschrijven voor een moment.</p>
           )}
           <div className="kaarten">
-            {dag.dagdelen.map((dd) => {
+            {dagdelenVan(dag).map((dd) => {
               const vol = dd.capaciteit !== null && dd.vrij === 0;
               const actief = gekozen.includes(dd.id);
               const plaatsen = plaatsenTekst(dd.vrij, dd.capaciteit);

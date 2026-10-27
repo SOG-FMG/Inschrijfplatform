@@ -1,4 +1,5 @@
 import { blindeIndex, ontsleutel, sha256, versleutel } from '../../crypto/versleuteling';
+import { bereikPerDoelgroep, magDoelgroep } from './doelgroepmomenten';
 import { koppelAanContact, werkContactBij } from '../../kern/contacten';
 import { geldigeUitnodiging, markeerGebruiktStmt } from './uitnodigingen';
 import type { Env, Keuze, Moment, RegistratieInvoer, RegistratieResultaat } from '../../types';
@@ -85,9 +86,12 @@ export async function registreer(env: Env, slug: string, invoer: RegistratieInvo
   if (groep && !groep.sessiekeuze && sessies.length) throw new DbFout('GEEN_SESSIEKEUZE_VOOR_DOELGROEP');
   if (d.schoolId && schoolR.results[0].n === 0) throw new DbFout('ONGELDIGE_GEGEVENS');
 
-  // Dagdelen
+  // Dagdelen. Een doelgroep kan eigen momenten hebben (doelgroepmomenten.ts): wat niet voor haar bedoeld is,
+  // staat ook niet in het formulier, dus hier weigeren we het ook als iemand het rechtstreeks probeert.
+  const bereik = await bereikPerDoelgroep(env, eid);
   const gekozenDagdelen = dagdelenR.results as { dagdeel_id: string; naam: string; start_uur: string; eind_uur: string; dag: string; sessiekeuze_tot: string | null }[];
   if (gekozenDagdelen.length !== dagdelen.length) throw new DbFout('ONGELDIG_DAGDEEL');
+  if (gekozenDagdelen.some((dd) => !magDoelgroep(bereik, groep?.doelgroep_id, 'dagdelen', dd.dagdeel_id))) throw new DbFout('ONGELDIG_DAGDEEL');
   const keuzeOpen = new Map(gekozenDagdelen.map((dd) => [dd.dagdeel_id, dd.sessiekeuze_tot == null || nu <= Date.parse(dd.sessiekeuze_tot)]));
 
   // Sessies: geldig, binnen de gekozen dagdelen, juiste doelgroep, keuze nog open
@@ -99,6 +103,7 @@ export async function registreer(env: Env, slug: string, invoer: RegistratieInvo
       s.zichtbaar === 1 &&
       s.blok_zichtbaar === 1 &&
       keuzeOpen.get(s.dagdeel_id) === true &&
+      magDoelgroep(bereik, groep?.doelgroep_id, 'tijdsblokken', s.tijdsblok_id) &&
       (s.doelgroep_id == null || s.doelgroep_id === groep?.doelgroep_id),
   );
   if (geldig.length !== sessies.length) throw new DbFout('ONGELDIGE_SESSIEKEUZE');
@@ -107,7 +112,11 @@ export async function registreer(env: Env, slug: string, invoer: RegistratieInvo
   if (new Set(codes).size !== codes.length) throw new DbFout('ZELFDE_ONDERDEEL_DUBBEL');
   if (!groep || groep.sessiekeuze) {
     const ontbreekt = (verplichtR.results as { tijdsblok_id: string; dagdeel_id: string }[]).some(
-      (t) => keuzeOpen.get(t.dagdeel_id) && !gekozen.some((s) => s.tijdsblok_id === t.tijdsblok_id),
+      (t) =>
+        keuzeOpen.get(t.dagdeel_id) &&
+        // Een verplicht tijdsblok dat deze doelgroep niet te zien krijgt, kan ze ook niet kiezen.
+        magDoelgroep(bereik, groep?.doelgroep_id, 'tijdsblokken', t.tijdsblok_id) &&
+        !gekozen.some((s) => s.tijdsblok_id === t.tijdsblok_id),
     );
     if (ontbreekt) throw new DbFout('VERPLICHT_TIJDSBLOK_ONTBREEKT');
   }
@@ -336,14 +345,14 @@ export async function wijzigKeuzesViaToken(env: Env, tokenHash: string, sessies:
   const db = env.DB;
   const dn = await db
     .prepare(
-      `select dn.deelnemer_id, dn.doelgroep_id, e.status as evenement_status, e.inschrijving_vanaf, e.inschrijving_tot,
+      `select dn.deelnemer_id, dn.doelgroep_id, dn.evenement_id, e.status as evenement_status, e.inschrijving_vanaf, e.inschrijving_tot,
               coalesce(gr.sessiekeuze, 1) as sessiekeuze
        from deelnemers dn join evenementen e on e.evenement_id = dn.evenement_id
        left join doelgroepen gr on gr.doelgroep_id = dn.doelgroep_id
        where dn.beheer_token_hash = ? and dn.status = 'actief' and dn.geanonimiseerd_op is null`,
     )
     .bind(tokenHash)
-    .first<{ deelnemer_id: string; doelgroep_id: string | null; evenement_status: string; inschrijving_vanaf: string | null; inschrijving_tot: string | null; sessiekeuze: number }>();
+    .first<{ deelnemer_id: string; doelgroep_id: string | null; evenement_id: string; evenement_status: string; inschrijving_vanaf: string | null; inschrijving_tot: string | null; sessiekeuze: number }>();
   if (!dn) throw new DbFout('REGISTRATIE_NIET_GEVONDEN');
   const id = dn.deelnemer_id;
   const nu = Date.now();
@@ -383,11 +392,13 @@ export async function wijzigKeuzesViaToken(env: Env, tokenHash: string, sessies:
 
   // Elke gevraagde keuze: in een eigen dagdeel waar kiezen nog open is en voor de juiste doelgroep;
   // een nieuw lesje moet bovendien open en zichtbaar zijn (een huidig lesje mag blijven).
+  const bereik = await bereikPerDoelgroep(env, dn.evenement_id);
   const geldig = gekozen.filter(
     (s) =>
       s.type === 'keuze' &&
       keuzeOpen.get(s.dagdeel_id) === true &&
       (s.doelgroep_id == null || s.doelgroep_id === dn.doelgroep_id) &&
+      (alGekozen.has(s.sessie_id) || magDoelgroep(bereik, dn.doelgroep_id, 'tijdsblokken', s.tijdsblok_id)) &&
       (alGekozen.has(s.sessie_id) || (s.status === 'open' && s.zichtbaar === 1 && s.blok_zichtbaar === 1)),
   );
   if (geldig.length !== sessies.length) throw new DbFout('ONGELDIGE_SESSIEKEUZE');
@@ -401,7 +412,8 @@ export async function wijzigKeuzesViaToken(env: Env, tokenHash: string, sessies:
       .prepare(`select tijdsblok_id from tijdsblokken where type = 'keuze' and verplicht = 1 and dagdeel_id in (${plaatshouders(open.length)})`)
       .bind(...open)
       .all<{ tijdsblok_id: string }>();
-    if (verplicht.results.some((t) => !gekozen.some((s) => s.tijdsblok_id === t.tijdsblok_id))) throw new DbFout('VERPLICHT_TIJDSBLOK_ONTBREEKT');
+    const nodig = verplicht.results.filter((t) => magDoelgroep(bereik, dn.doelgroep_id, 'tijdsblokken', t.tijdsblok_id));
+    if (nodig.some((t) => !gekozen.some((s) => s.tijdsblok_id === t.tijdsblok_id))) throw new DbFout('VERPLICHT_TIJDSBLOK_ONTBREEKT');
   }
 
   const weg = huidig.filter((h) => keuzeOpen.get(h.dagdeel_id) && !sessies.includes(h.sessie_id));
