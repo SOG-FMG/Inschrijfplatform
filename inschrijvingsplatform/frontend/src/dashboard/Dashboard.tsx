@@ -102,6 +102,10 @@ export function Dashboard() {
         </div>
       </aside>
       <main className="dash__inhoud">{inhoud}</main>
+      {/* Versie en commit van deze build: handig als iemand een probleem meldt ("welke versie zie je?"). */}
+      <p className="dash__versie" title="Versie van het platform, de commit waaruit het gebouwd is, en de builddatum">
+        v{__APP_VERSIE__}
+      </p>
     </div>
   );
 }
