@@ -1,5 +1,7 @@
 {
-  "name": "fmg-inschrijfplatform",
+  // De hostname is <name>.<accountsubdomein>.workers.dev, dus deze naam staat in elk adres en in elke
+  // mail (PUBLIC_APP_URL in backend/wrangler.toml moet er altijd mee overeenstemmen).
+  "name": "event",
   "main": "worker/index.ts",
   "compatibility_date": "2026-09-30",
   "assets": {
