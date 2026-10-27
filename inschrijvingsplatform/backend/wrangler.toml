@@ -10,7 +10,7 @@ workers_dev = true
 # Geen publieke preview-URL's per versie (die zouden nieuwe code met echte data blootstellen).
 preview_urls = false
 
-# Een eigen domein is niet nodig: de frontend (Worker 'fmg-inschrijfplatform') stuurt /api/* via een service binding
+# Een eigen domein is niet nodig: de frontend (Worker 'event') stuurt /api/* via een service binding
 # door naar deze Worker, zodat alles onder één hostnaam draait (cookies, passkeys). Zie frontend/worker/index.ts.
 
 # D1 met jurisdictie 'eu': data wordt enkel binnen de EU opgeslagen en verwerkt.

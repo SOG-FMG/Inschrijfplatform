@@ -13,7 +13,7 @@
   // De API-Worker (backend/wrangler.toml, name = "inschrijvingsplatform-api").
   "services": [{ "binding": "API", "service": "inschrijvingsplatform-api" }],
 
-  // Andere installaties (zie backend/wrangler.toml). De Worker heet dan "fmg-inschrijfplatform-<installatie>"
+  // Andere installaties (zie backend/wrangler.toml). De Worker heet dan "event-<installatie>"
   // en stuurt /api/* door naar de API-Worker van dezelfde installatie. Nieuwe organisatie: kopieer "test".
   "env": {
     "test": {

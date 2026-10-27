@@ -21,14 +21,14 @@ VSC_Inschrijfformulier/                 ← root van de repository
 └── inschrijvingsplatform/
     ├── backend/    ──────────────►  Cloudflare Worker  "inschrijvingsplatform-api"
     │   └── wrangler.toml                (alle Worker-instellingen)
-    ├── frontend/   ──────────────►  Cloudflare Worker  "fmg-inschrijfplatform" (statische bestanden + doorsturen van /api/*)
+    ├── frontend/   ──────────────►  Cloudflare Worker  "event" (statische bestanden + doorsturen van /api/*)
     └── tools/                           (niet gekoppeld)
 ```
 
 | Cloudflare-project | Koppelen aan map (root directory) | Instellingen staan in |
 | --- | --- | --- |
 | Worker `inschrijvingsplatform-api` | `inschrijvingsplatform/backend` | `backend/wrangler.toml` + secrets |
-| Worker `fmg-inschrijfplatform` | `inschrijvingsplatform/frontend` | `frontend/wrangler.jsonc` + build-variabelen in het dashboard |
+| Worker `event` | `inschrijvingsplatform/frontend` | `frontend/wrangler.jsonc` + build-variabelen in het dashboard |
 
 De frontend-Worker stuurt `/api/*` via een *service binding* door naar `inschrijvingsplatform-api`. Zo staan formulier en API onder één hostnaam (nodig voor veilige sessiecookies en passkeys), zonder eigen domein. `public/_headers` wordt automatisch meegenomen; de SPA-fallback staat in `wrangler.jsonc`.
 
@@ -123,7 +123,7 @@ Het voorbeeldevenement staat meteen op *gepubliceerd*. Dat is handig om te teste
 npx wrangler deploy
 ```
 
-De uitvoer toont de URL, bv. `https://inschrijvingsplatform-api.freinetmiddenschool-automatisatie>.workers.dev`. Test die in de browser:
+De uitvoer toont de URL, bv. `https://inschrijvingsplatform-api.<account>.workers.dev`. Test die in de browser:
 
 - `…/api/evenementen/fmg-infodagen-2027` → JSON met het evenement
 - `…/api/scholen` → lijst met scholen
@@ -152,7 +152,7 @@ Ga naar *Workers & Pages → Create → Import a repository* en vul in:
 
 | Instelling | Waarde |
 | --- | --- |
-| Project/Worker name | `fmg-inschrijfplatform` (moet gelijk zijn aan `name` in `frontend/wrangler.jsonc`) |
+| Project/Worker name | `event` (moet gelijk zijn aan `name` in `frontend/wrangler.jsonc`) |
 | Production branch | `main` |
 | Root directory | `inschrijvingsplatform/frontend` |
 | Build command | `npm ci && npm run build` |
@@ -170,12 +170,12 @@ Stel bij *Build → Variables and secrets* deze **build-variabelen** in:
 
 `VITE_*`-waarden worden bij het bouwen ingebakken. Na een wijziging moet je opnieuw bouwen (*Deployments → Retry*). De API-Worker (stap 7) moet bestaan vóór de eerste deploy van de frontend.
 
-De frontend staat op `https://fmg-inschrijfplatform.<account>.workers.dev`. Noteer die URL voor stap 10 en 11.
+De frontend staat op `https://event.<account>.workers.dev`. Noteer die URL voor stap 10 en 11.
 
 ## 10. Botcontrole (Turnstile)
 
 1. Maak een widget aan via *Turnstile → Add widget*:
-   - Hostname: `fmg-inschrijfplatform.<account>.workers.dev` (de **frontend**, niet de API)
+   - Hostname: `event.<account>.workers.dev` (de **frontend**, niet de API)
    - Mode: *Managed*
 2. Zet de **sitekey** (publiek) als build-variabele `VITE_TURNSTILE_SITEKEY` van de frontend en bouw opnieuw.
 3. Zet het **secret** (geheim, nooit in een bestand of in Git) op de API-Worker:
@@ -189,8 +189,8 @@ De frontend staat op `https://fmg-inschrijfplatform.<account>.workers.dev`. Note
 1. Pas in `backend/wrangler.toml` deze waarden aan naar de echte URL van de frontend (stap 9):
 
    ```toml
-   ALLOWED_ORIGINS = "https://fmg-inschrijfplatform.<account>.workers.dev"
-   PUBLIC_APP_URL  = "https://fmg-inschrijfplatform.<account>.workers.dev"
+   ALLOWED_ORIGINS = "https://event.<account>.workers.dev"
+   PUBLIC_APP_URL  = "https://event.<account>.workers.dev"
    ```
 
    `PUBLIC_APP_URL` bepaalt ook de `rpId` en de toegelaten origin van passkeys. Wijzigt de hostnaam later, dan moeten medewerkers hun passkeys opnieuw registreren.
@@ -199,7 +199,7 @@ De frontend staat op `https://fmg-inschrijfplatform.<account>.workers.dev`. Note
 
 ### Test fase 1
 
-- [ ] Het formulier opent op `https://fmg-inschrijfplatform.<account>.workers.dev` **zonder** de gele demo-melding.
+- [ ] Het formulier opent op `https://event.<account>.workers.dev` **zonder** de gele demo-melding.
 - [ ] Een volledige testinschrijving lukt en je krijgt een referentie.
 - [ ] De beheerlink op de bevestigingspagina werkt, en annuleren ook.
 - [ ] Een volzet lesje kan je niet kiezen. Zet de capaciteit desnoods tijdelijk op 1 met `wrangler d1 execute`.
@@ -239,7 +239,7 @@ Medewerkers melden aan met hun `@onderwijs.gent.be`-adres, een **wachtwoord** en
    npx wrangler d1 migrations apply DB --remote
    ```
 
-4. **Hoofdadmin activeert zich.** Ga naar `https://fmg-inschrijfplatform.<account>.workers.dev/dashboard/activeren`, vul het adres en de setupcode in, kies een wachtwoord (minstens 12 tekens), scan de QR-code met een authenticator-app en geef de code in. Je bent nu aangemeld. Voortaan meld je aan op `/dashboard` met e-mail + wachtwoord + code, of met een passkey.
+4. **Hoofdadmin activeert zich.** Ga naar `https://event.<account>.workers.dev/dashboard/activeren`, vul het adres en de setupcode in, kies een wachtwoord (minstens 12 tekens), scan de QR-code met een authenticator-app en geef de code in. Je bent nu aangemeld. Voortaan meld je aan op `/dashboard` met e-mail + wachtwoord + code, of met een passkey.
 5. **Passkey toevoegen** (aanbevolen): klik op *Passkey toevoegen op dit toestel*. Daarna kan je aanmelden met de pincode of vingerafdruk van dit toestel. Houd liefst twee methodes (passkey en app), zodat je niet buitengesloten raakt.
 6. **Andere medewerkers toevoegen** onder *Medewerkers*: naam, adres, rol en (voor organisator en onthaal) de evenementen. Je krijgt een **uitnodigingscode** die je persoonlijk doorgeeft. De medewerker activeert zich zoals in punt 4. De code is 7 dagen geldig en werkt één keer.
 7. **Verloren toestel?** Kies bij de medewerker *2FA opnieuw instellen*: wachtwoord, authenticator, passkeys en sessies worden gewist en je krijgt een nieuwe eenmalige code. Is het de hoofdadmin zelf, wis dan zijn gegevens en gebruik de setupcode opnieuw:

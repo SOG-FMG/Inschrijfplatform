@@ -25,7 +25,9 @@ Alles draait op Cloudflare, met data in de EU:
 
 ## Adressen
 
-Vervang `<account>` door de accountnaam in de Worker-URL (bv. `freinetmiddenschool-automatisatie`). Alles staat onder één hostnaam: `https://fmg-inschrijfplatform.<account>.workers.dev`.
+Vervang `<account>` door het workers.dev-subdomein van het account (hier `middenschool`). Alles staat onder één hostnaam: `https://event.<account>.workers.dev`.
+
+De hostname is opgebouwd als `<naam van de frontend-Worker>.<accountsubdomein>.workers.dev`. Wijzigt een van die twee, dan moeten `ALLOWED_ORIGINS` en `PUBLIC_APP_URL` in `backend/wrangler.toml` mee: anders weigert `controleerOrigin` elke wijziging in het dashboard, wijzen de links en QR-codes in de mails nergens naar, en vervallen alle passkeys (`rpId` volgt `PUBLIC_APP_URL`). Links die al verstuurd zijn, blijven dan ook dood — het subdomein wijzigen raakt élke Worker in het account.
 
 | Wat | Adres | Voor wie |
 | --- | --- | --- |
