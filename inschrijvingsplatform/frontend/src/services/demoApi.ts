@@ -131,8 +131,16 @@ export const demoApi: Api = {
     const st = staat();
     const d = a.deelnemer;
     const sleutel = [d.email, d.naam, d.voornaam].map((x) => x.trim().toLowerCase()).join('|');
-    if (Object.values(st.registraties).some((r) => r.sleutel === sleutel && r.overzicht.status === 'actief')) {
-      throw new ApiFout('DUBBELE_INSCHRIJVING', 'Deze deelnemer is al ingeschreven met dit e-mailadres. Bekijk je bevestigingsmail.');
+    // Zelfde velden als de echte API, inclusief de omgewisselde voor- en achternaam (zie backend registratie.ts).
+    const omgewisseld = [d.email, d.voornaam, d.naam].map((x) => x.trim().toLowerCase()).join('|');
+    const bestaand = Object.values(st.registraties).find(
+      (r) => (r.sleutel === sleutel || r.sleutel === omgewisseld) && r.overzicht.status === 'actief',
+    );
+    if (bestaand) {
+      throw new ApiFout('DUBBELE_INSCHRIJVING', 'Je inschrijving werd niet geregistreerd: je schreef je kind al in.', undefined, undefined, {
+        omgewisseld: bestaand.sleutel !== sleutel,
+        mailVerstuurd: true,
+      });
     }
     const gevonden = a.sessies.map((id) => zoekSessie(id));
     const codes = gevonden.filter((g) => g?.s.uniek && g.s.code).map((g) => g!.s.code);

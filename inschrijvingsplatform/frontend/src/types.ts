@@ -224,6 +224,8 @@ export class ApiFout extends Error {
     melding: string,
     public velden?: Record<string, string>,
     public id?: string,
+    /** Extra velden die de API bij deze fout meestuurt, bv. omgewisseld en mailVerstuurd bij een dubbele inschrijving. */
+    public extra?: Record<string, unknown>,
   ) {
     super(melding);
   }

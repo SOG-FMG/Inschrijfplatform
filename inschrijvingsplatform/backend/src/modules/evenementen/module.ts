@@ -3,7 +3,7 @@ import { anonimiseerEvenement, anonimiseerVerlopenEvenementen, deelnemerslijst, 
 import { meldAf, voorinvulling } from './uitnodigingen';
 import { publiekEvenement } from './evenement';
 import { bewaarLogo, instellingen, isSoort, kopieerDagdeel, kopieerSessies, maak, verwijder, verwijderLogo, wijzig, zetLokaalOpCode } from './instellingen';
-import { annulatieGegevens, annuleerViaToken, mailGegevens, registratieViaToken, registreer, wijzigKeuzesViaToken } from './registratie';
+import { annulatieGegevens, annuleerViaToken, bevestigingOpnieuw, DubbeleInschrijving, mailGegevens, registratieViaToken, registreer, wijzigKeuzesViaToken } from './registratie';
 import { checkinUrl, leesVersie } from '../../kern/checkin';
 import { basisUrl, qrMailsTeVersturen, stuurEnLog, verstuurQrMails, verwittigNaWijzigingDoorSchool } from './checkin';
 import { AANWEZIGHEID_ROUTES } from './routes-aanwezigheid';
@@ -84,7 +84,29 @@ export default defineModule({
 
         const token = nieuwToken();
         const checkinToken = nieuwToken();
-        const resultaat = await registreer(env, params.slug, invoer, await sha256(token), checkinToken);
+        let resultaat;
+        try {
+          resultaat = await registreer(env, params.slug, invoer, await sha256(token), checkinToken);
+        } catch (e) {
+          if (!(e instanceof DubbeleInschrijving)) throw e;
+          // Niets bewaard: we sturen de bevestiging van de bestaande inschrijving opnieuw, naar het adres dat
+          // daar al bij hoort. Het antwoord vertelt het formulier wat het in de popup moet zeggen.
+          const opnieuw = await bevestigingOpnieuw(env, e.deelnemerId);
+          if (opnieuw) {
+            const beheerUrl = `${basisUrl(env)}/beheer/${opnieuw.token}`;
+            const checkin = { basisUrl: basisUrl(env), ...opnieuw.gegevens.checkin };
+            stuurEnLog(env, ctx, e.deelnemerId, bevestigingsmail(opnieuw.gegevens, opnieuw.gegevens.email, opnieuw.gegevens.voornaam, beheerUrl, checkin));
+          }
+          return json(
+            {
+              fout: 'DUBBELE_INSCHRIJVING',
+              melding: 'Je inschrijving werd niet geregistreerd: je schreef je kind al in.',
+              omgewisseld: e.omgewisseld,
+              mailVerstuurd: !!opnieuw,
+            },
+            409,
+          );
+        }
 
         const beheerUrl = `${basisUrl(env)}/beheer/${token}`;
         // Een nieuwe inschrijving heeft versie 1 (registreer() zet dat zo).

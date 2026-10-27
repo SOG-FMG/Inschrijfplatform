@@ -50,7 +50,7 @@ async function call<T>(pad: string, init?: RequestInit): Promise<T> {
   const regel = `${methode} ${pad} → ${res.status} in ${Math.round(performance.now() - start)} ms [${res.headers.get('X-Request-Id') ?? '-'}]`;
   if (!res.ok) {
     log(res.status >= 500 ? 'fout' : 'waarschuwing', `${regel} ${data?.fout ?? ''}`);
-    throw new ApiFout(data?.fout ?? 'SERVERFOUT', data?.melding ?? 'Er ging iets mis. Probeer het later opnieuw.', data?.velden, data?.id);
+    throw new ApiFout(data?.fout ?? 'SERVERFOUT', data?.melding ?? 'Er ging iets mis. Probeer het later opnieuw.', data?.velden, data?.id, data ?? undefined);
   }
   log('info', regel);
   return data as T;

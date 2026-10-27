@@ -1,4 +1,4 @@
-import { blindeIndex, ontsleutel, versleutel } from '../../crypto/versleuteling';
+import { blindeIndex, ontsleutel, sha256, versleutel } from '../../crypto/versleuteling';
 import { koppelAanContact, werkContactBij } from '../../kern/contacten';
 import { geldigeUitnodiging, markeerGebruiktStmt } from './uitnodigingen';
 import type { Env, Keuze, Moment, RegistratieInvoer, RegistratieResultaat } from '../../types';
@@ -15,6 +15,21 @@ import { nieuwToken } from '../../kern/http';
  * De invoer is al gevalideerd en genormaliseerd door validatie.ts.
  * `tokenHash`: hash van de beheertoken (link in de mail); `checkinToken`: aparte token voor de QR-code (kern/checkin.ts).
  */
+
+/**
+ * Dit kind staat al ingeschreven met dit e-mailadres. Draagt mee wie dat is, zodat de route de bevestiging
+ * opnieuw kan sturen, en of het om de omgewisselde voor- en achternaam ging.
+ *
+ * Erft van DbFout, zodat een route die dit niet apart opvangt nog altijd de gewone 409 teruggeeft.
+ */
+export class DubbeleInschrijving extends DbFout {
+  constructor(
+    public deelnemerId: string,
+    public omgewisseld: boolean,
+  ) {
+    super('DUBBELE_INSCHRIJVING');
+  }
+}
 export async function registreer(env: Env, slug: string, invoer: RegistratieInvoer, tokenHash: string, checkinToken: string): Promise<RegistratieResultaat> {
   const db = env.DB;
   const { deelnemer: d, dagdelen, sessies } = invoer;
@@ -120,6 +135,19 @@ export async function registreer(env: Env, slug: string, invoer: RegistratieInvo
     blindeIndex(env, 'email', d.email),
     blindeIndex(env, 'dubbel', eid, d.email, d.naam.toLowerCase(), d.voornaam.toLowerCase()),
   ]);
+
+  // Al ingeschreven? Zelf opzoeken in plaats van op de unieke index te wachten, zodat we weten wie het is (om
+  // de bevestiging opnieuw te sturen) en of enkel voor- en achternaam omgewisseld zijn. Niet op status filteren:
+  // staat er een rij met deze hash, dan zou het invoegen toch falen. De index blijft het vangnet bij een race.
+  const dubbelHash = enc[enc.length - 1] as string;
+  const omgewisseldHash = await blindeIndex(env, 'dubbel', eid, d.email, d.voornaam.toLowerCase(), d.naam.toLowerCase());
+  const alIngeschreven = await db
+    .prepare(`select deelnemer_id, dubbel_hash from deelnemers where evenement_id = ? and dubbel_hash in (?, ?) limit 1`)
+    .bind(eid, dubbelHash, omgewisseldHash)
+    .first<{ deelnemer_id: string; dubbel_hash: string }>();
+  if (alIngeschreven) {
+    throw new DubbeleInschrijving(alIngeschreven.deelnemer_id, alIngeschreven.dubbel_hash !== dubbelHash);
+  }
 
   const stmts = [
     db
@@ -458,6 +486,26 @@ export async function mailGegevens(env: Env, deelnemerId: string) {
     keuzes: keuzes.results as Keuze[],
     checkin: { token: dn.checkin_token, versie: dn.checkin_versie },
   };
+}
+
+/**
+ * De bevestiging opnieuw klaarzetten voor een bestaande inschrijving, na een dubbele poging.
+ *
+ * Twee dingen om te weten:
+ * - Het adres komt uit de inschrijving zelf, niet uit wat er net ingetypt werd. Dat is hetzelfde adres (het zit
+ *   in de blinde index waarop we de dubbel vonden), dus er lekt niets naar een derde.
+ * - De oorspronkelijke persoonlijke link kan niet hergebruikt worden: daarvan bewaren we enkel de hash. Er komt
+ *   dus een nieuwe link, en de oude werkt daarna niet meer. Dat is ook het nuttigste: links uit mails van vóór
+ *   de adreswijziging wijzen nergens meer naar.
+ *
+ * Geeft null als er niets te sturen is (geanonimiseerd, of geen actieve inschrijving meer).
+ */
+export async function bevestigingOpnieuw(env: Env, deelnemerId: string) {
+  const gegevens = await mailGegevens(env, deelnemerId);
+  if (!gegevens) return null;
+  const token = nieuwToken();
+  await env.DB.prepare(`update deelnemers set beheer_token_hash = ? where deelnemer_id = ?`).bind(await sha256(token), deelnemerId).run();
+  return { gegevens, token };
 }
 
 /** Gegevens voor de annulatiemail; op te halen vóór het annuleren. */

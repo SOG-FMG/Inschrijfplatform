@@ -59,6 +59,8 @@ export function InschrijfPagina({ slug }: { slug: string }) {
   const [bezig, setBezig] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState<string>();
   const [antwoord, setAntwoord] = useState<RegistratieAntwoord | null>(null);
+  // Dubbele inschrijving: er is niets bewaard, en de bevestiging van de bestaande inschrijving ging opnieuw de deur uit.
+  const [dubbel, setDubbel] = useState<{ omgewisseld: boolean; mailVerstuurd: boolean } | null>(null);
   const kopRef = useRef<HTMLHeadingElement>(null);
   const [link] = useState(leesUitnodigingUitAdres);
   const [uitnodiging, setUitnodiging] = useState<Voorinvulling | null>(null);
@@ -292,7 +294,11 @@ export function InschrijfPagina({ slug }: { slug: string }) {
     } catch (e) {
       const fout = e instanceof ApiFout ? e : new ApiFout('SERVERFOUT', 'Er ging iets mis. Probeer het later opnieuw.');
       setMelding(fout.message);
-      if (fout.code === 'SESSIE_VOLZET' || fout.code === 'ONGELDIGE_SESSIEKEUZE' || fout.code === 'ZELFDE_ONDERDEEL_DUBBEL') {
+      if (fout.code === 'DUBBELE_INSCHRIJVING') {
+        // Dit krijgt een eigen venster; de melding bovenaan zou de uitleg maar half vertellen.
+        setMelding(null);
+        setDubbel({ omgewisseld: fout.extra?.omgewisseld === true, mailVerstuurd: fout.extra?.mailVerstuurd === true });
+      } else if (fout.code === 'SESSIE_VOLZET' || fout.code === 'ONGELDIGE_SESSIEKEUZE' || fout.code === 'ZELFDE_ONDERDEEL_DUBBEL') {
         setVolzetGemeld(fout.id);
         if (fout.id) setF((oud) => ({ ...oud, keuzes: Object.fromEntries(Object.entries(oud.keuzes).filter(([, s]) => s !== fout.id)) }));
         gaNaar('Keuzes');
@@ -390,6 +396,35 @@ export function InschrijfPagina({ slug }: { slug: string }) {
 
   return (
     <main className="pagina">
+      {dubbel && (
+        <div className="overlay">
+          <div className="overlay__venster" role="alertdialog" aria-modal="true" aria-labelledby="dubbel-kop">
+            <h2 id="dubbel-kop">Je inschrijving werd niet geregistreerd</h2>
+            <p>Je schreef je kind al in.</p>
+            {dubbel.mailVerstuurd ? (
+              <>
+                <p>We sturen de bevestiging van die inschrijving opnieuw. Gebruik de link in die mail om aanpassingen te doen aan die inschrijving.</p>
+                <p className="klein">
+                  Die mail bevat een nieuwe persoonlijke link. Een oudere mail over deze inschrijving werkt daarna niet meer.
+                </p>
+              </>
+            ) : (
+              <p>We konden de bevestiging niet opnieuw sturen. Neem contact op met de organisatie.</p>
+            )}
+            {dubbel.omgewisseld && (
+              <p>
+                Mogelijk zijn de voornaam en de achternaam omgewisseld. Dat zie je in de bevestiging die we net opnieuw verstuurden.
+              </p>
+            )}
+            <div className="knoppen knoppen--links">
+              <button type="button" className="knop" onClick={() => { setDubbel(null); nieuweInschrijving(); }}>
+                Ander kind inschrijven
+              </button>
+              <button type="button" className="knop knop--secundair" onClick={() => setDubbel(null)}>Sluiten</button>
+            </div>
+          </div>
+        </div>
+      )}
       {kop}
       {link.token && linkGebruiken && uitnodigingFout && <div className="melding" role="status">{uitnodigingFout}</div>}
       {link.token && linkGebruiken && uitnodiging?.status === 'gebruikt' && (

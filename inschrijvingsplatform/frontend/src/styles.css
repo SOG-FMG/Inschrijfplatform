@@ -254,6 +254,13 @@ h2[tabindex='-1']:focus { outline: none; }
 
 /* Zelfbeheer: lesjes wijzigen */
 .melding--succes { background: #e3f5ea; border-left: 4px solid #1e7b45; }
+/* Venster over het formulier, bv. bij een dubbele inschrijving. Geen <dialog>: dat opent enkel met
+   showModal() en dat bestaat niet in elke omgeving (ook niet in de tests). */
+.overlay { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgb(0 0 0 / 45%); }
+.overlay__venster { background: var(--vlak); border-radius: 10px; padding: 20px 22px; max-width: 34rem; width: 100%; box-shadow: 0 10px 30px rgb(0 0 0 / 25%); }
+.overlay__venster h2 { margin-top: 0; }
+.overlay__venster .klein { font-size: .9em; color: var(--tekst-zacht); }
+
 .knoppen--links { justify-content: flex-start; }
 .knoppen--links .knop:only-child { margin-left: 0; }
 .wijzigen .programma { margin-top: 12px; }

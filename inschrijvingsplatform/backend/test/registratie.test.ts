@@ -117,7 +117,23 @@ describe('registreren', () => {
     const d = deelnemer();
     expect((await registreer(d, [vm1.id], [])).status).toBe(201);
     const r = await registreer({ ...d, naam: d.naam.toUpperCase(), email: d.email.toUpperCase() }, [vm1.id], []);
-    expect(r.data.fout).toBe('DUBBELE_INSCHRIJVING');
+    expect(r.status).toBe(409);
+    expect(r.data).toMatchObject({ fout: 'DUBBELE_INSCHRIJVING', omgewisseld: false, mailVerstuurd: true });
+  });
+
+  test('2b. omgewisselde voor- en achternaam telt ook als dubbel; de bevestiging gaat opnieuw met een nieuwe link', async () => {
+    const d = deelnemer({ naam: 'Janssens', voornaam: 'Marie' });
+    const eerste = await registreer(d, [vm1.id], []);
+    expect(eerste.status).toBe(201);
+    const oudeLink = token(eerste);
+    expect((await api('GET', `/api/registraties/${oudeLink}`)).status).toBe(200);
+
+    const r = await registreer({ ...d, naam: 'Marie', voornaam: 'Janssens' }, [vm1.id], []);
+    expect(r.status).toBe(409);
+    expect(r.data).toMatchObject({ fout: 'DUBBELE_INSCHRIJVING', omgewisseld: true, mailVerstuurd: true });
+
+    // De bevestiging bevat een nieuwe persoonlijke link, dus de oude werkt niet meer.
+    expect((await api('GET', `/api/registraties/${oudeLink}`)).status).toBe(404);
   });
 
   test('3. zelfde onderdeel twee keer kiezen wordt geweigerd', async () => {
