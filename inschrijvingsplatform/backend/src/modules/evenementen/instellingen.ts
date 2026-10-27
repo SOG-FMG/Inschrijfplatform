@@ -1,3 +1,4 @@
+import { ontsleutel } from '../../crypto/versleuteling';
 import { domeinTekst, isToegelatenEmail } from '../../kern/installatie';
 import { controleerToegang, heeftRecht, type Gebruiker } from '../../kern/toegang';
 import type { Env } from '../../types';
@@ -23,7 +24,7 @@ export interface Veld {
   type: VeldType;
   verplicht?: boolean;
   opties?: { waarde: string; label: string }[];
-  ref?: 'doelgroep' | 'soort' | 'locatie';
+  ref?: 'doelgroep' | 'soort' | 'locatie' | 'contact';
   min?: number;
   max?: number;
   hulp?: string;
@@ -151,7 +152,10 @@ export const SCHEMA: Record<Soort, Definitie> = {
       { naam: 'doelgroep_id', label: 'Doelgroep', type: 'ref', ref: 'doelgroep', hulp: 'Leeg = iedereen' },
       { naam: 'locatie_id', label: 'Lokaal', type: 'ref', ref: 'locatie' },
       { naam: 'capaciteit', label: 'Max. deelnemers', type: 'getal', min: 0, hulp: 'Leeg = onbeperkt' },
-      { naam: 'lesgever', label: 'Leerkracht', type: 'tekst', hulp: 'Verschijnt op de rapporten' },
+      { naam: 'lesgever_contact_id', label: 'Leerkracht', type: 'ref', ref: 'contact',
+        hulp: 'Uit de contacten van de eigen organisatie. Vult de naam en het adres hieronder automatisch in.' },
+      { naam: 'lesgever', label: 'Leerkracht (vrije tekst)', type: 'tekst',
+        hulp: 'Verschijnt op de rapporten. Wordt overschreven zodra je hierboven een contact kiest; typ hier enkel iemand die niet bij de contacten staat.' },
       { naam: 'lesgever_email', label: 'E-mail leerkracht', type: 'email', intern: true, hulp: 'Enkel een adres van de eigen organisatie (zelfde domein als de medewerkers). Krijgt de klaslijst via "Mailen".' },
       { naam: 'status', label: 'Status', type: 'keuze', verplicht: true, standaard: 'open',
         opties: opties(['open', 'Open'], ['gesloten', 'Gesloten'], ['geannuleerd', 'Geannuleerd']) },
@@ -250,15 +254,22 @@ function zetOm(env: Env, v: Veld, waarde: unknown): unknown {
   return s;
 }
 
-/** Een verwijzing (doelgroep, soort, lokaal) moet bestaan, en een doelgroep moet bij hetzelfde evenement horen. */
+/** Een verwijzing (doelgroep, soort, lokaal, contact) moet bestaan, en een doelgroep moet bij hetzelfde evenement horen. */
 async function controleerRef(env: Env, v: Veld, waarde: unknown, evenementId: string) {
   if (waarde === null || v.type !== 'ref') return;
-  const sql = {
-    doelgroep: `select 1 from doelgroepen where doelgroep_id = ?1 and evenement_id = ?2`,
-    soort: `select 1 from soorten_onderdelen where soort_id = ?1`,
-    locatie: `select 1 from locaties where locatie_id = ?1`,
+  // Elke vraag krijgt precies de bindwaarden die ze gebruikt: meer meegeven dan er plaatshouders zijn, laat D1 falen.
+  const vraag = {
+    doelgroep: { sql: `select 1 from doelgroepen where doelgroep_id = ? and evenement_id = ?`, binds: [waarde, evenementId] },
+    soort: { sql: `select 1 from soorten_onderdelen where soort_id = ?`, binds: [waarde] },
+    locatie: { sql: `select 1 from locaties where locatie_id = ?`, binds: [waarde] },
+    // Enkel een contact van de eigen organisatie: zo komt de naam van een ouder nooit op een klaslijst terecht.
+    contact: {
+      sql: `select 1 from contacten c where c.contact_id = ?
+            and exists (select 1 from contact_groepen g where g.contact_id = c.contact_id and g.intern = 1)`,
+      binds: [waarde],
+    },
   }[v.ref!];
-  const ok = await env.DB.prepare(sql).bind(waarde, evenementId).first();
+  const ok = await env.DB.prepare(vraag.sql).bind(...vraag.binds).first();
   if (!ok) throw new ValidatieFout({ [v.naam]: 'Maak een geldige keuze.' });
 }
 
@@ -291,6 +302,67 @@ function vertaalSchemaFout(e: unknown): never {
     throw new ValidatieFout({ algemeen: 'Controleer de uren en datums: het einde moet na het begin liggen, en inschrijven moet eindigen na de start.' });
   }
   throw e;
+}
+
+// ---------------------------------------------------------------------------
+// Leerkracht uit de contacten
+// ---------------------------------------------------------------------------
+/** Hoogstens zoveel contacten in de keuzelijst: elke naam moet apart ontsleuteld worden. */
+const CONTACTEN_MAX = 500;
+
+const naamVan = async (env: Env, voornaam: string | null, naam: string | null) => {
+  const delen = await Promise.all([voornaam, naam].map((x) => ontsleutel(env, x).catch(() => null)));
+  return delen.filter(Boolean).join(' ');
+};
+
+/**
+ * Keuzelijst met de lesgevers: contacten van de eigen organisatie (contact_groepen.intern), plus wie al aan een
+ * lesje van dit evenement hangt — ook als die inmiddels uit de groep gehaald is, want anders zou die keuze
+ * stilletjes uit de lijst vallen. De namen staan versleuteld, dus de labels worden hier opgebouwd en in het
+ * Nederlands gesorteerd, niet in SQL.
+ */
+async function contactOpties(env: Env, evenementId: string) {
+  const { results } = await env.DB.prepare(
+    `select c.contact_id, c.voornaam_enc, c.naam_enc, c.functie, c.bedrijfsnaam from contacten c
+     where exists (select 1 from contact_groepen g where g.contact_id = c.contact_id and g.intern = 1)
+        or c.contact_id in (
+          select s.lesgever_contact_id from sessies s
+          join tijdsblokken t on t.tijdsblok_id = s.tijdsblok_id
+          join dagdelen dd on dd.dagdeel_id = t.dagdeel_id
+          join evenement_dagen d on d.dag_id = dd.dag_id
+          where d.evenement_id = ? and s.lesgever_contact_id is not null)
+     limit ${CONTACTEN_MAX}`,
+  )
+    .bind(evenementId)
+    .all<{ contact_id: string; voornaam_enc: string | null; naam_enc: string | null; functie: string | null; bedrijfsnaam: string | null }>();
+
+  const lijst = await Promise.all(
+    results.map(async (r) => {
+      const wie = (await naamVan(env, r.voornaam_enc, r.naam_enc)) || '(zonder naam)';
+      const erbij = [r.functie, r.bedrijfsnaam].filter(Boolean).join(', ');
+      return { waarde: r.contact_id, label: erbij ? `${wie} — ${erbij}` : wie };
+    }),
+  );
+  const nl = new Intl.Collator('nl', { sensitivity: 'base' });
+  return lijst.sort((a, b) => nl.compare(a.label, b.label));
+}
+
+/**
+ * Koos iemand een contact als leerkracht, dan nemen we naam en adres over in de tekstkolommen `lesgever` en
+ * `lesgever_email`: de rapporten, klaslijsten en de mail "Mailen" lezen die, en blijven zo ongewijzigd werken.
+ * De keuze leegmaken laat die tekst staan — dan is ze weer de vrije terugval voor iemand buiten de contacten.
+ */
+async function vulLesgeverAan(env: Env, waarden: Record<string, unknown>) {
+  const id = waarden.lesgever_contact_id;
+  if (typeof id !== 'string' || !id) return;
+  const r = await env.DB.prepare(`select voornaam_enc, naam_enc, email_enc from contacten where contact_id = ?`)
+    .bind(id)
+    .first<{ voornaam_enc: string | null; naam_enc: string | null; email_enc: string | null }>();
+  if (!r) return;
+  const wie = await naamVan(env, r.voornaam_enc, r.naam_enc);
+  const email = await ontsleutel(env, r.email_enc).catch(() => null);
+  if (wie) waarden.lesgever = wie;
+  if (email && isToegelatenEmail(env, email)) waarden.lesgever_email = email.toLowerCase();
 }
 
 // ---------------------------------------------------------------------------
@@ -346,6 +418,7 @@ export async function instellingen(env: Env, g: Gebruiker, evenementId: string) 
       soort: soorten.results,
       locatie: locaties.results,
       doelgroep: doelgroepen.results.map((d: any) => ({ waarde: d.doelgroep_id, label: d.naam })),
+      contact: await contactOpties(env, evenementId),
     },
     evenement,
     doelgroepen: doelgroepen.results,
@@ -377,6 +450,7 @@ export async function wijzig(env: Env, g: Gebruiker, soort: Soort, id: string, i
   const evenementId = await evenementVan(env, soort, id);
   await controleerToegang(env, g, evenementId, true);
   const waarden = await zetWaardenOm(env, def, invoer ?? {}, false, evenementId);
+  await vulLesgeverAan(env, waarden);
   const kolommen = Object.keys(waarden);
   if (!kolommen.length) return { ok: true };
   const extra = def.gewijzigd ? `, modified_by = ?, modified_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')` : '';
@@ -403,6 +477,7 @@ export async function maak(env: Env, g: Gebruiker, soort: Soort, ouderId: string
     throw new DbFout('GEEN_TOEGANG');
   }
   const waarden = await zetWaardenOm(env, def, invoer ?? {}, true, evenementId);
+  await vulLesgeverAan(env, waarden);
   const id = crypto.randomUUID();
   const kol: Record<string, unknown> = { [def.id]: id, ...waarden };
   if (def.ouder) kol[def.ouder.kolom] = ouderId;

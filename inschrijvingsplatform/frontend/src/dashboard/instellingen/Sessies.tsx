@@ -12,7 +12,7 @@ import type { Gemeen, Rij, Wijzigingen } from './velden';
  */
 
 const GROEPEN: Groep[] = [
-  { titel: 'De sessie', velden: ['titel', 'code', 'locatie_id', 'lesgever', 'lesgever_email', 'capaciteit', 'volgorde'] },
+  { titel: 'De sessie', velden: ['titel', 'code', 'locatie_id', 'lesgever_contact_id', 'lesgever', 'lesgever_email', 'capaciteit', 'volgorde'] },
   { titel: 'Voor wie', velden: ['doelgroep_id', 'soort_id', 'uniek_per_deelnemer'] },
   { titel: 'Inschrijven', velden: ['status', 'zichtbaar', 'wachtlijst_toegelaten', 'volzet_weergave'] },
   { titel: 'Op het formulier', velden: ['beschrijving', 'kleur'], dicht: true },
@@ -25,7 +25,7 @@ const totaal = (rijen: Rij[], neem: (r: Rij) => number) => rijen.reduce((n, r) =
 const KOLOMMEN: Kolom[] = [
   { veld: 'titel', kop: 'Naam', breedte: '30%' },
   { veld: 'locatie_id', kop: 'Lokaal', breedte: '18%' },
-  { veld: 'lesgever', kop: 'Leerkracht', breedte: '20%' },
+  { veld: 'lesgever_contact_id', kop: 'Leerkracht', breedte: '20%' },
   { kop: 'Ingeschreven', getal: true, breedte: '9em', cel: (s) => <Ingeschreven rij={s} /> },
   { veld: 'capaciteit', kop: 'Maximum', breedte: '7em' },
 ];

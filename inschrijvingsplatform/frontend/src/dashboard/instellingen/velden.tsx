@@ -10,7 +10,7 @@ import { foutTekst } from '../ui';
  */
 
 export type Rij = Record<string, any>;
-export type Opties = Record<'doelgroep' | 'soort' | 'locatie', { waarde: string; label: string }[]>;
+export type Opties = Record<'doelgroep' | 'soort' | 'locatie' | 'contact', { waarde: string; label: string }[]>;
 export type Schema = Record<InstellingSoort, InstellingVeld[]>;
 
 /** Naam van de id-kolom per soort. */

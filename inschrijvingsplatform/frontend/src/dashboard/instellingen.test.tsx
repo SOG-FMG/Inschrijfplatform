@@ -42,7 +42,8 @@ const SCHEMA = {
     v('titel', 'Titel', 'tekst', { verplicht: true }),
     v('code', 'Code', 'tekst'),
     v('locatie_id', 'Lokaal', 'ref', { ref: 'locatie' }),
-    v('lesgever', 'Leerkracht', 'tekst'),
+    v('lesgever_contact_id', 'Leerkracht', 'ref', { ref: 'contact' }),
+    v('lesgever', 'Leerkracht (vrije tekst)', 'tekst'),
     v('capaciteit', 'Max. deelnemers', 'getal'),
     v('doelgroep_id', 'Doelgroep', 'ref', { ref: 'doelgroep' }),
     v('status', 'Status', 'keuze', { verplicht: true, opties: keuze('open', 'gesloten') }),
@@ -53,8 +54,9 @@ const SCHEMA = {
   ],
 };
 
-const sessie = (id: string, titel: string, lokaal: string, lesgever: string, max: number | null, bevestigd: number, wachtlijst = 0) => ({
-  sessie_id: id, titel, code: null, locatie_id: lokaal, lesgever, capaciteit: max, doelgroep_id: null,
+// De leerkracht is een verwijzing naar een contact; de tekstkolom lesgever is enkel nog de terugval.
+const sessie = (id: string, titel: string, lokaal: string, lesgeverId: string, max: number | null, bevestigd: number, wachtlijst = 0) => ({
+  sessie_id: id, titel, code: null, locatie_id: lokaal, lesgever_contact_id: lesgeverId, lesgever: null, capaciteit: max, doelgroep_id: null,
   status: 'open', zichtbaar: 1, beschrijving: null, volgorde: 1, opmerkingen: null,
   ingeschreven: { bevestigd, wachtlijst },
 });
@@ -77,6 +79,7 @@ const data = () => ({
     soort: keuze('Workshop'),
     locatie: [{ waarde: 'l1', label: 'A104' }, { waarde: 'l2', label: 'B012' }],
     doelgroep: [{ waarde: 'dg1', label: 'A-stroom' }],
+    contact: [{ waarde: 'c1', label: 'Peeters' }, { waarde: 'c2', label: 'Jacobs' }, { waarde: 'c3', label: 'De Smet' }],
   },
   evenement: {
     evenement_id: 'ev1', titel: 'Infodagen 2027', slug: 'infodagen-2027', status: 'gepubliceerd', organisator: 'FMG',
@@ -90,8 +93,8 @@ const data = () => ({
       sessiekeuze_tot: null, status: 'actief', volgorde: 1,
       dagdelen: [
         moment('dd1', 'Voormiddag', '10:00', '12:30', 18, [
-          blok('t1', 'Keuzelesje 1', '10:30', '11:15', [sessie('s1', 'Latijn', 'l1', 'Peeters', 20, 18), sessie('s2', 'Wetenschappen', 'l2', 'Jacobs', 20, 20, 3)]),
-          blok('t2', 'Keuzelesje 2', '11:30', '12:15', [sessie('s3', 'Latijn', 'l1', 'Peeters', 20, 12)]),
+          blok('t1', 'Keuzelesje 1', '10:30', '11:15', [sessie('s1', 'Latijn', 'l1', 'c1', 20, 18), sessie('s2', 'Wetenschappen', 'l2', 'c2', 20, 20, 3)]),
+          blok('t2', 'Keuzelesje 2', '11:30', '12:15', [sessie('s3', 'Latijn', 'l1', 'c1', 20, 12)]),
         ]),
         moment('dd2', 'Namiddag', '13:00', '15:30', 0, [blok('t3', 'Keuzelesje 1', '13:30', '14:15', [])]),
       ],
@@ -136,7 +139,7 @@ test('tabblad Sessies: per dagdeel een tabel per tijdsblok, met de kolommen naas
   expect(rijen).toHaveLength(2);
   expect(cel('Naam', 'Latijn')).toHaveProperty('value', 'Latijn');
   expect(cel('Lokaal', 'Latijn')).toHaveProperty('value', 'l1');
-  expect(cel('Leerkracht', 'Latijn')).toHaveProperty('value', 'Peeters');
+  expect(cel('Leerkracht', 'Latijn')).toHaveProperty('value', 'c1'); // keuzelijst uit de contacten
   expect(cel('Maximum', 'Latijn')).toHaveProperty('value', '20');
   expect(rijen[0].textContent).toMatch(/18 \/ 20/);
   // Volzette sessie met wachtlijst.
@@ -155,11 +158,11 @@ test('maximum en leerkracht aanpassen in de tabel, dan in één keer bewaren', a
   expect(screen.queryByText(/nog niet bewaard/)).toBeNull();
 
   fireEvent.change(cel('Maximum', 'Latijn'), { target: { value: '24' } });
-  fireEvent.change(cel('Leerkracht', 'Wetenschappen'), { target: { value: 'De Smet' } });
+  fireEvent.change(cel('Leerkracht', 'Wetenschappen'), { target: { value: 'c3' } });
   expect(screen.getByText('2 wijziging(en) nog niet bewaard.')).toBeTruthy();
 
   // Terugzetten op de bewaarde waarde laat de wijziging weer vallen.
-  fireEvent.change(cel('Leerkracht', 'Wetenschappen'), { target: { value: 'Jacobs' } });
+  fireEvent.change(cel('Leerkracht', 'Wetenschappen'), { target: { value: 'c2' } });
   expect(screen.getByText('1 wijziging(en) nog niet bewaard.')).toBeTruthy();
 
   fireEvent.click(screen.getByRole('button', { name: 'Bewaren' }));

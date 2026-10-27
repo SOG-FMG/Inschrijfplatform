@@ -788,6 +788,49 @@ describe('instellingen van een evenement', () => {
     });
     expect(dubbel.data.velden).toHaveProperty('slug');
   });
+
+  test('leerkracht uit de contacten: enkel intern, en naam en adres worden overgenomen', async () => {
+    // Twee contacten via "Contacten plakken": een lesgever van de eigen organisatie en een ouder van buiten.
+    const toe = await api('POST', '/api/beheer/contacten/toevoegen', {
+      groep: 'Lesgevers test',
+      rijen: [
+        { email: 'lea.lesgever@onderwijs.gent.be', voornaam: 'Lea', naam: 'Lesgever' },
+        { email: 'olga.ouder@voorbeeld.example', voornaam: 'Olga', naam: 'Ouder' },
+      ],
+    });
+    expect(toe.status).toBe(200);
+    const inGroep = (intern: number) =>
+      een<{ contact_id: string }>(
+        `select c.contact_id from contacten c join contact_groepen g on g.contact_id = c.contact_id
+         where g.groep = 'Lesgevers test' and g.intern = ?`,
+        intern,
+      );
+    const lea = (await inGroep(1))!;
+    const olga = (await inGroep(0))!;
+    await sql(`update contacten set functie = 'leerkracht Latijn', bedrijfsnaam = 'FMG' where contact_id = ?`, lea.contact_id);
+
+    // De keuzelijst bevat de interne lesgever met functie en bedrijfsnaam, en niet de ouder.
+    const ev = (await api('GET', `/api/beheer/evenementen/${evId}/instellingen`)).data;
+    expect(ev.opties.contact).toContainEqual({ waarde: lea.contact_id, label: 'Lea Lesgever — leerkracht Latijn, FMG' });
+    expect(ev.opties.contact.some((o: any) => o.label.includes('Ouder'))).toBe(false);
+
+    const sessie = ev.dagen[0].dagdelen[0].tijdsblokken.find((t: any) => t.sessies.length).sessies[0];
+    expect((await api('PATCH', `/api/beheer/instellingen/sessie/${sessie.sessie_id}`, { waarden: { lesgever_contact_id: lea.contact_id } })).status).toBe(200);
+    expect(await een(`select lesgever_contact_id, lesgever, lesgever_email from sessies where sessie_id = ?`, sessie.sessie_id)).toMatchObject({
+      lesgever_contact_id: lea.contact_id,
+      lesgever: 'Lea Lesgever',
+      lesgever_email: 'lea.lesgever@onderwijs.gent.be',
+    });
+
+    // Een ouder (niet intern) kan geen leerkracht worden: anders zou die naam op een klaslijst komen.
+    const fout = await api('PATCH', `/api/beheer/instellingen/sessie/${sessie.sessie_id}`, { waarden: { lesgever_contact_id: olga.contact_id } });
+    expect(fout.status).toBe(400);
+    expect(fout.data.velden).toHaveProperty('lesgever_contact_id');
+
+    // Opruimen: de verwijzing in de sessie valt op null (on delete set null), de groepen gaan mee.
+    await sql(`delete from contacten where contact_id in (?, ?)`, lea.contact_id, olga.contact_id);
+    await sql(`update sessies set lesgever = null, lesgever_email = null where sessie_id = ?`, sessie.sessie_id);
+  });
 });
 
 describe('e-mail via de Power Automate-webhook', () => {

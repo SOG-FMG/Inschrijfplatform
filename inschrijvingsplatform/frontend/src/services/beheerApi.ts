@@ -266,7 +266,7 @@ export interface InstellingVeld {
   type: 'tekst' | 'lang' | 'datum' | 'uur' | 'datumtijd' | 'getal' | 'jaNee' | 'keuze' | 'slug' | 'email' | 'lijst' | 'ref' | 'kleur' | 'logo';
   verplicht?: boolean;
   opties?: { waarde: string; label: string }[];
-  ref?: 'doelgroep' | 'soort' | 'locatie';
+  ref?: 'doelgroep' | 'soort' | 'locatie' | 'contact';
   min?: number;
   max?: number;
   hulp?: string;
