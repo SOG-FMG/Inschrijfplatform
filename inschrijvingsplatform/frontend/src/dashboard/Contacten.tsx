@@ -236,7 +236,7 @@ function ContactenPlakken({ bestaand, magContact, magLesgever, onSluit, naKlaar 
     try {
       if (als === 'lesgever') {
         const r = await contactenApi.lesgeversToevoegen(lijst);
-        naKlaar(`${r.nieuw} lesgever(s) toegevoegd${r.bestaand ? `, ${r.bestaand} bestonden al` : ''}${r.buitenDomein ? `, ${r.buitenDomein} overgeslagen (adres buiten de organisatie)` : ''}${r.ongeldig ? `, ${r.ongeldig} zonder voornaam of geldig adres` : ''}. Koppel ze aan hun lesjes bij Sessiegevers van het evenement.`);
+        naKlaar(`${r.nieuw} lesgever(s) toegevoegd${r.bestaand ? `, ${r.bestaand} bestonden al` : ''}${r.buitenDomein ? `, ${r.buitenDomein} overgeslagen (adres buiten de organisatie)` : ''}${r.ongeldig ? `, ${r.ongeldig} zonder voornaam of geldig adres` : ''}. Kies ze daarna per lesje bij Instellingen → Sessies.`);
       } else {
         const r = await contactenApi.toevoegen(groep.trim(), lijst);
         naKlaar(`${r.nieuw + r.bestaand} contact(en) in de groep "${r.groep}"${r.bestaand ? ` (${r.bestaand} stonden al in de contactenlijst)` : ''}${r.ongeldig ? `, ${r.ongeldig} ongeldig` : ''}.${r.buitenOrganisatie ? ` ${r.buitenOrganisatie} adres(sen) van buiten de organisatie staan bij Ouders en inschrijvers.` : ''}`);

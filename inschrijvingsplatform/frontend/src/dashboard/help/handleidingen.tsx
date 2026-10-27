@@ -66,7 +66,7 @@ export const HANDLEIDINGEN: Handleiding[] = [
           <>
             <p>Links staat het menu. Wat je ziet, hangt af van je rol en de evenementen waaraan je gekoppeld bent.</p>
             <ul>
-              <li><Naar pad="/dashboard">Evenementen</Naar>: de lijst, met per evenement Overzicht, Instellingen, Aanwezigheid, Sessiegevers, Rapporten, Etiketten en de export naar Excel.</li>
+              <li><Naar pad="/dashboard">Evenementen</Naar>: de lijst, met per evenement Overzicht, Instellingen, Aanwezigheid, Rapporten, Etiketten en de export naar Excel.</li>
               <li><Naar pad="/dashboard/voorinschrijvingen">Voorinschrijvingen</Naar>: formulieren, imports, statistieken en uitnodigen.</li>
               <li>Rechtsboven bij Evenementen: <Naar pad="/dashboard/importeren">Importeren</Naar> (voor wie mag importeren), om de gegevens van een schooljaar in te laden.</li>
               <li>Contacten, Medewerkers, Meldingen, Mailteksten en Privacy: voor beheerders.</li>
@@ -384,7 +384,10 @@ export const HANDLEIDINGEN: Handleiding[] = [
               <li>Lesjes worden gekoppeld op titel, in alle tijdsblokken. Importeer dus eerst de inschrijvingen, zodat de lesjes bestaan.</li>
               <li>Enkel adressen van de eigen organisatie (bv. @onderwijs.gent.be) kunnen; andere worden overgeslagen.</li>
             </ul>
-            <p>Het resultaat zie je bij <Naar pad="/dashboard/evenementen/:ev/sessiegevers">Sessiegevers</Naar>.</p>
+            <p>
+              De lesgever van een lesje stel je in bij <Naar pad="/dashboard/evenementen/:ev">Instellingen</Naar> → tabblad
+              <strong> Sessies</strong>, in de kolom Leerkracht. Die keuzelijst komt uit de contacten van de eigen organisatie.
+            </p>
           </>
         ),
       },
@@ -539,30 +542,22 @@ export const HANDLEIDINGEN: Handleiding[] = [
     stappen: [
       {
         id: 'sessiegevers',
-        titel: 'Sessiegevers toevoegen',
+        titel: 'De lesgever van een lesje instellen',
         inhoud: (
           <>
-            <p>Een sessiegever (lesgever, workshopgever) is geen medewerker: die ziet enkel de eigen sessies. Op <Naar pad="/dashboard/evenementen/:ev/sessiegevers">Sessiegevers</Naar>:</p>
+            <p>
+              Dat doe je op één plaats: <Naar pad="/dashboard/evenementen/:ev">Instellingen</Naar> → tabblad <strong>Sessies</strong>,
+              kolom <strong>Leerkracht</strong>. Die keuzelijst komt uit de contacten van de eigen organisatie.
+            </p>
             <ul>
-              <li><strong>Overnemen uit de lesjes</strong>: maakt sessiegevers aan uit de velden Leerkracht en E-mail leerkracht van de lesjes.</li>
-              <li>Een sessiegever toevoegen met voornaam, naam en e-mailadres, en koppelen aan zijn sessies.</li>
-              <li>Een hele lijst in één keer: zie <Naar pad="/dashboard/help/vorigjaar/sessiegevers">Sessiegevers importeren</Naar>.</li>
+              <li>Staat iemand er niet bij? Voeg die eerst toe bij <Naar pad="/dashboard/contacten">Contacten</Naar> → Contacten plakken.</li>
+              <li>Enkel adressen van de eigen organisatie komen in de lijst; een ouder kan geen lesgever worden.</li>
+              <li>Bij een keuze worden de naam en het adres overgenomen in het lesje, voor de rapporten en de klaslijst.</li>
+              <li>Een hele lijst in één keer inlezen: zie <Naar pad="/dashboard/help/vorigjaar/sessiegevers">Sessiegevers importeren</Naar>.</li>
             </ul>
-            <p>Kies ook welke extra velden ze zien (standaard enkel wat op de klaslijst staat).</p>
-          </>
-        ),
-      },
-      {
-        id: 'uitnodigen',
-        titel: 'Sessiegevers uitnodigen',
-        inhoud: (
-          <>
-            <p>Klik <strong>Allen uitnodigen</strong> (of per persoon). Ze krijgen een mail met hun sessies en de link <code>/sessiegever</code>.</p>
-            <ul>
-              <li>Aanmelden gaat met hun e-mailadres en een code van 6 cijfers per mail.</li>
-              <li>De aanmelding blijft geldig tot 5 dagen na hun laatste sessie.</li>
-              <li>Op de dag zelf opent de QR-code op de klaslijst de live tabel van hun sessie.</li>
-            </ul>
+            <p>
+              Op de dag zelf opent de QR-code op de klaslijst de live tabel van een lesje. Daar is geen aanmelding voor nodig.
+            </p>
           </>
         ),
       },
@@ -635,7 +630,7 @@ export const HANDLEIDINGEN: Handleiding[] = [
             <p><strong>+ Contacten plakken</strong>: plak adressen uit Outlook (bv. <code>"De Schepper Stijn" &lt;stijn.deschepper@onderwijs.gent.be&gt;</code>), losse adressen of rijen uit Excel. De voornaam is het deel van de naam dat vooraan in het e-mailadres staat. Kijk de namen na in de tabel en kies:</p>
             <ul>
               <li><strong>Contact</strong>, in een groep (bv. "Leerkrachten FMG"). Uit een groep halen kan in de details van het contact.</li>
-              <li><strong>Lesgever</strong>: komt in de lijst van sessiegevers; koppel ze daarna aan hun lesjes bij het evenement.</li>
+              <li><strong>Lesgever</strong>: komt bij de contacten van de eigen organisatie; kies ze daarna per lesje bij Instellingen → Sessies.</li>
             </ul>
           </>
         ),
@@ -692,7 +687,6 @@ export const HELP_PER_PAD: [RegExp, string, string][] = [
   [/^\/dashboard\/evenementen\/[^/]+\/overzicht$/, 'overzicht', 'tellers'],
   [/^\/dashboard\/evenementen\/[^/]+\/rapporten$/, 'rapporten', 'kiezen'],
   [/^\/dashboard\/evenementen\/[^/]+\/etiketten$/, 'rapporten', 'etiketten'],
-  [/^\/dashboard\/evenementen\/[^/]+\/sessiegevers$/, 'dagzelf', 'sessiegevers'],
   [/^\/dashboard\/evenementen\/[^/]+\/aanwezigheid$/, 'dagzelf', 'aanwezigheid'],
   [/^\/dashboard\/evenementen\/[^/]+\/instelOud$/, 'evenement', 'algemeen'],
   [/^\/dashboard\/evenementen\/[^/]+$/, 'evenement', 'algemeen'],

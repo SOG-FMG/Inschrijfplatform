@@ -816,6 +816,30 @@ describe('instellingen van een evenement', () => {
     expect((await api('DELETE', `/api/beheer/instellingen/locatie/${nieuw.data.id}`)).status).toBe(200);
   });
 
+  test('lokaal op sessiecode raakt elk lesje met die code, ongeacht letterkast', async () => {
+    const ev = (await api('GET', `/api/beheer/evenementen/${evId}/instellingen`)).data;
+    const blokken = ev.dagen.flatMap((d: any) => d.dagdelen.flatMap((dd: any) => dd.tijdsblokken)).filter((t: any) => t.type === 'keuze');
+    expect(blokken.length).toBeGreaterThan(1);
+    const a = await api('POST', '/api/beheer/instellingen/sessie', { ouderId: blokken[0].tijdsblok_id, waarden: { titel: 'Code-test A', code: 'CT1' } });
+    const b = await api('POST', '/api/beheer/instellingen/sessie', { ouderId: blokken[1].tijdsblok_id, waarden: { titel: 'Code-test B', code: 'ct1' } });
+    const lok = await api('POST', '/api/beheer/instellingen/locatie', { waarden: { naam: 'Codelokaal' } });
+
+    const r = await api('POST', '/api/beheer/instellingen/lokaal-op-code', { evenementId: evId, code: 'CT1', locatieId: lok.data.id });
+    expect(r.status).toBe(200);
+    expect(r.data.aantal).toBe(2); // 'CT1' en 'ct1' horen bij hetzelfde lesje
+    for (const id of [a.data.id, b.data.id]) {
+      expect((await een(`select locatie_id from sessies where sessie_id = ?`, id)).locatie_id).toBe(lok.data.id);
+    }
+
+    // Een onbestaand lokaal of een lege code wordt geweigerd.
+    expect((await api('POST', '/api/beheer/instellingen/lokaal-op-code', { evenementId: evId, code: 'CT1', locatieId: 'bestaat-niet' })).status).toBe(400);
+    expect((await api('POST', '/api/beheer/instellingen/lokaal-op-code', { evenementId: evId, code: '  ', locatieId: lok.data.id })).status).toBe(400);
+
+    await api('DELETE', `/api/beheer/instellingen/sessie/${a.data.id}`);
+    await api('DELETE', `/api/beheer/instellingen/sessie/${b.data.id}`);
+    await api('DELETE', `/api/beheer/instellingen/locatie/${lok.data.id}`);
+  });
+
   test('leerkracht uit de contacten: enkel intern, en naam en adres worden overgenomen', async () => {
     // Twee contacten via "Contacten plakken": een lesgever van de eigen organisatie en een ouder van buiten.
     const toe = await api('POST', '/api/beheer/contacten/toevoegen', {

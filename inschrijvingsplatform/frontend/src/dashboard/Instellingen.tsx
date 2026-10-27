@@ -4,6 +4,7 @@ import { ApiFout } from '../types';
 import { etiketUrl } from './Etiketten';
 import { Formulier, type Groep } from './instellingen/Formulier';
 import { KopieerDagdeel } from './instellingen/Kopieren';
+import { LokaalOpCode } from './instellingen/LokaalOpCode';
 import { Sessies } from './instellingen/Sessies';
 import { Tabel, type Kolom } from './instellingen/Tabel';
 import { type Gemeen, type Opties, type Rij, type Schema, useWijzigingen } from './instellingen/velden';
@@ -109,6 +110,7 @@ export function Instellingen({ evenementId, naVerandering }: { evenementId: stri
   const [tab, setTab] = useState<Tab>(beginTab);
   const [melding, setMelding] = useState<{ soort: 'ok' | 'fout'; tekst: ReactNode } | null>(null);
   const [kopie, setKopie] = useState<{ dagdeel: Rij; dag: Rij } | null>(null);
+  const [opCode, setOpCode] = useState<Rij | null>(null);
 
   const laad = useCallback(() => {
     instellingenApi
@@ -298,8 +300,22 @@ export function Instellingen({ evenementId, naVerandering }: { evenementId: stri
             // Enkel om de knop "+ Lokaal toevoegen" te tonen: een lokaal hangt niet aan dit evenement, en de API negeert dit.
             ouderId={ev.evenement_id}
             leeg="Nog geen lokalen. Voeg ze hier toe, dan kan je ze bij een sessie kiezen."
+            rijActies={(l) => (
+              <button type="button" className="d-link" onClick={() => setOpCode(l)}>Aan sessiecode…</button>
+            )}
           />
         </div>
+      )}
+
+      {opCode && (
+        <LokaalOpCode
+          locatie={opCode}
+          evenementId={evenementId}
+          dagen={data.dagen}
+          lokaalNaam={(id) => (id ? gemeen.opties.locatie.find((o) => o.waarde === id)?.label ?? '(onbekend)' : '—')}
+          onSluit={() => setOpCode(null)}
+          onKlaar={herlaad}
+        />
       )}
 
       {kopie && <KopieerDagdeel dagdeel={kopie.dagdeel} dag={kopie.dag} dagen={data.dagen} onSluit={() => setKopie(null)} onKlaar={herlaad} />}

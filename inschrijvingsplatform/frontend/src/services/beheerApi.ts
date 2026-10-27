@@ -281,6 +281,9 @@ export const instellingenApi = {
     post<{ id: string }>(`/api/beheer/instellingen/${soort}`, { ouderId, waarden }),
   verwijder: (soort: InstellingSoort, id: string) =>
     call<{ ok: true }>(`/api/beheer/instellingen/${soort}/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  /** Eén lokaal aan alle lesjes met dezelfde sessiecode, binnen één evenement. */
+  lokaalOpCode: (evenementId: string, code: string, locatieId: string | null) =>
+    post<{ aantal: number }>('/api/beheer/instellingen/lokaal-op-code', { evenementId, code, locatieId }),
   uploadLogo: (evenementId: string, bestand: File) =>
     call<{ logo: string }>(`/api/beheer/evenementen/${encodeURIComponent(evenementId)}/logo`, { method: 'POST', ruw: { data: bestand, type: bestand.type } }),
   verwijderLogo: (evenementId: string) => call<{ ok: true }>(`/api/beheer/evenementen/${encodeURIComponent(evenementId)}/logo`, { method: 'DELETE' }),

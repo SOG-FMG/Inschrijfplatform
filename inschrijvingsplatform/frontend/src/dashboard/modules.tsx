@@ -15,7 +15,6 @@ import { Meldingen } from './Meldingen';
 import { Privacy } from './Privacy';
 import { Aanwezigheid } from './Aanwezigheid';
 import { RollenRechten } from './RollenRechten';
-import { Sessiegevers } from './Sessiegevers';
 import { Rapporten } from './Rapporten';
 import { Voorinschrijvingen } from './Voorinschrijvingen';
 
@@ -87,7 +86,6 @@ export const DASHBOARD_MODULES: DashboardModule[] = [
       { patroon: new RegExp(`^/dashboard/evenementen/${EV}/instelOud$`), toon: (m, c) => <InstellingenOud key={m[1]} evenementId={m[1]} naVerandering={c.naVerandering} /> },
       { patroon: /^\/dashboard\/privacy$/, toon: (_m, c) => <Privacy profiel={c.profiel} /> },
       { patroon: new RegExp(`^/dashboard/evenementen/${EV}/aanwezigheid$`), recht: 'evenementen.overzicht_aanwezigen', toon: (m, c) => <Aanwezigheid key={m[1]} evenementId={m[1]} profiel={c.profiel} /> },
-      { patroon: new RegExp(`^/dashboard/evenementen/${EV}/sessiegevers$`), toon: (m, c) => <Sessiegevers key={m[1]} evenementId={m[1]} profiel={c.profiel} /> },
     ],
   },
   {

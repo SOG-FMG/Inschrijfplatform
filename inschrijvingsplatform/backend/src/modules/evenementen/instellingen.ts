@@ -603,6 +603,37 @@ export async function verwijderLogo(env: Env, g: Gebruiker, evenementId: string,
 }
 
 // ---------------------------------------------------------------------------
+// Een lokaal aan alle lesjes met dezelfde code
+// ---------------------------------------------------------------------------
+/**
+ * `sessies.code` betekent "zelfde lesje in een ander tijdsblok", dus dit raakt doorgaans elk tijdsblok en elke
+ * dag van het evenement: op Infodagen 2027 makkelijk acht lesjes. Het scherm toont vooraf welke lesjes het zijn;
+ * hier wordt enkel binnen één evenement gewijzigd, en het antwoord zegt hoeveel er echt veranderd zijn.
+ */
+export async function zetLokaalOpCode(env: Env, g: Gebruiker, evenementId: string, code: string, locatieId: string | null, ip: string | null) {
+  await controleerToegang(env, g, evenementId, true);
+  const schoon = String(code ?? '').trim();
+  if (!schoon) throw new ValidatieFout({ code: 'Kies een sessiecode.' });
+  if (locatieId !== null) {
+    const bestaat = await env.DB.prepare(`select 1 from locaties where locatie_id = ?`).bind(locatieId).first();
+    if (!bestaat) throw new ValidatieFout({ locatie_id: 'Maak een geldige keuze.' });
+  }
+  const r = await env.DB.prepare(
+    `update sessies set locatie_id = ?1 where sessie_id in (
+       select s.sessie_id from sessies s
+       join tijdsblokken t on t.tijdsblok_id = s.tijdsblok_id
+       join dagdelen dd on dd.dagdeel_id = t.dagdeel_id
+       join evenement_dagen d on d.dag_id = dd.dag_id
+       where d.evenement_id = ?2 and lower(trim(s.code)) = lower(?3))`,
+  )
+    .bind(locatieId, evenementId, schoon)
+    .run();
+  const aantal = r.meta.changes ?? 0;
+  await audit(env, g, 'sessies', '*', 'LOKAAL_OP_CODE', { evenementId, code: schoon, locatieId, aantal }, ip).run();
+  return { aantal };
+}
+
+// ---------------------------------------------------------------------------
 // Kopiëren naar andere momenten
 // ---------------------------------------------------------------------------
 /** Kolommen van een lesje die mee gekopieerd worden (alles uit het schema, zonder id's en tellingen). */

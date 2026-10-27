@@ -2,7 +2,7 @@ import { sha256 } from '../../crypto/versleuteling';
 import { anonimiseerEvenement, anonimiseerVerlopenEvenementen, deelnemerslijst, kenSessieToe, koppelBestaandeDeelnemers, verplaatsDagdeel } from './beheer';
 import { meldAf, voorinvulling } from './uitnodigingen';
 import { publiekEvenement } from './evenement';
-import { bewaarLogo, instellingen, isSoort, kopieerDagdeel, kopieerSessies, maak, verwijder, verwijderLogo, wijzig } from './instellingen';
+import { bewaarLogo, instellingen, isSoort, kopieerDagdeel, kopieerSessies, maak, verwijder, verwijderLogo, wijzig, zetLokaalOpCode } from './instellingen';
 import { annulatieGegevens, annuleerViaToken, mailGegevens, registratieViaToken, registreer, wijzigKeuzesViaToken } from './registratie';
 import { checkinUrl, leesVersie } from '../../kern/checkin';
 import { basisUrl, qrMailsTeVersturen, stuurEnLog, verstuurQrMails, verwittigNaWijzigingDoorSchool } from './checkin';
@@ -213,6 +213,19 @@ export default defineModule({
       pad: '/evenementen/:id/logo',
       toegang: 'beheer',
       handler: ({ env, gebruiker, params, ip }) => verwijderLogo(env, gebruiker, params.id, ip),
+    },
+    {
+      // Vóór /instellingen/:soort, anders zou "lokaal-op-code" als soort gelezen worden.
+      methode: 'POST',
+      pad: '/instellingen/lokaal-op-code',
+      toegang: 'beheer',
+      async handler(ctx) {
+        const body = await ctx.leesJson(8 * 1024);
+        const tekst = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+        const evenementId = tekst(body?.evenementId);
+        if (!evenementId) throw new ValidatieFout({ algemeen: 'Onbekend evenement.' });
+        return zetLokaalOpCode(ctx.env, ctx.gebruiker, evenementId, String(body?.code ?? ''), tekst(body?.locatieId), ctx.ip);
+      },
     },
     {
       methode: 'POST',
