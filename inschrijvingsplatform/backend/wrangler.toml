@@ -65,9 +65,11 @@ TERM_SESSIEGEVER = "lesgever"
 TERM_SESSIEGEVERS = "lesgevers"
 # Actieve modules (src/modules/index.ts), komma-gescheiden. De kern is altijd actief. Ontbreekt het: alle modules.
 MODULES = "evenementen,onderwijs,rapporten,etiketten,meldingen,voorinschrijvingen,mailsjablonen,historiek"
-# URL van de frontend (Cloudflare Pages), zonder slash op het einde. Meerdere origins: komma-gescheiden.
-ALLOWED_ORIGINS = "https://fmg-inschrijfplatform.freinetmiddenschool-automatisatie.workers.dev"
-PUBLIC_APP_URL = "https://fmg-inschrijfplatform.freinetmiddenschool-automatisatie.workers.dev"
+# URL van de frontend-Worker, zonder slash op het einde. Meerdere origins: komma-gescheiden.
+# Let op: het accountsubdomein (hier "middenschool") zit in elke workers.dev-hostname. Wijzigt dat subdomein,
+# dan moeten deze twee mee, anders faalt controleerOrigin (dashboard) en wijzen de links in de mails nergens.
+ALLOWED_ORIGINS = "https://fmg-inschrijfplatform.middenschool.workers.dev"
+PUBLIC_APP_URL = "https://fmg-inschrijfplatform.middenschool.workers.dev"
 # Hoofdadmin (stap 13): de enige die zich de eerste keer kan activeren, met het secret HOOFDADMIN_SETUP_CODE.
 # Daarna voegt die de andere medewerkers toe in het beheerscherm. Enkel adressen van AANMELD_DOMEINEN.
 HOOFDADMIN_EMAIL = "freinetmiddenschool.automatisatie@onderwijs.gent.be" #van FMG
@@ -123,8 +125,8 @@ AANMELD_DOMEINEN = "onderwijs.gent.be"
 TERM_SESSIEGEVER = "lesgever"
 TERM_SESSIEGEVERS = "lesgevers"
 MODULES = "evenementen,onderwijs,rapporten,etiketten,meldingen,voorinschrijvingen,mailsjablonen,historiek"
-ALLOWED_ORIGINS = "https://fmg-inschrijfplatform-test.freinetmiddenschool-automatisatie.workers.dev"
-PUBLIC_APP_URL = "https://fmg-inschrijfplatform-test.freinetmiddenschool-automatisatie.workers.dev"
+ALLOWED_ORIGINS = "https://fmg-inschrijfplatform-test.middenschool.workers.dev"
+PUBLIC_APP_URL = "https://fmg-inschrijfplatform-test.middenschool.workers.dev"
 HOOFDADMIN_EMAIL = "freinetmiddenschool.automatisatie@onderwijs.gent.be"
 # Geen echte mails vanuit test: enkel loggen.
 MAIL_PROVIDER = "log"
