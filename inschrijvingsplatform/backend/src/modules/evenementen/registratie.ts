@@ -47,7 +47,7 @@ export async function registreer(env: Env, slug: string, invoer: RegistratieInvo
     db
       .prepare(
         `select s.sessie_id, s.tijdsblok_id, s.code, s.titel, s.doelgroep_id, s.uniek_per_deelnemer,
-                s.status, s.zichtbaar, t.naam as tijdsblok, t.start_uur, t.type, t.dagdeel_id, l.naam as locatie
+                s.status, s.zichtbaar, t.zichtbaar as blok_zichtbaar, t.naam as tijdsblok, t.start_uur, t.type, t.dagdeel_id, l.naam as locatie
          from sessies s join tijdsblokken t on t.tijdsblok_id = s.tijdsblok_id
          left join locaties l on l.locatie_id = s.locatie_id
          where s.sessie_id in (${plaatshouders(sessies.length)})
@@ -57,7 +57,7 @@ export async function registreer(env: Env, slug: string, invoer: RegistratieInvo
     db
       .prepare(
         `select tijdsblok_id, dagdeel_id from tijdsblokken
-         where type = 'keuze' and verplicht = 1 and dagdeel_id in (${plaatshouders(dagdelen.length)})`,
+         where type = 'keuze' and verplicht = 1 and zichtbaar = 1 and dagdeel_id in (${plaatshouders(dagdelen.length)})`,
       )
       .bind(...dagdelen),
     db.prepare(`select count(*) as n from scholen where school_id = ?`).bind(d.schoolId ?? ''),
@@ -82,6 +82,7 @@ export async function registreer(env: Env, slug: string, invoer: RegistratieInvo
       s.type === 'keuze' &&
       s.status === 'open' &&
       s.zichtbaar === 1 &&
+      s.blok_zichtbaar === 1 &&
       keuzeOpen.get(s.dagdeel_id) === true &&
       (s.doelgroep_id == null || s.doelgroep_id === groep?.doelgroep_id),
   );
@@ -336,7 +337,8 @@ export async function wijzigKeuzesViaToken(env: Env, tokenHash: string, sessies:
       .bind(id),
     db
       .prepare(
-        `select s.sessie_id, s.tijdsblok_id, s.code, s.doelgroep_id, s.uniek_per_deelnemer, s.status, s.zichtbaar, t.type, t.dagdeel_id
+        `select s.sessie_id, s.tijdsblok_id, s.code, s.doelgroep_id, s.uniek_per_deelnemer, s.status, s.zichtbaar,
+                t.zichtbaar as blok_zichtbaar, t.type, t.dagdeel_id
          from sessies s join tijdsblokken t on t.tijdsblok_id = s.tijdsblok_id
          where s.sessie_id in (${plaatshouders(Math.max(sessies.length, 1))})`,
       )
@@ -358,7 +360,7 @@ export async function wijzigKeuzesViaToken(env: Env, tokenHash: string, sessies:
       s.type === 'keuze' &&
       keuzeOpen.get(s.dagdeel_id) === true &&
       (s.doelgroep_id == null || s.doelgroep_id === dn.doelgroep_id) &&
-      (alGekozen.has(s.sessie_id) || (s.status === 'open' && s.zichtbaar === 1)),
+      (alGekozen.has(s.sessie_id) || (s.status === 'open' && s.zichtbaar === 1 && s.blok_zichtbaar === 1)),
   );
   if (geldig.length !== sessies.length) throw new DbFout('ONGELDIGE_SESSIEKEUZE');
   if (new Set(gekozen.map((s) => s.tijdsblok_id)).size !== gekozen.length) throw new DbFout('MEERDERE_SESSIES_IN_TIJDSBLOK');

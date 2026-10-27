@@ -141,6 +141,8 @@ export const SCHEMA: Record<Soort, Definitie> = {
       { naam: 'type', label: 'Soort', type: 'keuze', verplicht: true, standaard: 'keuze',
         opties: opties(['keuze', 'Keuze (deelnemer kiest een lesje)'], ['programma', 'Programma (voor iedereen)']) },
       { naam: 'verplicht', label: 'Keuze verplicht', type: 'jaNee', standaard: false },
+      { naam: 'zichtbaar', label: 'Zichtbaar', type: 'jaNee', standaard: true,
+        hulp: 'Uit = dit tijdsblok en zijn lesjes staan niet op het inschrijfformulier. Hier blijven ze staan.' },
       { naam: 'omschrijving', label: 'Omschrijving', type: 'lang' },
       { naam: 'start_uur', label: 'Van', type: 'uur', verplicht: true },
       { naam: 'eind_uur', label: 'Tot', type: 'uur', verplicht: true },

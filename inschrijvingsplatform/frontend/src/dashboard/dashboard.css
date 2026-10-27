@@ -173,6 +173,24 @@
 .d-tabs button.actief, .r-tabs button.actief { color: var(--primair); border-bottom-color: var(--primair); }
 .d-tabs button { font-size: 1.1em; }
 
+/* Fichebak: tabbladen met een rand rondom en een actief blad dat aan het vlak eronder vastzit.
+   Enkel waar de klasse --fiche staat, zodat de andere tabbladen in het dashboard niet mee veranderen. */
+.d-tabs--fiche { gap: 2px; border-bottom-color: var(--d-rand); }
+.d-tabs--fiche button {
+  border: 1px solid var(--d-rand);
+  border-bottom: 2px solid var(--d-rand);
+  border-radius: 6px 6px 0 0;
+  background: color-mix(in srgb, var(--d-rand) 22%, transparent);
+  padding: 6px 14px;
+}
+.d-tabs--fiche button.actief {
+  background: var(--vlak);
+  color: var(--primair);
+  /* Het actieve blad loopt door in het vlak eronder: de onderrand in de vlakkleur dekt de lijn af. */
+  border-bottom-color: var(--vlak);
+}
+.d-tabs--fiche button:focus-visible { outline: 2px solid var(--primair); outline-offset: -3px; }
+
 /* Eén dag, open te klikken op het tabblad Sessies. */
 .it-dag { background: var(--vlak); border: 1px solid var(--d-rand); border-radius: 6px; margin-bottom: 10px; }
 .it-dag > summary { cursor: pointer; padding: 9px 12px; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }

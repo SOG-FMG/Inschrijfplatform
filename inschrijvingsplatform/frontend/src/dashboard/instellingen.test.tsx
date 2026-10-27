@@ -37,7 +37,7 @@ const SCHEMA = {
   doelgroep: [v('naam', 'Naam', 'tekst', { verplicht: true }), v('beschrijving', 'Beschrijving', 'lang'), v('sessiekeuze', 'Kiest lesjes', 'jaNee'), v('volgorde', 'Volgorde', 'getal')],
   dag: [v('naam', 'Naam', 'tekst', { verplicht: true }), v('datum', 'Datum', 'datum', { verplicht: true }), v('start_uur', 'Van', 'uur'), v('eind_uur', 'Tot', 'uur'), v('sessiekeuze_tot', 'Lesjes kiezen tot', 'datumtijd'), v('status', 'Status', 'keuze', { opties: keuze('actief', 'geannuleerd') }), v('volgorde', 'Volgorde', 'getal')],
   dagdeel: [v('naam', 'Naam', 'tekst', { verplicht: true }), v('start_uur', 'Van', 'uur'), v('eind_uur', 'Tot', 'uur'), v('capaciteit', 'Max. deelnemers', 'getal'), v('status', 'Status', 'keuze', { opties: keuze('actief', 'geannuleerd') }), v('volgorde', 'Volgorde', 'getal')],
-  tijdsblok: [v('naam', 'Naam', 'tekst', { verplicht: true }), v('type', 'Soort', 'keuze', { opties: keuze('keuze', 'programma') }), v('start_uur', 'Van', 'uur'), v('eind_uur', 'Tot', 'uur'), v('verplicht', 'Keuze verplicht', 'jaNee'), v('volgorde', 'Volgorde', 'getal')],
+  tijdsblok: [v('naam', 'Naam', 'tekst', { verplicht: true }), v('type', 'Soort', 'keuze', { opties: keuze('keuze', 'programma') }), v('start_uur', 'Van', 'uur'), v('eind_uur', 'Tot', 'uur'), v('verplicht', 'Keuze verplicht', 'jaNee'), v('zichtbaar', 'Zichtbaar', 'jaNee'), v('volgorde', 'Volgorde', 'getal')],
   locatie: [
     v('naam', 'Naam', 'tekst', { verplicht: true }),
     v('site', 'Site', 'tekst'),
@@ -73,7 +73,7 @@ const sessie = (id: string, titel: string, lokaal: string, lesgeverId: string, m
 });
 
 const blok = (id: string, naam: string, start: string, eind: string, sessies: ReturnType<typeof sessie>[]) => ({
-  tijdsblok_id: id, naam, type: 'keuze', start_uur: start, eind_uur: eind, verplicht: 1, volgorde: 1,
+  tijdsblok_id: id, naam, type: 'keuze', start_uur: start, eind_uur: eind, verplicht: 1, zichtbaar: 1, volgorde: 1,
   // De API levert de sessies al gesorteerd op volgorde; hier krijgt elke sessie haar eigen nummer.
   sessies: sessies.map((s, i) => ({ ...s, volgorde: i + 1 })),
 });

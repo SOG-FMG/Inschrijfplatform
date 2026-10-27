@@ -95,6 +95,7 @@ const TIJDSBLOK_KOLOMMEN: Kolom[] = [
   { veld: 'start_uur', breedte: '7em' },
   { veld: 'eind_uur', breedte: '7em' },
   { veld: 'verplicht', breedte: '8em' },
+  { veld: 'zichtbaar', breedte: '8em' },
   { veld: 'volgorde', breedte: '6em' },
 ];
 
@@ -186,7 +187,7 @@ export function Instellingen({ evenementId, naVerandering }: { evenementId: stri
         </span>
       </header>
 
-      <div className="d-tabs" role="tablist">
+      <div className="d-tabs d-tabs--fiche" role="tablist">
         {TABS.map((t) => (
           <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'actief' : undefined} onClick={() => kiesTab(t.id)}>
             {t.label}

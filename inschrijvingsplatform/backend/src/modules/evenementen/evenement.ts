@@ -49,7 +49,7 @@ export async function publiekEvenement(env: Env, slug: string) {
     env.DB.prepare(
       `select t.tijdsblok_id, t.dagdeel_id, t.naam, t.omschrijving, t.start_uur, t.eind_uur, t.type, t.verplicht
        from tijdsblokken t join dagdelen dd on dd.dagdeel_id = t.dagdeel_id join evenement_dagen d on d.dag_id = dd.dag_id
-       where d.evenement_id = ? order by t.volgorde, t.start_uur`,
+       where d.evenement_id = ? and t.zichtbaar = 1 order by t.volgorde, t.start_uur`,
     ).bind(id),
     env.DB.prepare(
       `select s.sessie_id, s.tijdsblok_id, s.code, s.titel, s.beschrijving, so.naam as soort, s.doelgroep_id,
@@ -61,7 +61,7 @@ export async function publiekEvenement(env: Env, slug: string) {
        join evenement_dagen d on d.dag_id = dd.dag_id
        left join soorten_onderdelen so on so.soort_id = s.soort_id
        left join locaties l on l.locatie_id = s.locatie_id
-       where d.evenement_id = ? and s.zichtbaar = 1 and s.status = 'open'
+       where d.evenement_id = ? and s.zichtbaar = 1 and t.zichtbaar = 1 and s.status = 'open'
        order by s.volgorde, s.titel`,
     ).bind(id),
   ]);

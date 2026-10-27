@@ -816,6 +816,30 @@ describe('instellingen van een evenement', () => {
     expect((await api('DELETE', `/api/beheer/instellingen/locatie/${nieuw.data.id}`)).status).toBe(200);
   });
 
+  test('een verborgen tijdsblok verdwijnt uit het formulier, en komt terug als je het weer aanzet', async () => {
+    const ev = (await api('GET', `/api/beheer/evenementen/${evId}/instellingen`)).data;
+    const blok = ev.dagen
+      .flatMap((d: any) => d.dagdelen.flatMap((dd: any) => dd.tijdsblokken))
+      .find((t: any) => t.type === 'keuze' && t.sessies.length);
+    expect(blok).toBeTruthy();
+
+    const inFormulier = async () => {
+      const p = await api('GET', `/api/evenementen/${SLUG}`);
+      return p.data.dagen.flatMap((d: any) => d.dagdelen.flatMap((dd: any) => dd.tijdsblokken ?? [])).some((t: any) => t.id === blok.tijdsblok_id);
+    };
+
+    expect(await inFormulier()).toBe(true);
+    expect((await api('PATCH', `/api/beheer/instellingen/tijdsblok/${blok.tijdsblok_id}`, { waarden: { zichtbaar: false } })).status).toBe(200);
+    expect(await inFormulier()).toBe(false);
+
+    // In de instellingen blijft het wel staan, zodat je het kan terugzetten.
+    const na = (await api('GET', `/api/beheer/evenementen/${evId}/instellingen`)).data;
+    expect(na.dagen.flatMap((d: any) => d.dagdelen.flatMap((dd: any) => dd.tijdsblokken)).some((t: any) => t.tijdsblok_id === blok.tijdsblok_id)).toBe(true);
+
+    expect((await api('PATCH', `/api/beheer/instellingen/tijdsblok/${blok.tijdsblok_id}`, { waarden: { zichtbaar: true } })).status).toBe(200);
+    expect(await inFormulier()).toBe(true);
+  });
+
   test('lokaal op sessiecode raakt elk lesje met die code, ongeacht letterkast', async () => {
     const ev = (await api('GET', `/api/beheer/evenementen/${evId}/instellingen`)).data;
     const blokken = ev.dagen.flatMap((d: any) => d.dagdelen.flatMap((dd: any) => dd.tijdsblokken)).filter((t: any) => t.type === 'keuze');
