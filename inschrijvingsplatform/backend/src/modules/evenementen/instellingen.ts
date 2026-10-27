@@ -118,6 +118,8 @@ export const SCHEMA: Record<Soort, Definitie> = {
       { naam: 'start_uur', label: 'Van', type: 'uur', verplicht: true },
       { naam: 'eind_uur', label: 'Tot', type: 'uur', verplicht: true },
       { naam: 'sessiekeuze_tot', label: 'Lesjes kiezen tot', type: 'datumtijd', hulp: 'Daarna enkel nog een moment kiezen' },
+      { naam: 'herinnering_op', label: 'Herinnering versturen op', type: 'datumtijd',
+        hulp: 'Leeg = geen herinnering. De dagelijkse taak stuurt ze op de eerste run na dit tijdstip, niet naar wie geannuleerd is of op "komt niet" staat.' },
       { naam: 'status', label: 'Status', type: 'keuze', verplicht: true, standaard: 'actief', opties: STATUS_ACTIEF },
       volgorde,
     ],

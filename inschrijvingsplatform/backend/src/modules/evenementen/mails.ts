@@ -68,6 +68,38 @@ Tot dan!`,
     },
   },
   {
+    // Niet 'herinnering': die sleutel is van de herinnering aan een voorinschrijving-uitnodiging (hieronder,
+    // samen met 'uitnodiging' gegenereerd). Deze gaat naar wie al ingeschreven ís.
+    sleutel: 'herinnering_deelnemer',
+    reden: 'je ingeschreven bent voor {{evenement}}',
+    naam: 'Herinnering voor wie ingeschreven is',
+    omschrijving: 'Kort voor het evenement, op de datum die je per evenementdag instelt bij Instellingen → Dagen. Leeg = geen herinnering.',
+    velden: [
+      V.voornaam, V.evenement, V.referentie,
+      { naam: 'momenten', omschrijving: 'Het moment van die dag, met uur (blok)', voorbeeld: VOORBEELD_MOMENTEN },
+      { naam: 'keuzes', omschrijving: 'De gekozen onderdelen van die dag (blok; leeg zonder keuzes)', voorbeeld: VOORBEELD_KEUZES },
+      V.contactEmail,
+    ],
+    standaard: {
+      onderwerp: 'Bijna zover: {{evenement}}',
+      tekst: `Beste,
+
+Binnenkort verwachten we **{{voornaam}}** op **{{evenement}}**.
+
+{{momenten}}
+
+{{#keuzes}}Gekozen onderdelen:
+
+{{keuzes}}{{/keuzes}}
+
+Referentie: **{{referentie}}**
+
+{{#contactEmail}}Kan je toch niet komen, of is er iets gewijzigd? Mail dan naar {{contactEmail}}.{{/contactEmail}}
+
+Tot binnenkort!`,
+    },
+  },
+  {
     sleutel: 'wijziging',
     reden: 'je een inschrijving voor {{evenement}} wijzigde',
     naam: 'Keuzes gewijzigd',
@@ -269,6 +301,19 @@ export function bevestigingsmail(
     beheerlink: link(beheerUrl, 'deze persoonlijke link'), contactEmail: mailto(r.contactEmail),
   };
   return metQr(mailVolgensSjabloon(sjabloon('bevestiging'), velden, { aan, type: 'bevestiging', referentie: r.referentie }), checkin);
+}
+
+/**
+ * Herinnering kort voor het evenement. Bewust zonder persoonlijke link: daarvan bewaren we enkel de hash, dus
+ * die link kan niet hergebruikt worden, en voor elke herinnering een nieuwe maken zou ieders bestaande link
+ * ongeldig maken. De QR-code voor het onthaal zit er wel in — dat is wat je die dag nodig hebt.
+ */
+export function herinneringsmail(p: { aan: string; voornaam: string; evenement: string; referentie: string; momenten: Moment[]; keuzes: Keuze[]; contactEmail: string | null; checkin: Checkin }): Mail {
+  const velden: Velden = {
+    voornaam: p.voornaam, evenement: p.evenement, referentie: p.referentie,
+    momenten: momentenHtml(p.momenten), keuzes: keuzesHtml(p.keuzes), contactEmail: mailto(p.contactEmail),
+  };
+  return metQr(mailVolgensSjabloon(sjabloon('herinnering_deelnemer'), velden, { aan: p.aan, type: 'herinnering_deelnemer', referentie: p.referentie }), p.checkin);
 }
 
 export function wijzigingsmail(p: { aan: string; voornaam: string; evenement: string; referentie: string; keuzes: Keuze[]; beheerUrl: string; contactEmail: string | null; checkin?: Checkin | null }): Mail {

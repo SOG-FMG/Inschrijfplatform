@@ -273,7 +273,7 @@ export async function registratieViaToken(env: Env, tokenHash: string) {
   const [momenten, keuzes, voorbij] = await db.batch<any>([
     db
       .prepare(
-        `select dd.dagdeel_id as dagdeelId, d.naam as dag, dd.naam as dagdeel, dd.start_uur as startUur, dd.eind_uur as eindUur, i.status
+        `select dd.dagdeel_id as dagdeelId, i.dag_id as dagId, d.naam as dag, dd.naam as dagdeel, dd.start_uur as startUur, dd.eind_uur as eindUur, i.status
          from inschrijvingen i join dagdelen dd on dd.dagdeel_id = i.dagdeel_id join evenement_dagen d on d.dag_id = i.dag_id
          where i.deelnemer_id = ? and i.sessie_id is null
          order by d.datum, dd.start_uur`,
@@ -469,7 +469,7 @@ export async function mailGegevens(env: Env, deelnemerId: string) {
   const [momenten, keuzes] = await db.batch<any>([
     db
       .prepare(
-        `select dd.dagdeel_id as dagdeelId, d.naam as dag, dd.naam as dagdeel, dd.start_uur as startUur, dd.eind_uur as eindUur, i.status
+        `select dd.dagdeel_id as dagdeelId, i.dag_id as dagId, d.naam as dag, dd.naam as dagdeel, dd.start_uur as startUur, dd.eind_uur as eindUur, i.status
          from inschrijvingen i join dagdelen dd on dd.dagdeel_id = i.dagdeel_id join evenement_dagen d on d.dag_id = i.dag_id
          where i.deelnemer_id = ? and i.sessie_id is null and i.status <> 'geannuleerd'
          order by d.datum, dd.start_uur`,
@@ -477,7 +477,7 @@ export async function mailGegevens(env: Env, deelnemerId: string) {
       .bind(deelnemerId),
     db
       .prepare(
-        `select s.sessie_id as sessieId, s.titel, t.naam as tijdsblok, t.start_uur as startUur, l.naam as locatie, i.status
+        `select s.sessie_id as sessieId, i.dag_id as dagId, s.titel, t.naam as tijdsblok, t.start_uur as startUur, l.naam as locatie, i.status
          from inschrijvingen i join sessies s on s.sessie_id = i.sessie_id join tijdsblokken t on t.tijdsblok_id = i.tijdsblok_id
          left join locaties l on l.locatie_id = s.locatie_id
          where i.deelnemer_id = ? and i.status <> 'geannuleerd'

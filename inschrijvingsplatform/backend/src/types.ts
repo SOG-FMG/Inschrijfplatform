@@ -72,6 +72,8 @@ export interface RegistratieInvoer {
 
 export interface Moment {
   dagdeelId?: string;
+  /** Dag waartoe dit moment hoort; de herinneringsmail filtert erop (één mail per dag). */
+  dagId?: string;
   dag: string;
   dagdeel: string;
   startUur: string;
@@ -81,6 +83,7 @@ export interface Moment {
 
 export interface Keuze {
   sessieId?: string;
+  dagId?: string;
   titel: string;
   tijdsblok: string;
   startUur: string;

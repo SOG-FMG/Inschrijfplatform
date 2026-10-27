@@ -6,6 +6,7 @@ import { bewaarLogo, instellingen, isSoort, kopieerDagdeel, kopieerSessies, maak
 import { annulatieGegevens, annuleerViaToken, bevestigingOpnieuw, DubbeleInschrijving, mailGegevens, registratieViaToken, registreer, wijzigKeuzesViaToken } from './registratie';
 import { checkinUrl, leesVersie } from '../../kern/checkin';
 import { basisUrl, qrMailsTeVersturen, stuurEnLog, verstuurQrMails, verwittigNaWijzigingDoorSchool } from './checkin';
+import { verstuurHerinneringen } from './herinneringen';
 import { AANWEZIGHEID_ROUTES } from './routes-aanwezigheid';
 import { INSCHRIJVINGEN_BRON, SESSIEGEVERS_BRON, UITNODIGINGEN_BRON } from './contactbronnen';
 import { qrPng } from '../../kern/qr';
@@ -408,6 +409,8 @@ export default defineModule({
   },
 
   taken: [
+    // De taak logt het aantal verstuurde mails; de rest van het verslag is voor de tests.
+    { naam: 'herinneringen versturen', uitvoeren: async (env) => (await verstuurHerinneringen(env)).verstuurd },
     { naam: 'verlopen evenementen anonimiseren', uitvoeren: (env) => anonimiseerVerlopenEvenementen(env) },
     { naam: 'bestaande inschrijvingen aan contacten koppelen', uitvoeren: (env) => koppelBestaandeDeelnemers(env) },
   ],

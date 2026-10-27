@@ -6,6 +6,7 @@ import { rmSync } from 'node:fs';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { getPlatformProxy } from 'wrangler';
 import worker from '../src/index';
+import { verstuurHerinneringen } from '../src/modules/evenementen/herinneringen';
 import type { Env } from '../src/types';
 
 const SLUG = 'fmg-infodagen-2027';
@@ -1270,6 +1271,33 @@ describe('e-mail via de Power Automate-webhook', () => {
     expect((await api('POST', '/api/beheer/mail/test', {})).status).toBe(403);
     await sql(`update gebruikers set rol_id = (select rol_id from rollen where code = 'platformbeheerder') where email = ?`, BEHEERDER);
   });
+
+  test('herinnering: één keer per deelnemer en dag, en niet naar wie "komt niet" staat', async () => {
+    const { dag_id: dagId } = (await een<{ dag_id: string }>(`select dag_id from dagdelen where dagdeel_id = ?`, vm1.id))!;
+    const { datum: oudeDatum } = (await een<{ datum: string }>(`select datum from evenement_dagen where dag_id = ?`, dagId))!;
+    // De dag moet nog komen, en het verzendtijdstip moet voorbij zijn.
+    await sql(`update evenement_dagen set datum = '2099-01-01', herinnering_op = '2000-01-01T00:00:00.000Z' where dag_id = ?`, dagId);
+
+    expect((await registreer(deelnemer({ naam: 'Herin', voornaam: 'Nering' }), [vm1.id], [])).status).toBe(201);
+    expect((await registreer(deelnemer({ naam: 'Herin', voornaam: 'Nietkomen' }), [vm1.id], [])).status).toBe(201);
+    const { deelnemer_id: idNiet } = (await een<{ deelnemer_id: string }>(`select deelnemer_id from deelnemers where status = 'actief' order by created_at desc limit 1`))!;
+    await sql(`update deelnemers set komt_niet = 1 where deelnemer_id = ?`, idNiet);
+    await wacht();
+
+    aanroepen = [];
+    const eerste = await verstuurHerinneringen(env);
+    expect(eerste.verstuurd).toBeGreaterThan(0);
+    expect(aanroepen.filter((a) => a.body.type === 'herinnering_deelnemer')).toHaveLength(eerste.verstuurd);
+    // Wie op "komt niet" staat, kreeg er geen en staat ook niet als verstuurd genoteerd.
+    expect(await een(`select 1 as x from herinneringen where deelnemer_id = ?`, idNiet)).toBeNull();
+
+    // Een tweede run stuurt niemand een tweede keer.
+    aanroepen = [];
+    expect((await verstuurHerinneringen(env)).verstuurd).toBe(0);
+    expect(aanroepen).toHaveLength(0);
+
+    await sql(`update evenement_dagen set datum = ?, herinnering_op = null where dag_id = ?`, oudeDatum, dagId);
+  });
 });
 
 describe('voorinschrijvingen importeren', () => {
@@ -1509,7 +1537,8 @@ describe('mailteksten aanpassen (module mailsjablonen)', () => {
 
   test('lijst met sjablonen, velden en standaardtekst; enkel met het recht', async () => {
     const r = await api('GET', '/api/beheer/mailsjablonen');
-    expect(r.data.map((s: any) => s.sleutel)).toEqual(['bevestiging', 'wijziging', 'annulatie', 'schoolwijziging', 'qrcode', 'sessiegever', 'aanmeldcode', 'uitnodiging', 'herinnering', 'klaslijst', 'voorinschrijving']);
+    // 'herinnering_deelnemer' gaat naar wie al ingeschreven is; 'herinnering' nudget wie dat nog niet deed.
+    expect(r.data.map((s: any) => s.sleutel)).toEqual(['bevestiging', 'herinnering_deelnemer', 'wijziging', 'annulatie', 'schoolwijziging', 'qrcode', 'sessiegever', 'aanmeldcode', 'uitnodiging', 'herinnering', 'klaslijst', 'voorinschrijving']);
     const b = r.data[0];
     expect(b).toMatchObject({ module: 'Evenementen en inschrijvingen', aangepast: null });
     expect(b.velden.map((v: any) => v.naam)).toContain('beheerlink');
