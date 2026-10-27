@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { aanwezigheidApi, type LesBlok, type LesOptie } from '../services/aanwezigheidApi';
+import { aanwezigheidApi, type LesBlok, type LesOptie, type MomentOptie } from '../services/aanwezigheidApi';
 import { ApiFout } from '../types';
 
 /**
@@ -16,18 +16,50 @@ export function LesjeKiezer({ deelnemerId, naam, overboeken, onSluit, onGekozen 
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [blokken, setBlokken] = useState<LesBlok[] | null>(null);
+  const [momenten, setMomenten] = useState<MomentOptie[]>([]);
   const [fout, setFout] = useState('');
   const [bezig, setBezig] = useState('');
   const [verwittig, setVerwittig] = useState(true);
   const [bevestig, setBevestig] = useState<LesOptie | null>(null);
+  const [naarMoment, setNaarMoment] = useState<MomentOptie | null>(null);
+
+  const laad = () => {
+    aanwezigheidApi
+      .lesjes(deelnemerId)
+      .then((r) => {
+        setBlokken(r.blokken);
+        setMomenten(r.momenten ?? []);
+      })
+      .catch((e) => setFout(e instanceof ApiFout ? e.message : 'De lesjes konden niet geladen worden.'));
+  };
 
   useEffect(() => {
     if (ref.current && !ref.current.open) ref.current.showModal?.();
-    aanwezigheidApi
-      .lesjes(deelnemerId)
-      .then((r) => setBlokken(r.blokken))
-      .catch((e) => setFout(e instanceof ApiFout ? e.message : 'De lesjes konden niet geladen worden.'));
+    laad();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deelnemerId]);
+
+  const huidige = momenten.filter((m) => m.gekozen);
+
+  /**
+   * Naar een ander moment. De lesjes van het oude moment vervallen daarbij (de backend annuleert ze en laat de
+   * wachtlijst doorschuiven), dus dat staat eerst in een bevestiging. Heeft iemand meer dan één moment, dan is
+   * niet duidelijk welk moment moet wijken: dat doe je dan per moment via het dagdeel zelf.
+   */
+  const verplaats = async (naar: MomentOptie) => {
+    if (huidige.length !== 1) return;
+    setBezig(naar.id);
+    setFout('');
+    try {
+      await aanwezigheidApi.verplaatsMoment(deelnemerId, huidige[0].id, naar.id, naar.vol);
+      setNaarMoment(null);
+      laad();
+      onGekozen();
+    } catch (e) {
+      setFout(e instanceof ApiFout ? e.message : 'Het moment kon niet gewijzigd worden.');
+      setBezig('');
+    }
+  };
 
   const kies = async (s: LesOptie, forceer: boolean) => {
     setBezig(s.id);
@@ -42,14 +74,51 @@ export function LesjeKiezer({ deelnemerId, naam, overboeken, onSluit, onGekozen 
   };
 
   return (
-    <dialog ref={ref} className="dag-venster" onClose={onSluit} aria-label={`Lesje aanpassen voor ${naam}`}>
+    <dialog ref={ref} className="dag-venster" onClose={onSluit} aria-label={`Inschrijving aanpassen voor ${naam}`}>
       <header className="dag-venster__kop">
-        <h2>Lesje aanpassen <span>{naam}</span></h2>
+        <h2>Inschrijving aanpassen <span>{naam}</span></h2>
         <button type="button" className="dag-sluit" aria-label="Sluiten" onClick={onSluit}>×</button>
       </header>
       <div className="dag-venster__inhoud">
         {fout && <p className="dag-melding dag-melding--fout" role="alert">{fout}</p>}
         {!blokken && !fout && <p>Even geduld…</p>}
+
+        {momenten.length > 1 && (
+          <section className="lk-blok">
+            <h3>Moment</h3>
+            {huidige.length > 1 && (
+              <p className="dag-melding">
+                Deze inschrijving heeft meer dan één moment. Welk moment moet wijken, is dan niet duidelijk — pas de
+                momenten daarom één per één aan.
+              </p>
+            )}
+            <ul className="lk-lijst">
+              {momenten.map((m) => (
+                <li key={m.id}>
+                  <button
+                    type="button"
+                    className={`lk-lesje ${m.vol ? 'lk-lesje--vol' : 'lk-lesje--vrij'}${m.gekozen ? ' lk-lesje--gekozen' : ''}`}
+                    disabled={m.gekozen || huidige.length !== 1 || !!bezig}
+                    aria-pressed={m.gekozen}
+                    onClick={() => setNaarMoment(m)}
+                  >
+                    <span className="lk-lesje__titel">
+                      {m.gekozen && <strong className="lk-gekozen">✓ Huidig moment</strong>}
+                      {m.dag} · {m.dagdeel}
+                    </span>
+                    <span className="lk-lesje__plaatsen">
+                      {m.startUur} – {m.eindUur}
+                      {m.capaciteit == null ? ` · ${m.bevestigd} ingeschreven` : ` · ${m.bevestigd} van ${m.capaciteit} plaatsen bezet`}
+                      {m.vol ? ' · vol' : ''}
+                    </span>
+                    {bezig === m.id && <span className="lk-lesje__info">Bezig…</span>}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         {blokken?.length === 0 && <p>Er zijn geen lesjes te kiezen voor deze inschrijving.</p>}
         {blokken?.map((b) => (
           <section key={b.id} className="lk-blok">
@@ -91,6 +160,20 @@ export function LesjeKiezer({ deelnemerId, naam, overboeken, onSluit, onGekozen 
           <input type="checkbox" checked={verwittig} onChange={(e) => setVerwittig(e.target.checked)} />
           Verwittig de ouder per mail (met een nieuwe QR-code)
         </label>
+        {naarMoment && (
+          <div className="dag-bevestig" role="alertdialog" aria-label="Moment wijzigen bevestigen">
+            <p>
+              Naar <strong>{naarMoment.dag} · {naarMoment.dagdeel}</strong> verplaatsen?
+              De gekozen lesjes van het huidige moment <strong>vervallen</strong> en komen vrij voor de wachtlijst.
+              Daarna kan je hieronder nieuwe lesjes kiezen.
+              {naarMoment.vol && ' Let op: dit moment zit vol, dus dit is overboeken.'}
+            </p>
+            <div className="dag-knoppen">
+              <button type="button" className="dag-knop dag-knop--rood" onClick={() => verplaats(naarMoment)}>Ja, verplaatsen</button>
+              <button type="button" className="dag-knop dag-knop--licht" onClick={() => setNaarMoment(null)}>Annuleren</button>
+            </div>
+          </div>
+        )}
         {bevestig && (
           <div className="dag-bevestig" role="alertdialog" aria-label="Overboeken bevestigen">
             <p>

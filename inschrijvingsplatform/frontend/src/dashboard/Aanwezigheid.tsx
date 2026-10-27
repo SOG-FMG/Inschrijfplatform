@@ -49,6 +49,37 @@ export function Aanwezigheid({ evenementId, profiel }: { evenementId: string; pr
     );
   }, [data, zoek, filter]);
 
+  /**
+   * Uitschrijven en "komt niet" horen bij het beheer van de inschrijving, niet bij de check-in: ze vragen
+   * schrijfrechten op het evenement, en die heeft het onthaal niet. De API controleert dat ook zelf.
+   */
+  const mag = profiel.rol !== 'onthaal';
+
+  const doe = async (d: OverzichtDeelnemer, werk: () => Promise<unknown>) => {
+    setBezig(d.id);
+    setFout('');
+    try {
+      await werk();
+      laad();
+    } catch (e) {
+      setFout(foutTekst(e));
+    } finally {
+      setBezig('');
+    }
+  };
+
+  const komtNiet = (d: OverzichtDeelnemer) =>
+    doe(d, () => aanwezigheidApi.zetKomtNiet(d.id, !d.komtNiet));
+
+  const uitschrijven = (d: OverzichtDeelnemer) => {
+    const vraag =
+      `${d.voornaam} ${d.naam} uitschrijven?\n\n` +
+      'De inschrijving wordt geannuleerd: de plaats komt vrij, de wachtlijst schuift door en er gaan geen ' +
+      'berichten meer naartoe. De gegevens blijven in de cijfers en het logboek staan.';
+    if (!confirm(vraag)) return;
+    return doe(d, () => aanwezigheidApi.schrijfUit(d.id));
+  };
+
   const zet = async (d: OverzichtDeelnemer, aanwezig: boolean) => {
     setBezig(d.id);
     try {
@@ -145,6 +176,7 @@ export function Aanwezigheid({ evenementId, profiel }: { evenementId: string; pr
                     <span className="aw-status aw-status--nee">✕ Nog niet</span>
                   )}
                   {d.aanwezig && <div className="d-klein">{d.via ? `Aangemeld ${VIA_TEKST[d.via]}` : 'Aangemeld'} om {uur(d.op)}</div>}
+                  {d.komtNiet && <div className="d-klein d-nee">Komt niet · geen herinnering</div>}
                 </td>
                 <td className="d-acties">
                   {rechten.inchecken && (
@@ -152,7 +184,15 @@ export function Aanwezigheid({ evenementId, profiel }: { evenementId: string; pr
                       ? <button type="button" className="d-link" disabled={bezig === d.id} onClick={() => zet(d, false)}>Ongedaan maken</button>
                       : <button type="button" className="d-knop d-knop--klein" disabled={bezig === d.id} onClick={() => zet(d, true)}>Aanwezig</button>
                   )}
-                  {rechten.lesjeWijzigen && <button type="button" className="d-link" onClick={() => setKiezen(d)}>Lesje aanpassen</button>}
+                  {rechten.lesjeWijzigen && <button type="button" className="d-link" onClick={() => setKiezen(d)}>Aanpassen…</button>}
+                  {mag && (
+                    <>
+                      <button type="button" className="d-link" disabled={bezig === d.id} onClick={() => komtNiet(d)}>
+                        {d.komtNiet ? 'Komt toch' : 'Komt niet'}
+                      </button>
+                      <button type="button" className="d-link d-link--gevaar" disabled={bezig === d.id} onClick={() => uitschrijven(d)}>Uitschrijven</button>
+                    </>
+                  )}
                 </td>
               </tr>
             ))}

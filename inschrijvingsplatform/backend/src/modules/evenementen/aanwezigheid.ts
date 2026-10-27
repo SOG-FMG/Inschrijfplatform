@@ -6,6 +6,7 @@ import type { Env } from '../../types';
 import { ValidatieFout } from '../../validatie';
 import { evenementVanDeelnemer, kenSessieToe } from './beheer';
 import { plaatshouders, referentie, vandaag } from './capaciteit';
+import { bereikPerDoelgroep, magDoelgroep } from './doelgroepmomenten';
 import { evenementVanSessie, EXTRA_VELDEN, type ExtraVeld } from './sessiegevers';
 
 /**
@@ -196,7 +197,7 @@ export async function overzicht(env: Env, g: Gebruiker, evenementId: string, dag
   const [dagdelen, rijen, lesjes] = await db.batch<any>([
     db.prepare(`select dagdeel_id as id, naam, start_uur as startUur, eind_uur as eindUur from dagdelen where dag_id = ? and status = 'actief' order by start_uur`).bind(dag.id),
     db.prepare(
-      `select i.deelnemer_id, i.dagdeel_id, i.aanwezig, i.checkin_datum, i.aanmeld_via, dn.voornaam_enc, dn.naam_enc, dn.leerjaar,
+      `select i.deelnemer_id, i.dagdeel_id, i.aanwezig, i.checkin_datum, i.aanmeld_via, dn.voornaam_enc, dn.naam_enc, dn.leerjaar, dn.komt_niet,
               dn.checkin_token is not null as heeft_qr, coalesce(sc.naam, '') as school, dn.school_andere_enc
        from inschrijvingen i join deelnemers dn on dn.deelnemer_id = i.deelnemer_id left join scholen sc on sc.school_id = dn.school_id
        where i.dag_id = ? and i.sessie_id is null and i.status <> 'geannuleerd' and dn.status = 'actief' and dn.geanonimiseerd_op is null`,
@@ -224,6 +225,7 @@ export async function overzicht(env: Env, g: Gebruiker, evenementId: string, dag
       op: r.checkin_datum,
       via: r.aanmeld_via,
       heeftQr: r.heeft_qr === 1,
+      komtNiet: r.komt_niet === 1,
       lesjes: perDeelnemer.get(r.deelnemer_id) ?? [],
     })),
   );
@@ -262,8 +264,37 @@ export async function lesOpties(env: Env, actor: Actor, deelnemerId: string) {
     db.prepare(`select tijdsblok_id, sessie_id, status from inschrijvingen where deelnemer_id = ? and sessie_id is not null and status <> 'geannuleerd'`).bind(deelnemerId),
   ]);
   const ids = (dagdelen.results as any[]).map((d) => d.dagdeel_id);
-  if (!ids.length) return { blokken: [] };
   const doelgroep = dn.results[0]?.doelgroep_id ?? null;
+
+  // Alle momenten van het evenement, om er een deelnemer naartoe te kunnen verplaatsen. Momenten die deze
+  // doelgroep niet mag kiezen, laten we weg — zelfde regel als op het formulier (doelgroepmomenten.ts).
+  const bereik = await bereikPerDoelgroep(env, evenementId);
+  const { results: alleMomenten } = await db
+    .prepare(
+      `select dd.dagdeel_id, d.naam as dag, d.datum, dd.naam as dagdeel, dd.start_uur, dd.eind_uur, dd.capaciteit,
+              (select count(*) from inschrijvingen i where i.dagdeel_id = dd.dagdeel_id and i.sessie_id is null and i.status = 'bevestigd') as bevestigd
+       from dagdelen dd join evenement_dagen d on d.dag_id = dd.dag_id
+       where d.evenement_id = ? and dd.status = 'actief'
+       order by d.datum, dd.start_uur`,
+    )
+    .bind(evenementId)
+    .all<any>();
+  const momenten = alleMomenten
+    .filter((m) => magDoelgroep(bereik, doelgroep, 'dagdelen', m.dagdeel_id))
+    .map((m) => ({
+      id: m.dagdeel_id,
+      dag: m.dag,
+      datum: m.datum,
+      dagdeel: m.dagdeel,
+      startUur: m.start_uur,
+      eindUur: m.eind_uur,
+      capaciteit: m.capaciteit,
+      bevestigd: m.bevestigd,
+      vol: m.capaciteit != null && m.bevestigd >= m.capaciteit,
+      gekozen: ids.includes(m.dagdeel_id),
+    }));
+
+  if (!ids.length) return { blokken: [], momenten };
   const { results } = await db.prepare(
     `select t.tijdsblok_id, t.naam as tijdsblok, t.start_uur, t.eind_uur, t.dagdeel_id, s.sessie_id, s.titel, s.beschrijving, s.capaciteit,
             s.wachtlijst_toegelaten, s.status, s.doelgroep_id, coalesce(l.lokaal, l.naam) as lokaal, s.lesgever,
@@ -289,7 +320,7 @@ export async function lesOpties(env: Env, actor: Actor, deelnemerId: string) {
     });
     blokken.set(r.tijdsblok_id, b);
   }
-  return { blokken: [...blokken.values()] };
+  return { blokken: [...blokken.values()], momenten };
 }
 
 /** Ander lesje kiezen vanuit de aanwezigheid (onthaal) of de tabel van een sessie. Overboeken vraagt een eigen recht. */

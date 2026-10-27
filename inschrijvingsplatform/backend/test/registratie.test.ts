@@ -832,6 +832,23 @@ describe('instellingen van een evenement', () => {
     expect((await api('DELETE', `/api/beheer/instellingen/locatie/${nieuw.data.id}`)).status).toBe(200);
   });
 
+  test('uitschrijven annuleert de inschrijving; "komt niet" laat ze staan', async () => {
+    expect((await registreer(deelnemer({ naam: 'Weg', voornaam: 'Wout' }), [vm1.id], [])).status).toBe(201);
+    const { deelnemer_id: id } = (await een<{ deelnemer_id: string }>(`select deelnemer_id from deelnemers where status = 'actief' order by created_at desc limit 1`))!;
+    const nogIngeschreven = async () => (await een<{ n: number }>(`select count(*) as n from inschrijvingen where deelnemer_id = ? and status <> 'geannuleerd'`, id))!.n;
+
+    // "Komt niet": enkel de vlag gaat aan; de inschrijving en de plaats blijven.
+    expect((await api('POST', `/api/beheer/deelnemers/${id}/komt-niet`, { komtNiet: true })).status).toBe(200);
+    expect(await een(`select komt_niet, status from deelnemers where deelnemer_id = ?`, id)).toMatchObject({ komt_niet: 1, status: 'actief' });
+    expect(await nogIngeschreven()).toBeGreaterThan(0);
+    expect((await api('POST', `/api/beheer/deelnemers/${id}/komt-niet`, { komtNiet: 'misschien' })).status).toBe(400);
+
+    // Uitschrijven: deelnemer én inschrijvingen geannuleerd, dus de plaats komt vrij.
+    expect((await api('POST', `/api/beheer/deelnemers/${id}/uitschrijven`)).status).toBe(200);
+    expect((await een<{ status: string }>(`select status from deelnemers where deelnemer_id = ?`, id))!.status).toBe('geannuleerd');
+    expect(await nogIngeschreven()).toBe(0);
+  });
+
   test('momenten per doelgroep: een eigen keuze, en volgen gaat maar één stap diep', async () => {
     const ev = (await api('GET', `/api/beheer/evenementen/${evId}/instellingen`)).data;
     const [a, b] = ev.doelgroepen;

@@ -1,5 +1,5 @@
 import { sha256 } from '../../crypto/versleuteling';
-import { anonimiseerEvenement, anonimiseerVerlopenEvenementen, deelnemerslijst, kenSessieToe, koppelBestaandeDeelnemers, verplaatsDagdeel } from './beheer';
+import { anonimiseerEvenement, anonimiseerVerlopenEvenementen, deelnemerslijst, kenSessieToe, koppelBestaandeDeelnemers, schrijfUit, verplaatsDagdeel, zetKomtNiet } from './beheer';
 import { meldAf, voorinvulling } from './uitnodigingen';
 import { publiekEvenement } from './evenement';
 import { bewaarLogo, instellingen, isSoort, kopieerDagdeel, kopieerSessies, maak, verwijder, verwijderLogo, wijzig, zetDoelgroepMomenten, zetLokaalOpCode } from './instellingen';
@@ -335,6 +335,24 @@ export default defineModule({
         const r = await verplaatsDagdeel(ctx.env, ctx.gebruiker, ctx.params.id, body.van, body.naar, body?.forceer === true);
         if (body?.verwittig !== false) await verwittigNaWijzigingDoorSchool(ctx.env, ctx, ctx.params.id);
         return r;
+      },
+    },
+    {
+      // Uitschrijven = annuleren: plaats vrij, wachtlijst schuift door, cijfers en logboek blijven.
+      methode: 'POST',
+      pad: '/deelnemers/:id:uuid/uitschrijven',
+      toegang: 'beheer',
+      handler: ({ env, gebruiker, params, ip }) => schrijfUit(env, gebruiker, params.id, ip),
+    },
+    {
+      // "Komt niet": blijft ingeschreven, maar krijgt geen herinnering meer.
+      methode: 'POST',
+      pad: '/deelnemers/:id:uuid/komt-niet',
+      toegang: 'beheer',
+      async handler(ctx) {
+        const body = await ctx.leesJson(1024);
+        if (typeof body?.komtNiet !== 'boolean') throw new ValidatieFout({ komtNiet: 'Ongeldige keuze.' });
+        return zetKomtNiet(ctx.env, ctx.gebruiker, ctx.params.id, body.komtNiet, ctx.ip);
       },
     },
     {

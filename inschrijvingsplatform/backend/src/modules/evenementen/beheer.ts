@@ -140,6 +140,49 @@ export async function verplaatsDagdeel(env: Env, g: Gebruiker, deelnemerId: stri
  * Een lesje toekennen (vervangt de keuze in hetzelfde tijdsblok). `gecontroleerd`: de oproeper controleerde de rechten
  * al (aanwezigheid: onthaal met evenementen.lesje_wijzigen, of een sessiegever); anders moet g organisator zijn.
  */
+/**
+ * Uitschrijven door de school = annuleren, niet verwijderen.
+ *
+ * Annuleren maakt de plaats vrij, laat de wachtlijst doorschuiven, en houdt de statistiek en het audit-logboek
+ * heel. Hard verwijderen breekt die vier, en is daarom voorbehouden aan een echt GDPR-verzoek: dat gaat via
+ * anonimiseerEvenement, dat de persoonsgegevens wist en de cijfers laat staan.
+ *
+ * Zet ook de uitnodiging op 'afgemeld', zodat er langs de voorinschrijvingskant geen herinnering meer vertrekt.
+ */
+export async function schrijfUit(env: Env, g: Gebruiker, deelnemerId: string, ip: string | null) {
+  const db = env.DB;
+  const evenementId = await evenementVanDeelnemer(env, deelnemerId, false);
+  await controleerToegang(env, g, evenementId, true);
+  const { results: sessies } = await db
+    .prepare(`select distinct sessie_id from inschrijvingen where deelnemer_id = ? and sessie_id is not null and status <> 'geannuleerd'`)
+    .bind(deelnemerId)
+    .all<{ sessie_id: string }>();
+
+  await schrijf(db, [
+    db.prepare(`update deelnemers set status = 'geannuleerd' where deelnemer_id = ? and status = 'actief'`).bind(deelnemerId),
+    db.prepare(`update inschrijvingen set status = 'geannuleerd' where deelnemer_id = ? and status <> 'geannuleerd'`).bind(deelnemerId),
+    db.prepare(`update uitnodigingen set status = 'afgemeld' where deelnemer_id = ? and status <> 'afgemeld'`).bind(deelnemerId),
+    ...sessies.map((s) => promoveerWachtlijst(db, s.sessie_id)),
+    audit(env, g, 'deelnemers', deelnemerId, 'UITSCHRIJVEN', { sessies: sessies.length }, ip),
+  ]);
+  return { ok: true };
+}
+
+/**
+ * "Komt niet": de school weet dat deze deelnemer niet komt. Hij blijft ingeschreven en houdt zijn plaats — hij
+ * kan nog altijd verschijnen — maar krijgt geen herinnering meer. Wil je de plaats vrijmaken, gebruik dan
+ * uitschrijven.
+ */
+export async function zetKomtNiet(env: Env, g: Gebruiker, deelnemerId: string, komtNiet: boolean, ip: string | null) {
+  const evenementId = await evenementVanDeelnemer(env, deelnemerId, false);
+  await controleerToegang(env, g, evenementId, true);
+  await env.DB.batch([
+    env.DB.prepare(`update deelnemers set komt_niet = ? where deelnemer_id = ?`).bind(komtNiet ? 1 : 0, deelnemerId),
+    audit(env, g, 'deelnemers', deelnemerId, 'KOMT_NIET', { komtNiet }, ip),
+  ]);
+  return { ok: true };
+}
+
 export async function kenSessieToe(env: Env, g: Gebruiker | null, deelnemerId: string, sessieId: string, forceer = false, gecontroleerd = false) {
   const db = env.DB;
   const evenementId = await evenementVanDeelnemer(env, deelnemerId, true);

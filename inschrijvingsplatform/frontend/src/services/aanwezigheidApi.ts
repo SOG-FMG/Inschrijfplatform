@@ -33,7 +33,23 @@ export interface OverzichtDeelnemer {
   op: string | null;
   via: Via | null;
   heeftQr: boolean;
+  /** De school weet dat die niet komt: geen herinnering meer, maar wel nog ingeschreven. */
+  komtNiet: boolean;
   lesjes: { sessieId: string; titel: string; tijdsblok: string; startUur: string; status: string; klas: 'aanwezig' | 'afwezig' | null }[];
+}
+
+/** Moment waar een deelnemer naartoe verplaatst kan worden (uit lesOpties). */
+export interface MomentOptie {
+  id: string;
+  dag: string;
+  datum: string;
+  dagdeel: string;
+  startUur: string;
+  eindUur: string;
+  capaciteit: number | null;
+  bevestigd: number;
+  vol: boolean;
+  gekozen: boolean;
 }
 
 export interface AanwezigheidOverzicht {
@@ -132,7 +148,7 @@ export const aanwezigheidApi = {
   maakOngedaan: (token: string) => verwijder<{ ok: true }>(`/api/beheer/checkin/${token}`),
   overzicht: (evenementId: string, dag?: string) => call<AanwezigheidOverzicht>(`/api/beheer/evenementen/${evenementId}/aanwezigheid${dag ? `?dag=${dag}` : ''}`),
   zetAanwezig: (deelnemerId: string, aanwezig: boolean) => post<{ aangemeld?: boolean; ok?: true }>(`/api/beheer/aanwezigheid/deelnemers/${deelnemerId}`, { aanwezig }),
-  lesjes: (deelnemerId: string) => call<{ blokken: LesBlok[] }>(`/api/beheer/aanwezigheid/deelnemers/${deelnemerId}/lesjes`),
+  lesjes: (deelnemerId: string) => call<{ blokken: LesBlok[]; momenten: MomentOptie[] }>(`/api/beheer/aanwezigheid/deelnemers/${deelnemerId}/lesjes`),
   kiesLesje: (deelnemerId: string, sessieId: string, forceer: boolean, verwittig: boolean) =>
     post<{ status: string }>(`/api/beheer/aanwezigheid/deelnemers/${deelnemerId}/lesje`, { sessieId, forceer, verwittig }),
   qrMails: (evenementId: string) => call<{ teVersturen: number }>(`/api/beheer/evenementen/${evenementId}/qrcode-mails`),
@@ -142,6 +158,13 @@ export const aanwezigheidApi = {
   maakSessiegever: (w: { voornaam: string; naam: string; email: string }) => post<{ id: string }>('/api/beheer/sessiegevers', w),
   wijzigSessiegever: (id: string, w: { voornaam: string; naam: string; email: string }) => patch<{ ok: true }>(`/api/beheer/sessiegevers/${id}`, w),
   verwijderSessiegever: (id: string) => verwijder<{ ok: true }>(`/api/beheer/sessiegevers/${id}`),
+  /** Uitschrijven = annuleren: plaats vrij, wachtlijst schuift door, cijfers en logboek blijven. */
+  schrijfUit: (deelnemerId: string) => post<{ ok: true }>(`/api/beheer/deelnemers/${deelnemerId}/uitschrijven`, {}),
+  /** "Komt niet": blijft ingeschreven en houdt zijn plaats, maar krijgt geen herinnering meer. */
+  zetKomtNiet: (deelnemerId: string, komtNiet: boolean) => post<{ ok: true }>(`/api/beheer/deelnemers/${deelnemerId}/komt-niet`, { komtNiet }),
+  /** Naar een ander moment; de lesjes van het oude moment vervallen. */
+  verplaatsMoment: (deelnemerId: string, van: string, naar: string, forceer = false) =>
+    post<{ ok: true }>(`/api/beheer/deelnemers/${deelnemerId}/dagdeel`, { van, naar, forceer }),
   koppel: (sessieId: string, sessiegevers: string[]) => patch<{ ok: true }>(`/api/beheer/sessies/${sessieId}/sessiegevers`, { sessiegevers }),
   neemOver: (evenementId: string) => post<{ nieuw: number; gekoppeld: number; overgeslagen: number }>(`/api/beheer/evenementen/${evenementId}/sessiegevers/overnemen`),
   nodigUit: (evenementId: string, ids?: string[]) => post<{ verstuurd: number; mislukt: number }>(`/api/beheer/evenementen/${evenementId}/sessiegevers/uitnodigen`, ids ? { ids } : {}),
