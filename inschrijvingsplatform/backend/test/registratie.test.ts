@@ -1003,7 +1003,7 @@ describe('e-mail via de Power Automate-webhook', () => {
     let html = await mailVoor();
     expect(html).toContain(`http://localhost:5173/api/logo/${id}?v=7`);
     expect(html).toContain('height="120"'); // begrensd
-    expect(html).toContain('border-bottom:4px solid #123456');
+    expect(html).not.toContain('border-bottom:4px solid'); // geen lijn onder het logo, ook niet in de hoofdkleur
 
     await env.STORAGE.put(`logos/${id}`, new Uint8Array([1]), { httpMetadata: { contentType: 'image/webp' } });
     expect(await mailVoor()).not.toContain('/api/logo/');

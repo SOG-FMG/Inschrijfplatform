@@ -22,13 +22,13 @@ export interface Mail {
 /** Logo van het formulier van dit evenement, of null. WebP slaan we over: Outlook en oudere mailprogramma's tonen het niet. */
 async function evenementLogo(env: Env, evenementId: string): Promise<MailLogo | null> {
   try {
-    const e = await env.DB.prepare(`select logo, logo_hoogte, kleur_primair from evenementen where evenement_id = ?`)
+    const e = await env.DB.prepare(`select logo, logo_hoogte from evenementen where evenement_id = ?`)
       .bind(evenementId)
-      .first<{ logo: string | null; logo_hoogte: number | null; kleur_primair: string | null }>();
+      .first<{ logo: string | null; logo_hoogte: number | null }>();
     if (!e?.logo) return null;
     const obj = await env.STORAGE.head(`logos/${evenementId}`);
     if (!obj || obj.httpMetadata?.contentType === 'image/webp') return null;
-    return { pad: e.logo, hoogte: e.logo_hoogte, kleur: e.kleur_primair };
+    return { pad: e.logo, hoogte: e.logo_hoogte };
   } catch {
     return null;
   }

@@ -148,8 +148,6 @@ export interface MailLogo {
   /** Publiek pad, bv. /api/logo/<evenement>?v=… */
   pad: string;
   hoogte: number | null;
-  /** Hoofdkleur van het evenement (#rrggbb), als lijn onder het logo. */
-  kleur: string | null;
 }
 
 /** Hoogste logo in een mail (px); het formulier toont standaard 135. */
@@ -159,10 +157,10 @@ export function verpakMail(inhoud: string, p: { opmaak: Mailopmaak; organisatie:
   const website = p.basisUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
   const beeld = (pad: string, alt: string, breedte: number) =>
     `<img src="${esc(p.basisUrl.replace(/\/$/, '') + pad)}" alt="${esc(alt)}" width="${breedte}" style="display:block;width:100%;max-width:${breedte}px;height:auto;border:0">`;
+  // Geen lijn onder het logo: de mail begint met het beeld zelf (beslissing 26/10/2026).
   const logoRij = (l: MailLogo) => {
     const h = Math.min(l.hoogte ?? MAX_LOGO_HOOGTE, MAX_LOGO_HOOGTE);
-    const lijn = l.kleur && /^#[0-9a-f]{6}$/i.test(l.kleur) ? `border-bottom:4px solid ${l.kleur};` : '';
-    return `<tr><td align="center" style="padding:16px 24px;${lijn}"><img src="${esc(p.basisUrl.replace(/\/$/, '') + l.pad)}" alt="${esc(p.organisatie)}" height="${h}" style="display:block;height:${h}px;width:auto;max-width:100%;border:0"></td></tr>`;
+    return `<tr><td align="center" style="padding:16px 24px"><img src="${esc(p.basisUrl.replace(/\/$/, '') + l.pad)}" alt="${esc(p.organisatie)}" height="${h}" style="display:block;height:${h}px;width:auto;max-width:100%;border:0"></td></tr>`;
   };
   const kop = p.opmaak.kopBanner ? `<tr><td>${beeld(p.opmaak.kopBanner, p.organisatie, 600)}</td></tr>` : p.logo ? logoRij(p.logo) : '';
   // Staat er een banner onderaan, dan loopt die door in de voettekst: wit in plaats van een grijze streep eronder.
