@@ -15,7 +15,7 @@ import { DbFout } from '../../kern/fouten';
  * ouder-id's, created_*), kunnen via deze routes nooit gewijzigd worden.
  */
 
-export type Soort = 'evenement' | 'doelgroep' | 'dag' | 'dagdeel' | 'tijdsblok' | 'sessie';
+export type Soort = 'evenement' | 'doelgroep' | 'dag' | 'dagdeel' | 'tijdsblok' | 'sessie' | 'locatie';
 type VeldType = 'tekst' | 'lang' | 'datum' | 'uur' | 'datumtijd' | 'getal' | 'jaNee' | 'keuze' | 'slug' | 'email' | 'lijst' | 'ref' | 'kleur' | 'logo';
 
 export interface Veld {
@@ -41,8 +41,16 @@ interface Definitie {
   /** Kolom die getoond wordt als naam van het record. */
   titel: string;
   gewijzigd?: boolean; // heeft modified_by/modified_at en created_by
+  /**
+   * Hoort bij de school en niet bij één evenement (lokalen). De toegang hangt dan niet aan de koppeling met een
+   * evenement maar aan één recht, en er is geen bovenliggend onderdeel.
+   */
+  schoolbreed?: boolean;
   velden: Veld[];
 }
+
+/** Recht om de schoolbrede onderdelen (lokalen) te wijzigen. */
+const SCHOOLBREED_RECHT = 'evenementen.locaties.beheren';
 
 const opties = (...w: [string, string][]) => w.map(([waarde, label]) => ({ waarde, label }));
 const STATUS_ACTIEF = opties(['actief', 'Actief'], ['geannuleerd', 'Geannuleerd']);
@@ -170,12 +178,30 @@ export const SCHEMA: Record<Soort, Definitie> = {
       { naam: 'opmerkingen', label: 'Interne opmerkingen', type: 'lang' },
     ],
   },
+  locatie: {
+    tabel: 'locaties',
+    id: 'locatie_id',
+    titel: 'naam',
+    schoolbreed: true,
+    velden: [
+      { naam: 'naam', label: 'Naam', type: 'tekst', verplicht: true, hulp: 'Waaronder je het lokaal kent, bv. Zaal Ami of Labo' },
+      { naam: 'site', label: 'Site', type: 'tekst', hulp: 'Campus of vestiging, als de school er meer dan één heeft' },
+      { naam: 'blok', label: 'Blok', type: 'tekst', hulp: 'Gebouw of vleugel, bv. A of Blok Noord' },
+      { naam: 'verdieping', label: 'Verdieping', type: 'tekst', hulp: 'Bv. gelijkvloers, 1' },
+      { naam: 'lokaal', label: 'Lokaalnummer', type: 'tekst', hulp: 'Bv. 2A3' },
+      { naam: 'capaciteit', label: 'Aantal plaatsen', type: 'getal', min: 0, hulp: 'Leeg = onbekend' },
+      { naam: 'faciliteiten', label: 'Faciliteiten', type: 'lijst', standaard: [],
+        hulp: 'Gescheiden door komma’s. Gebruikelijk: projector, micro, geluid, touchscreen, HDMI, USB-C' },
+      { naam: 'adres', label: 'Adres', type: 'tekst', hulp: 'Enkel nodig als dit lokaal op een ander adres staat dan de school' },
+      { naam: 'opmerkingen', label: 'Interne opmerkingen', type: 'lang' },
+    ],
+  },
 };
 
 export const isSoort = (s: string): s is Soort => s in SCHEMA;
 
-/** Evenement waartoe een record hoort (voor de rechtencontrole). */
-const EVENEMENT_VAN: Record<Soort, string> = {
+/** Evenement waartoe een record hoort (voor de rechtencontrole). Schoolbrede soorten staan er niet in. */
+const EVENEMENT_VAN: Partial<Record<Soort, string>> = {
   evenement: `select evenement_id from evenementen where evenement_id = ?`,
   doelgroep: `select evenement_id from doelgroepen where doelgroep_id = ?`,
   dag: `select evenement_id from evenement_dagen where dag_id = ?`,
@@ -187,9 +213,26 @@ const EVENEMENT_VAN: Record<Soort, string> = {
 };
 
 async function evenementVan(env: Env, soort: Soort, id: string): Promise<string> {
-  const r = await env.DB.prepare(EVENEMENT_VAN[soort]).bind(id).first<{ evenement_id: string }>();
+  const sql = EVENEMENT_VAN[soort];
+  if (!sql) throw new DbFout('GEEN_TOEGANG'); // schoolbreed: hoort bij geen enkel evenement
+  const r = await env.DB.prepare(sql).bind(id).first<{ evenement_id: string }>();
   if (!r) throw new DbFout('GEEN_TOEGANG'); // zelfde antwoord als zonder rechten
   return r.evenement_id;
+}
+
+/**
+ * Mag deze gebruiker dit record wijzigen, en bij welk evenement hoort het? Schoolbrede onderdelen (lokalen)
+ * horen bij geen evenement: daar beslist één recht, en er komt null terug zodat verwijzingen niet tegen een
+ * evenement gecontroleerd worden.
+ */
+async function toegangVoor(env: Env, g: Gebruiker, def: Definitie, soort: Soort, id: string): Promise<string | null> {
+  if (def.schoolbreed) {
+    if (!heeftRecht(g, SCHOOLBREED_RECHT)) throw new DbFout('GEEN_TOEGANG');
+    return null;
+  }
+  const evenementId = await evenementVan(env, soort, id);
+  await controleerToegang(env, g, evenementId, true);
+  return evenementId;
 }
 
 // ---------------------------------------------------------------------------
@@ -375,7 +418,7 @@ export async function instellingen(env: Env, g: Gebruiker, evenementId: string) 
     () => false,
   );
   const db = env.DB;
-  const [ev, doelgroepen, dagen, dagdelen, tijdsblokken, sessies, tellingDagdeel, tellingSessie, soorten, locaties] = await db.batch<any>([
+  const [ev, doelgroepen, dagen, dagdelen, tijdsblokken, sessies, tellingDagdeel, tellingSessie, soorten, locaties, lokalen] = await db.batch<any>([
     db.prepare(`select * from evenementen where evenement_id = ?`).bind(evenementId),
     db.prepare(`select * from doelgroepen where evenement_id = ? order by volgorde, naam`).bind(evenementId),
     db.prepare(`select * from evenement_dagen where evenement_id = ? order by volgorde, datum`).bind(evenementId),
@@ -402,6 +445,12 @@ export async function instellingen(env: Env, g: Gebruiker, evenementId: string) 
        where school_id is null or school_id = (select school_id from evenementen where evenement_id = ?) or ? = 'platformbeheerder'
        order by naam`,
     ).bind(evenementId, g.rol),
+    // Dezelfde lokalen, maar volledig: het tabblad Lokalen beheert ze (ze horen bij de school, niet bij dit evenement).
+    db.prepare(
+      `select * from locaties
+       where school_id is null or school_id = (select school_id from evenementen where evenement_id = ?) or ? = 'platformbeheerder'
+       order by site, blok, naam`,
+    ).bind(evenementId, g.rol),
   ]);
   if (!ev.results[0]) throw new DbFout('GEEN_TOEGANG');
 
@@ -421,6 +470,7 @@ export async function instellingen(env: Env, g: Gebruiker, evenementId: string) 
       contact: await contactOpties(env, evenementId),
     },
     evenement,
+    locaties: lokalen.results.map((l: any) => ({ ...l, faciliteiten: JSON.parse(l.faciliteiten ?? '[]') })),
     doelgroepen: doelgroepen.results,
     dagen: dagen.results.map((d: any) => ({
       ...d,
@@ -447,8 +497,7 @@ export async function instellingen(env: Env, g: Gebruiker, evenementId: string) 
 // ---------------------------------------------------------------------------
 export async function wijzig(env: Env, g: Gebruiker, soort: Soort, id: string, invoer: Record<string, unknown>, ip: string | null) {
   const def = SCHEMA[soort];
-  const evenementId = await evenementVan(env, soort, id);
-  await controleerToegang(env, g, evenementId, true);
+  const evenementId = await toegangVoor(env, g, def, soort, id);
   const waarden = await zetWaardenOm(env, def, invoer ?? {}, false, evenementId);
   await vulLesgeverAan(env, waarden);
   const kolommen = Object.keys(waarden);
@@ -469,7 +518,10 @@ export async function wijzig(env: Env, g: Gebruiker, soort: Soort, id: string, i
 export async function maak(env: Env, g: Gebruiker, soort: Soort, ouderId: string | null, invoer: Record<string, unknown>, ip: string | null) {
   const def = SCHEMA[soort];
   let evenementId: string | null = null;
-  if (def.ouder) {
+  if (def.schoolbreed) {
+    // Een lokaal hangt aan de school: het meegestuurde ouderId (het evenement waaruit je werkt) doet niets.
+    if (!heeftRecht(g, SCHOOLBREED_RECHT)) throw new DbFout('GEEN_TOEGANG');
+  } else if (def.ouder) {
     if (!ouderId) throw new ValidatieFout({ algemeen: 'Ontbrekend bovenliggend onderdeel.' });
     evenementId = await evenementVan(env, def.ouder.soort, ouderId);
     await controleerToegang(env, g, evenementId, true);
@@ -497,8 +549,7 @@ export async function maak(env: Env, g: Gebruiker, soort: Soort, ouderId: string
 export async function verwijder(env: Env, g: Gebruiker, soort: Soort, id: string, ip: string | null) {
   if (soort === 'evenement') throw new DbFout('GEEN_TOEGANG'); // te ingrijpend: zet de status op gearchiveerd
   const def = SCHEMA[soort];
-  const evenementId = await evenementVan(env, soort, id);
-  await controleerToegang(env, g, evenementId, true);
+  await toegangVoor(env, g, def, soort, id);
   try {
     await env.DB.batch([
       env.DB.prepare(`delete from ${def.tabel} where ${def.id} = ?`).bind(id),

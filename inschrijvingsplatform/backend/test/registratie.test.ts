@@ -789,6 +789,33 @@ describe('instellingen van een evenement', () => {
     expect(dubbel.data.velden).toHaveProperty('slug');
   });
 
+  test('lokalen zijn schoolbreed: beheren vraagt een eigen recht', async () => {
+    const nieuw = await api('POST', '/api/beheer/instellingen/locatie', {
+      ouderId: evId, // wordt genegeerd: een lokaal hangt niet aan een evenement
+      waarden: { naam: 'Zaal Noord', site: 'Hoofdsite', blok: 'N', verdieping: 'gelijkvloers', lokaal: 'N001', capaciteit: 40, faciliteiten: 'projector, micro' },
+    });
+    expect(nieuw.status).toBe(201);
+    expect(await een(`select naam, site, capaciteit, faciliteiten from locaties where locatie_id = ?`, nieuw.data.id)).toMatchObject({
+      naam: 'Zaal Noord', site: 'Hoofdsite', capaciteit: 40, faciliteiten: '["projector","micro"]',
+    });
+
+    // Het tabblad krijgt de lokalen met de faciliteiten als lijst; de keuzelijst bij een sessie kent het nieuwe lokaal.
+    const ev = (await api('GET', `/api/beheer/evenementen/${evId}/instellingen`)).data;
+    expect(ev.locaties.find((l: any) => l.locatie_id === nieuw.data.id).faciliteiten).toEqual(['projector', 'micro']);
+    expect(ev.opties.locatie.some((o: any) => o.waarde === nieuw.data.id)).toBe(true);
+
+    expect((await api('PATCH', `/api/beheer/instellingen/locatie/${nieuw.data.id}`, { waarden: { capaciteit: 35 } })).status).toBe(200);
+    expect((await een(`select capaciteit from locaties where locatie_id = ?`, nieuw.data.id)).capaciteit).toBe(35);
+
+    // De onthaalmedewerker (zie de rechtentest hierboven) heeft het recht niet, ook niet op zijn eigen evenement.
+    env.DEV_BEHEER_EMAIL = 'onthaal.test@onderwijs.gent.be';
+    expect((await api('PATCH', `/api/beheer/instellingen/locatie/${nieuw.data.id}`, { waarden: { capaciteit: 1 } })).status).toBe(403);
+    expect((await api('POST', '/api/beheer/instellingen/locatie', { ouderId: evId, waarden: { naam: 'Mag niet' } })).status).toBe(403);
+    env.DEV_BEHEER_EMAIL = BEHEERDER;
+
+    expect((await api('DELETE', `/api/beheer/instellingen/locatie/${nieuw.data.id}`)).status).toBe(200);
+  });
+
   test('leerkracht uit de contacten: enkel intern, en naam en adres worden overgenomen', async () => {
     // Twee contacten via "Contacten plakken": een lesgever van de eigen organisatie en een ouder van buiten.
     const toe = await api('POST', '/api/beheer/contacten/toevoegen', {

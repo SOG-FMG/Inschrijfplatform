@@ -21,6 +21,7 @@ export const ID: Record<InstellingSoort, string> = {
   dagdeel: 'dagdeel_id',
   tijdsblok: 'tijdsblok_id',
   sessie: 'sessie_id',
+  locatie: 'locatie_id',
 };
 
 /** Kolom die een record benoemt (voor titels en aria-labels). */
@@ -31,6 +32,7 @@ export const TITELKOLOM: Record<InstellingSoort, string> = {
   dagdeel: 'naam',
   tijdsblok: 'naam',
   sessie: 'titel',
+  locatie: 'naam',
 };
 
 /** Hoe het scherm een soort noemt (enkelvoud, kleine letter). */
@@ -41,6 +43,7 @@ export const SOORTNAAM: Record<InstellingSoort, string> = {
   dagdeel: 'moment',
   tijdsblok: 'tijdsblok',
   sessie: 'sessie',
+  locatie: 'lokaal',
 };
 
 /** Titel van het venster waarin je er een toevoegt (het/de verschilt per woord). */
@@ -51,6 +54,7 @@ export const NIEUWNAAM: Record<InstellingSoort, string> = {
   dagdeel: 'Nieuw moment',
   tijdsblok: 'Nieuw tijdsblok',
   sessie: 'Nieuwe sessie',
+  locatie: 'Nieuw lokaal',
 };
 
 export const hoofdletter = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);

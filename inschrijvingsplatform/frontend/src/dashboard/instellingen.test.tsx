@@ -38,6 +38,17 @@ const SCHEMA = {
   dag: [v('naam', 'Naam', 'tekst', { verplicht: true }), v('datum', 'Datum', 'datum', { verplicht: true }), v('start_uur', 'Van', 'uur'), v('eind_uur', 'Tot', 'uur'), v('sessiekeuze_tot', 'Lesjes kiezen tot', 'datumtijd'), v('status', 'Status', 'keuze', { opties: keuze('actief', 'geannuleerd') }), v('volgorde', 'Volgorde', 'getal')],
   dagdeel: [v('naam', 'Naam', 'tekst', { verplicht: true }), v('start_uur', 'Van', 'uur'), v('eind_uur', 'Tot', 'uur'), v('capaciteit', 'Max. deelnemers', 'getal'), v('status', 'Status', 'keuze', { opties: keuze('actief', 'geannuleerd') }), v('volgorde', 'Volgorde', 'getal')],
   tijdsblok: [v('naam', 'Naam', 'tekst', { verplicht: true }), v('type', 'Soort', 'keuze', { opties: keuze('keuze', 'programma') }), v('start_uur', 'Van', 'uur'), v('eind_uur', 'Tot', 'uur'), v('verplicht', 'Keuze verplicht', 'jaNee'), v('volgorde', 'Volgorde', 'getal')],
+  locatie: [
+    v('naam', 'Naam', 'tekst', { verplicht: true }),
+    v('site', 'Site', 'tekst'),
+    v('blok', 'Blok', 'tekst'),
+    v('verdieping', 'Verdieping', 'tekst'),
+    v('lokaal', 'Lokaalnummer', 'tekst'),
+    v('capaciteit', 'Aantal plaatsen', 'getal'),
+    v('faciliteiten', 'Faciliteiten', 'lijst'),
+    v('adres', 'Adres', 'tekst'),
+    v('opmerkingen', 'Interne opmerkingen', 'lang'),
+  ],
   sessie: [
     v('titel', 'Titel', 'tekst', { verplicht: true }),
     v('code', 'Code', 'tekst'),
@@ -81,6 +92,10 @@ const data = () => ({
     doelgroep: [{ waarde: 'dg1', label: 'A-stroom' }],
     contact: [{ waarde: 'c1', label: 'Peeters' }, { waarde: 'c2', label: 'Jacobs' }, { waarde: 'c3', label: 'De Smet' }],
   },
+  locaties: [
+    { locatie_id: 'l1', naam: 'A104', site: 'Hoofdsite', blok: 'A', verdieping: '1', lokaal: 'A104', capaciteit: 24, faciliteiten: ['projector'], adres: null, opmerkingen: null },
+    { locatie_id: 'l2', naam: 'B012', site: 'Hoofdsite', blok: 'B', verdieping: null, lokaal: 'B012', capaciteit: 30, faciliteiten: [], adres: null, opmerkingen: null },
+  ],
   evenement: {
     evenement_id: 'ev1', titel: 'Infodagen 2027', slug: 'infodagen-2027', status: 'gepubliceerd', organisator: 'FMG',
     start_datum: '2027-01-23', eind_datum: '2027-03-06', inschrijving_vanaf: null, inschrijving_tot: null,

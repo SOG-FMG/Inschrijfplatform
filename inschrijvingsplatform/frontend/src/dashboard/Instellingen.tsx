@@ -13,19 +13,20 @@ import { datum, Link, Melding, STATUSNAAM } from './ui';
 /**
  * Instellingen van één evenement (/dashboard/evenementen/<id>), in tabbladen.
  *
- * Sessies staat vooraan: dat is het werk dat terugkomt (namen, lokalen, leerkrachten, maxima).
- * Algemeen, Doelgroepen, Dagen en Momenten stel je meestal één keer in. De formulieren en tabellen
+ * Sessies staat achteraan maar gaat als eerste open: dat is het werk dat terugkomt (namen, lokalen,
+ * leerkrachten, maxima). De tabbladen ervoor stel je meestal één keer in. De formulieren en tabellen
  * worden opgebouwd uit het schema dat de API meestuurt (backend/src/modules/evenementen/instellingen.ts).
  *
  * De oude pagina met alles onder elkaar blijft bestaan op .../instelOud (InstellingenOud.tsx).
  */
 
 const TABS = [
-  { id: 'sessies', label: 'Sessies' },
   { id: 'algemeen', label: 'Algemeen' },
   { id: 'doelgroepen', label: 'Doelgroepen' },
   { id: 'dagen', label: 'Dagen' },
   { id: 'momenten', label: 'Momenten' },
+  { id: 'lokalen', label: 'Lokalen' },
+  { id: 'sessies', label: 'Sessies' },
 ] as const;
 type Tab = (typeof TABS)[number]['id'];
 
@@ -75,6 +76,16 @@ const DAGDEEL_KOLOMMEN: Kolom[] = [
   { kop: 'Ingeschreven', getal: true, breedte: '9em', cel: telling },
   { veld: 'status', breedte: '9em' },
   { veld: 'volgorde', breedte: '6em' },
+];
+
+const LOKAAL_KOLOMMEN: Kolom[] = [
+  { veld: 'naam', breedte: '20%' },
+  { veld: 'site', breedte: '12%' },
+  { veld: 'blok', breedte: '10%' },
+  { veld: 'verdieping', breedte: '10%' },
+  { veld: 'lokaal', kop: 'Nummer', breedte: '9em' },
+  { veld: 'capaciteit', kop: 'Plaatsen', breedte: '7em' },
+  { veld: 'faciliteiten', breedte: '22%' },
 ];
 
 const TIJDSBLOK_KOLOMMEN: Kolom[] = [
@@ -270,6 +281,25 @@ export function Instellingen({ evenementId, naVerandering }: { evenementId: stri
             ))
           )}
         </>
+      )}
+
+      {tab === 'lokalen' && (
+        <div className="d-kaart">
+          <p className="d-klein">
+            Lokalen gelden voor de <strong>hele school</strong>, niet enkel voor dit evenement: je stelt ze hier in en kiest
+            ze daarna per sessie op het tabblad <strong>Sessies</strong>. Een lokaal wijzigen of weghalen raakt dus ook andere evenementen.
+          </p>
+          <Tabel
+            soort="locatie"
+            rijen={data.locaties}
+            kolommen={LOKAAL_KOLOMMEN}
+            gemeen={gemeen}
+            wijz={wijz}
+            // Enkel om de knop "+ Lokaal toevoegen" te tonen: een lokaal hangt niet aan dit evenement, en de API negeert dit.
+            ouderId={ev.evenement_id}
+            leeg="Nog geen lokalen. Voeg ze hier toe, dan kan je ze bij een sessie kiezen."
+          />
+        </div>
       )}
 
       {kopie && <KopieerDagdeel dagdeel={kopie.dagdeel} dag={kopie.dag} dagen={data.dagen} onSluit={() => setKopie(null)} onKlaar={herlaad} />}

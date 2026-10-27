@@ -33,6 +33,11 @@ export default defineModule({
   rechten: {
     'evenementen.aanmaken': { omschrijving: 'Een nieuw evenement aanmaken', rollen: [] },
     'evenementen.sessiegevers.beheren': { omschrijving: 'Sessiegevers toevoegen, wijzigen en verwijderen', rollen: ['schoolbeheerder', 'organisator'] },
+    // Lokalen horen bij de school, niet bij één evenement: één recht in plaats van de koppeling met een evenement.
+    'evenementen.locaties.beheren': {
+      omschrijving: 'Lokalen beheren (site, blok, verdieping, plaatsen, faciliteiten) — geldt voor de hele school',
+      rollen: ['schoolbeheerder', 'organisator'], instelbaar: true,
+    },
     // Voor de dag zelf; aan te passen in Medewerkers → Rollen en rechten. Het bereik (welk evenement, welke sessie) blijft apart.
     'evenementen.inchecken': {
       omschrijving: 'Aanwezigheid registreren en ongedaan maken (scannen, balie, in de klas)',
