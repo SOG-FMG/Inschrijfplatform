@@ -121,17 +121,29 @@ export interface Mailopmaak {
   kopBanner: string | null;
   voetBanner: string | null;
   voettekst: string | null;
+  /** Bovenaan het logo van het evenement (Algemeen > Huisstijl) in plaats van de kopbanner. */
+  logoUitHuisstijl: boolean;
 }
 
 /** De opmaak van deze installatie (module mailsjablonen), of leeg. Werkt ook als de tabel nog niet bestaat. */
 export async function leesOpmaak(env: Env): Promise<Mailopmaak> {
-  try {
-    const r = await env.DB.prepare(`select kop_banner, voet_banner, voettekst from mailopmaak where id = 1`)
-      .first<{ kop_banner: string | null; voet_banner: string | null; voettekst: string | null }>();
-    return { kopBanner: r?.kop_banner ?? null, voetBanner: r?.voet_banner ?? null, voettekst: r?.voettekst ?? null };
-  } catch {
-    return { kopBanner: null, voetBanner: null, voettekst: null };
+  // Eerst met de kolom logo_uit_huisstijl; bestaat die nog niet (migratie nog niet uitgevoerd), dan met de
+  // standaardwaarde 1, zodat een mail nooit zonder banner of logo komt te staan.
+  for (const kolom of ['logo_uit_huisstijl', '1']) {
+    try {
+      const r = await env.DB.prepare(`select kop_banner, voet_banner, voettekst, ${kolom} as logo_uit_huisstijl from mailopmaak where id = 1`)
+        .first<{ kop_banner: string | null; voet_banner: string | null; voettekst: string | null; logo_uit_huisstijl: number | null }>();
+      return {
+        kopBanner: r?.kop_banner ?? null,
+        voetBanner: r?.voet_banner ?? null,
+        voettekst: r?.voettekst ?? null,
+        logoUitHuisstijl: (r?.logo_uit_huisstijl ?? 1) === 1,
+      };
+    } catch {
+      // volgende poging
+    }
   }
+  return { kopBanner: null, voetBanner: null, voettekst: null, logoUitHuisstijl: true };
 }
 
 export const VOETTEKST_VELDEN: SjabloonVeld[] = [
@@ -162,7 +174,10 @@ export function verpakMail(inhoud: string, p: { opmaak: Mailopmaak; organisatie:
     const h = Math.min(l.hoogte ?? MAX_LOGO_HOOGTE, MAX_LOGO_HOOGTE);
     return `<tr><td align="center" style="padding:16px 24px"><img src="${esc(p.basisUrl.replace(/\/$/, '') + l.pad)}" alt="${esc(p.organisatie)}" height="${h}" style="display:block;height:${h}px;width:auto;max-width:100%;border:0"></td></tr>`;
   };
-  const kop = p.opmaak.kopBanner ? `<tr><td>${beeld(p.opmaak.kopBanner, p.organisatie, 600)}</td></tr>` : p.logo ? logoRij(p.logo) : '';
+  // Met het vinkje "afbeelding uit Algemeen > Huisstijl" (standaard aan) gaat het logo van het evenement voor op
+  // de gemeenschappelijke kopbanner. Heeft het evenement geen logo, dan komt de banner alsnog bovenaan.
+  const bannerRij = p.opmaak.kopBanner ? `<tr><td>${beeld(p.opmaak.kopBanner, p.organisatie, 600)}</td></tr>` : '';
+  const kop = p.opmaak.logoUitHuisstijl && p.logo ? logoRij(p.logo) : bannerRij || (p.logo ? logoRij(p.logo) : '');
   // Staat er een banner onderaan, dan loopt die door in de voettekst: wit in plaats van een grijze streep eronder.
   const voetLijn = p.opmaak.voetBanner ? '#ffffff' : '#cfd6df';
   const eigen = p.opmaak.voettekst ? maakHtml(p.opmaak.voettekst, { organisatie: p.organisatie, website }) : '';

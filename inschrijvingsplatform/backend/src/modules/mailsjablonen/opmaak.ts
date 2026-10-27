@@ -43,6 +43,7 @@ export async function opmaak(env: Env) {
     kopBanner: o.kopBanner ? basis + o.kopBanner : null,
     voetBanner: o.voetBanner ? basis + o.voetBanner : null,
     voettekst: o.voettekst ?? '',
+    logoUitHuisstijl: o.logoUitHuisstijl,
     velden: VOETTEKST_VELDEN.map(({ naam, omschrijving }) => ({ naam, omschrijving })),
     banners: BANNERS,
   };
@@ -50,17 +51,29 @@ export async function opmaak(env: Env) {
 
 const zorgVoorRij = (env: Env) => env.DB.prepare(`insert or ignore into mailopmaak (id) values (1)`);
 
-export async function bewaarVoettekst(env: Env, g: Gebruiker, body: any, ip: string | null) {
-  const tekst = typeof body?.voettekst === 'string' ? body.voettekst.replace(/\r\n/g, '\n').trim() : '';
-  if (tekst.length > 2000) throw new ValidatieFout({ voettekst: 'Maximaal 2000 tekens.' });
-  const fouten = controleerSjabloon(tekst, VOETTEKST_DEF);
-  if (fouten.length) throw new ValidatieFout({ voettekst: fouten.join(' ') });
-  await env.DB.batch([
-    zorgVoorRij(env),
-    env.DB.prepare(`update mailopmaak set voettekst = ?, gewijzigd_door = ?, gewijzigd_op = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') where id = 1`)
-      .bind(tekst || null, g.gebruikerId),
-    audit(env, g, 'mailopmaak', '1', 'VOETTEKST', undefined, ip),
-  ]);
+/** Voettekst en/of het vinkje "afbeelding uit Algemeen > Huisstijl"; enkel wat meegestuurd wordt, verandert. */
+export async function bewaarOpmaak(env: Env, g: Gebruiker, body: any, ip: string | null) {
+  const stap = `gewijzigd_door = ?, gewijzigd_op = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`;
+  const stmts: D1PreparedStatement[] = [zorgVoorRij(env)];
+
+  if (typeof body?.voettekst === 'string') {
+    const tekst = body.voettekst.replace(/\r\n/g, '\n').trim();
+    if (tekst.length > 2000) throw new ValidatieFout({ voettekst: 'Maximaal 2000 tekens.' });
+    const fouten = controleerSjabloon(tekst, VOETTEKST_DEF);
+    if (fouten.length) throw new ValidatieFout({ voettekst: fouten.join(' ') });
+    stmts.push(
+      env.DB.prepare(`update mailopmaak set voettekst = ?, ${stap} where id = 1`).bind(tekst || null, g.gebruikerId),
+      audit(env, g, 'mailopmaak', '1', 'VOETTEKST', undefined, ip),
+    );
+  }
+  if (typeof body?.logoUitHuisstijl === 'boolean') {
+    stmts.push(
+      env.DB.prepare(`update mailopmaak set logo_uit_huisstijl = ?, ${stap} where id = 1`).bind(body.logoUitHuisstijl ? 1 : 0, g.gebruikerId),
+      audit(env, g, 'mailopmaak', '1', 'LOGO_UIT_HUISSTIJL', { aan: body.logoUitHuisstijl }, ip),
+    );
+  }
+  if (stmts.length === 1) throw new ValidatieFout({ algemeen: 'Er is niets om te bewaren.' });
+  await env.DB.batch(stmts);
   return { ok: true };
 }
 

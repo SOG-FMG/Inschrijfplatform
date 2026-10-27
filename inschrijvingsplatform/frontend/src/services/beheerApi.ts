@@ -169,6 +169,8 @@ export interface Mailopmaak {
   kopBanner: string | null;
   voetBanner: string | null;
   voettekst: string;
+  /** Bovenaan het logo van het evenement (Algemeen → Huisstijl) in plaats van de banner bovenaan. */
+  logoUitHuisstijl: boolean;
   velden: { naam: string; omschrijving: string }[];
   banners: Record<'kop' | 'voet', { breedte: number; hoogte: number; toon: string }>;
 }
@@ -247,6 +249,8 @@ export const beheerApi = {
 
   mailopmaak: () => call<Mailopmaak>('/api/beheer/mailsjablonen/opmaak'),
   bewaarVoettekst: (voettekst: string) => call<{ ok: true }>('/api/beheer/mailsjablonen/opmaak', { method: 'PATCH', body: { voettekst } }),
+  bewaarLogoUitHuisstijl: (logoUitHuisstijl: boolean) =>
+    call<{ ok: true }>('/api/beheer/mailsjablonen/opmaak', { method: 'PATCH', body: { logoUitHuisstijl } }),
   uploadBanner: (plaats: 'kop' | 'voet', bestand: File) =>
     call<{ ok: true; afmetingen: { breedte: number; hoogte: number } }>(`/api/beheer/mailsjablonen/opmaak/${plaats}`, { method: 'POST', ruw: { data: bestand, type: bestand.type } }),
   verwijderBanner: (plaats: 'kop' | 'voet') => call<{ ok: true }>(`/api/beheer/mailsjablonen/opmaak/${plaats}`, { method: 'DELETE' }),

@@ -248,6 +248,25 @@ function Opmaak() {
       <h2>Opmaak van alle mails</h2>
       <p className="d-klein">Geldt voor elke mail van het platform. Bekijk het resultaat in het voorbeeld van een mailtekst, of stuur er een testmail mee.</p>
       {melding && <Melding soort={melding.soort}>{melding.tekst}</Melding>}
+
+      <div className="d-veld">
+        <label className="d-keuze">
+          <input type="checkbox" checked={o.logoUitHuisstijl} disabled={bezig}
+            onChange={(e) => {
+              const aan = e.target.checked;
+              actie(async () => {
+                await beheerApi.bewaarLogoUitHuisstijl(aan);
+                return aan ? 'Mails gebruiken bovenaan het logo van het evenement.' : 'Mails gebruiken bovenaan de banner.';
+              });
+            }} />
+          Afbeelding uit Instellingen → Algemeen → Huisstijl gebruiken
+        </label>
+        <span className="d-veld__hulp">
+          Aan: bovenaan de mail komt het logo van het evenement waarover de mail gaat, zodat elk evenement zijn eigen
+          huisstijl volgt. Heeft dat evenement geen logo, dan komt de banner hieronder alsnog bovenaan.
+        </span>
+      </div>
+
       {banner('kop', 'Banner bovenaan', o.kopBanner)}
       {banner('voet', 'Banner onderaan', o.voetBanner)}
 

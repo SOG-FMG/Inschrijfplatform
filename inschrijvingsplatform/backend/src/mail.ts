@@ -15,7 +15,7 @@ export interface Mail {
   sjabloon?: { sleutel: string; velden: Velden };
   /** Vaste HTML onder de tekst, ook onder een aangepaste tekst (bv. de QR-code voor de check-in). */
   onderaan?: string;
-  /** Evenement van de mail: zonder eigen banner (Mailteksten) staat het logo van het formulier bovenaan. */
+  /** Evenement van de mail: zijn logo kan bovenaan staan (vinkje Huisstijl in Mailteksten, of geen banner). */
   evenementId?: string | null;
 }
 
@@ -152,9 +152,11 @@ export async function verstuur(env: Env, mail: Mail): Promise<'verzonden' | 'ove
       mail = { ...mail, onderwerp: maakOnderwerp(aangepast.onderwerp, mail.sjabloon.velden), html: maakHtml(aangepast.tekst, mail.sjabloon.velden) };
     }
   }
-  // Banner (of anders het logo van het formulier), voettekst en de vaste regel wie de mail stuurt en waarom.
+  // Banner of het logo van het formulier, voettekst en de vaste regel wie de mail stuurt en waarom.
+  // Het logo halen we op als het vinkje "uit Algemeen > Huisstijl" aanstaat (dan gaat het voor op de banner),
+  // of als er geen banner is (dan is het logo de terugval). Anders blijft die opzoeking achterwege.
   const opmaak = await leesOpmaak(env);
-  const logo = !opmaak.kopBanner && mail.evenementId ? await evenementLogo(env, mail.evenementId) : null;
+  const logo = (opmaak.logoUitHuisstijl || !opmaak.kopBanner) && mail.evenementId ? await evenementLogo(env, mail.evenementId) : null;
   mail = { ...mail, html: verpakMail(mail.html + (mail.onderaan ?? ''), { opmaak, organisatie: installatie(env).organisatie, basisUrl: env.PUBLIC_APP_URL, reden: mail.reden, logo }) };
   if (env.MAIL_PROVIDER === 'webhook') {
     await viaWebhook(env, mail);

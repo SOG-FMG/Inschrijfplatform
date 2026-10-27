@@ -988,7 +988,7 @@ describe('e-mail via de Power Automate-webhook', () => {
     expect(aanroepen).toHaveLength(0);
   });
 
-  test('zonder eigen banner staat het logo van het formulier bovenaan (geen WebP)', async () => {
+  test('bovenaan het logo van het evenement of de banner, volgens het vinkje Huisstijl (geen WebP)', async () => {
     const id = ev.evenementId;
     await sql(`update mailopmaak set kop_banner = null`);
     await env.STORAGE.put(`logos/${id}`, new Uint8Array([0x89, 0x50, 0x4e, 0x47]), { httpMetadata: { contentType: 'image/png' } });
@@ -1008,12 +1008,24 @@ describe('e-mail via de Power Automate-webhook', () => {
     await env.STORAGE.put(`logos/${id}`, new Uint8Array([1]), { httpMetadata: { contentType: 'image/webp' } });
     expect(await mailVoor()).not.toContain('/api/logo/');
 
-    // Een eigen banner (Mailteksten) gaat voor
+    // Het vinkje "afbeelding uit Algemeen > Huisstijl" staat standaard aan: het logo van het evenement gaat voor
+    // op de gemeenschappelijke banner uit Mailteksten.
     await env.STORAGE.put(`logos/${id}`, new Uint8Array([1]), { httpMetadata: { contentType: 'image/png' } });
     await sql(`insert into mailopmaak (id, kop_banner) values (1, '/api/mailbeelden/kop-test') on conflict (id) do update set kop_banner = excluded.kop_banner`);
     html = await mailVoor();
+    expect(html).toContain(`/api/logo/${id}`);
+    expect(html).not.toContain('/api/mailbeelden/kop-test');
+
+    // Vinkje uit: dan gaat de banner van Mailteksten voor.
+    await sql(`update mailopmaak set logo_uit_huisstijl = 0`);
+    html = await mailVoor();
     expect(html).toContain('/api/mailbeelden/kop-test');
     expect(html).not.toContain('/api/logo/');
+
+    // Vinkje aan, maar het evenement heeft geen logo: dan valt de banner alsnog in.
+    await sql(`update mailopmaak set logo_uit_huisstijl = 1`);
+    await sql(`update evenementen set logo = null where evenement_id = ?`, id);
+    expect(await mailVoor()).toContain('/api/mailbeelden/kop-test');
 
     await sql(`update mailopmaak set kop_banner = null`);
     await sql(`update evenementen set logo = null, logo_hoogte = null, kleur_primair = null where evenement_id = ?`, id);

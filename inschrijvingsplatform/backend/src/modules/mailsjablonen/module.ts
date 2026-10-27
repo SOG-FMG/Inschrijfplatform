@@ -4,7 +4,7 @@ import { json, nietGevonden } from '../../kern/http';
 import { installatie } from '../../kern/installatie';
 import { defineModule, type Module } from '../../kern/module';
 import { aangepastSjabloon, controleerSjabloon, leesOpmaak, maakHtml, maakOnderwerp, verpakMail, voorbeeldVelden, type SjabloonDefinitie } from '../../kern/sjablonen';
-import { bewaarBanner, bewaarVoettekst, isPlaats, opmaak, verwijderBanner } from './opmaak';
+import { bewaarBanner, bewaarOpmaak, isPlaats, opmaak, verwijderBanner } from './opmaak';
 import { verstuur } from '../../mail';
 import { ValidatieFout } from '../../validatie';
 
@@ -61,7 +61,7 @@ export default defineModule({
       pad: '/mailsjablonen/opmaak',
       toegang: 'beheer',
       recht: 'mailsjablonen.beheren',
-      handler: async (ctx) => bewaarVoettekst(ctx.env, ctx.gebruiker, await ctx.leesJson(8 * 1024), ctx.ip),
+      handler: async (ctx) => bewaarOpmaak(ctx.env, ctx.gebruiker, await ctx.leesJson(8 * 1024), ctx.ip),
     },
     {
       methode: 'POST',
