@@ -89,9 +89,9 @@ export async function publiekFormulier(env: Env, slug: string) {
   const f = await formulierOpSlug(env, slug);
   if (!f) throw new DbFout('FORMULIER_NIET_GEVONDEN');
   const ev = f.evenement_id
-    ? await env.DB.prepare(`select organisator, logo, logo_hoogte, kleur_primair, kleur_accent from evenementen where evenement_id = ?`)
+    ? await env.DB.prepare(`select organisator, logo, logo_hoogte, icoon, kleur_primair, kleur_accent from evenementen where evenement_id = ?`)
         .bind(f.evenement_id)
-        .first<{ organisator: string | null; logo: string | null; logo_hoogte: number | null; kleur_primair: string | null; kleur_accent: string | null }>()
+        .first<{ organisator: string | null; logo: string | null; logo_hoogte: number | null; icoon: string | null; kleur_primair: string | null; kleur_accent: string | null }>()
     : null;
   return {
     slug: f.slug,
@@ -105,6 +105,7 @@ export async function publiekFormulier(env: Env, slug: string) {
     organisator: ev?.organisator ?? null,
     logo: ev?.logo ?? null,
     logoHoogte: ev?.logo_hoogte ?? null,
+    icoon: ev?.icoon ?? null,
     kleurPrimair: ev?.kleur_primair ?? null,
     kleurAccent: ev?.kleur_accent ?? null,
   };

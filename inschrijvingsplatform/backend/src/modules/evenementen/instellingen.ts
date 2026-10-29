@@ -16,7 +16,7 @@ import { DbFout } from '../../kern/fouten';
  */
 
 export type Soort = 'evenement' | 'doelgroep' | 'dag' | 'dagdeel' | 'tijdsblok' | 'sessie' | 'locatie';
-type VeldType = 'tekst' | 'lang' | 'datum' | 'uur' | 'datumtijd' | 'getal' | 'jaNee' | 'keuze' | 'slug' | 'email' | 'lijst' | 'ref' | 'kleur' | 'logo';
+type VeldType = 'tekst' | 'lang' | 'datum' | 'uur' | 'datumtijd' | 'getal' | 'jaNee' | 'keuze' | 'slug' | 'email' | 'lijst' | 'ref' | 'kleur' | 'logo' | 'icoon';
 
 export interface Veld {
   naam: string;
@@ -85,6 +85,7 @@ export const SCHEMA: Record<Soort, Definitie> = {
       { naam: 'bewaartermijn_dagen', label: 'Bewaartermijn (dagen na het evenement)', type: 'getal', min: 0, verplicht: true, standaard: 30 },
       { naam: 'logo', label: 'Logo', type: 'logo', hulp: 'PNG, JPG of WebP, max. 500 kB. Verschijnt bovenaan het formulier.' },
       { naam: 'logo_hoogte', label: 'Hoogte logo (pixels)', type: 'getal', min: 20, max: 400, hulp: 'Leeg = 135. De breedte past zich automatisch aan.' },
+      { naam: 'icoon', label: 'Pictogram (favicon)', type: 'icoon', hulp: 'PNG, vierkant, minstens 32×32 pixels (bv. 512×512), max. 100 kB. Icoontje in het browsertabblad op dit formulier.' },
       { naam: 'kleur_primair', label: 'Hoofdkleur', type: 'kleur', hulp: 'Knoppen, titels en links. Leeg = standaard blauw.' },
       { naam: 'kleur_accent', label: 'Accentkleur', type: 'kleur', hulp: 'Markeringen en focus. Leeg = standaard.' },
       { naam: 'opmerkingen', label: 'Interne opmerkingen', type: 'lang' },
@@ -329,7 +330,7 @@ async function zetWaardenOm(env: Env, def: Definitie, invoer: Record<string, unk
   const uit: Record<string, unknown> = {};
   const fouten: Record<string, string> = {};
   for (const v of def.velden) {
-    if (v.type === 'logo') continue; // enkel via de uploadroute
+    if (v.type === 'logo' || v.type === 'icoon') continue; // enkel via de uploadroute
     const aanwezig = Object.prototype.hasOwnProperty.call(invoer, v.naam);
     if (!aanwezig && !nieuw) continue; // gedeeltelijke wijziging
     const waarde = aanwezig ? invoer[v.naam] : v.standaard;
@@ -628,6 +629,44 @@ export async function verwijderLogo(env: Env, g: Gebruiker, evenementId: string,
   await env.DB.batch([
     env.DB.prepare(`update evenementen set logo = null where evenement_id = ?`).bind(evenementId),
     audit(env, g, 'evenementen', evenementId, 'LOGO_VERWIJDERD', undefined, ip),
+  ]);
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Pictogram / favicon (R2). Enkel PNG: klein bestand, vierkant, geen SVG (kan scripts bevatten).
+// ---------------------------------------------------------------------------
+const ICOON_MAX = 100 * 1024;
+const ICOON_TYPES: Record<string, number[]> = {
+  'image/png': [0x89, 0x50, 0x4e, 0x47],
+};
+
+export async function bewaarIcoon(env: Env, g: Gebruiker, evenementId: string, request: Request, ip: string | null) {
+  await controleerToegang(env, g, evenementId, true);
+  const type = (request.headers.get('Content-Type') ?? '').split(';')[0].trim().toLowerCase();
+  const fout = (m: string) => new ValidatieFout({ icoon: m });
+  const handtekening = ICOON_TYPES[type];
+  if (!handtekening) throw fout('Kies een PNG-bestand.');
+  if (Number(request.headers.get('Content-Length') ?? 0) > ICOON_MAX) throw fout('Het bestand is groter dan 100 kB.');
+  const data = new Uint8Array(await request.arrayBuffer());
+  if (data.length > ICOON_MAX) throw fout('Het bestand is groter dan 100 kB.');
+  if (data.length < 12 || !handtekening.every((b, i) => data[i] === b)) throw fout('Dit bestand is geen geldige PNG-afbeelding.');
+
+  await env.STORAGE.put(`icoons/${evenementId}`, data, { httpMetadata: { contentType: type } });
+  const icoon = `/api/icoon/${evenementId}?v=${Date.now()}`; // ?v= zodat browsers het nieuwe icoon meteen tonen
+  await env.DB.batch([
+    env.DB.prepare(`update evenementen set icoon = ?, modified_by = ?, modified_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') where evenement_id = ?`).bind(icoon, g.gebruikerId, evenementId),
+    audit(env, g, 'evenementen', evenementId, 'ICOON', { bytes: data.length, type }, ip),
+  ]);
+  return { icoon };
+}
+
+export async function verwijderIcoon(env: Env, g: Gebruiker, evenementId: string, ip: string | null) {
+  await controleerToegang(env, g, evenementId, true);
+  await env.STORAGE.delete(`icoons/${evenementId}`);
+  await env.DB.batch([
+    env.DB.prepare(`update evenementen set icoon = null where evenement_id = ?`).bind(evenementId),
+    audit(env, g, 'evenementen', evenementId, 'ICOON_VERWIJDERD', undefined, ip),
   ]);
   return { ok: true };
 }

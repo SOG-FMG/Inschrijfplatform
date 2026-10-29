@@ -70,8 +70,8 @@ export interface Gemeen {
 
 export const veldVan = (schema: Schema, soort: InstellingSoort, naam: string) => schema[soort].find((v) => v.naam === naam);
 
-/** Velden die via Opslaan meegaan: het logo heeft zijn eigen upload. */
-export const bewaarbaar = (velden: InstellingVeld[]) => velden.filter((v) => v.type !== 'logo');
+/** Velden die via Opslaan meegaan: logo en icoon hebben hun eigen upload. */
+export const bewaarbaar = (velden: InstellingVeld[]) => velden.filter((v) => v.type !== 'logo' && v.type !== 'icoon');
 
 const twee = (n: number) => String(n).padStart(2, '0');
 /** ISO (UTC) → waarde voor <input type="datetime-local"> in de tijdzone van de browser. */
@@ -164,6 +164,9 @@ export function Veld({ v, fout, id, evenementId, onHerlaad, ...rest }: Omit<Invo
   if (v.type === 'logo') {
     return <LogoVeld v={v} logo={rest.waarde ? String(rest.waarde) : null} evenementId={evenementId!} alleenLezen={rest.alleenLezen} onHerlaad={onHerlaad} />;
   }
+  if (v.type === 'icoon') {
+    return <IcoonVeld v={v} icoon={rest.waarde ? String(rest.waarde) : null} evenementId={evenementId!} alleenLezen={rest.alleenLezen} onHerlaad={onHerlaad} />;
+  }
   return (
     <div className={`iv iv--${v.type}${fout ? ' iv--fout' : ''}`}>
       <label htmlFor={id}>
@@ -221,6 +224,62 @@ export function LogoVeld({ v, logo, evenementId, alleenLezen, onHerlaad }: {
             </label>
             {logo && (
               <button type="button" className="d-link d-link--gevaar" disabled={bezig} onClick={() => confirm('Logo verwijderen?') && uitvoeren(() => instellingenApi.verwijderLogo(evenementId))}>
+                Verwijderen
+              </button>
+            )}
+          </span>
+        )}
+      </div>
+      {fout ? <span className="iv__fout">{fout}</span> : v.hulp && <span className="iv__hulp">{v.hulp}</span>}
+    </div>
+  );
+}
+
+/** Pictogram (favicon): net als het logo rechtstreeks uploaden, los van de knop Opslaan. */
+export function IcoonVeld({ v, icoon, evenementId, alleenLezen, onHerlaad }: {
+  v: InstellingVeld;
+  icoon: string | null;
+  evenementId: string;
+  alleenLezen: boolean;
+  onHerlaad: () => void;
+}) {
+  const [fout, setFout] = useState<string | null>(null);
+  const [bezig, setBezig] = useState(false);
+  const uitvoeren = async (werk: () => Promise<unknown>) => {
+    setBezig(true);
+    setFout(null);
+    try {
+      await werk();
+      onHerlaad();
+    } catch (e) {
+      setFout(e instanceof ApiFout ? (e.velden?.icoon ?? e.message) : 'Uploaden mislukt.');
+    } finally {
+      setBezig(false);
+    }
+  };
+  return (
+    <div className="iv iv--logo">
+      <span className="iv__label">{v.label}</span>
+      <div className="iv__logo iv__logo--icoon">
+        {icoon ? <img src={icoon} alt="Huidig pictogram" /> : <span className="iv__geenlogo">Geen pictogram</span>}
+        {!alleenLezen && (
+          <span className="iv__logoknoppen">
+            <label className="d-knop d-knop--secundair d-knop--klein">
+              {bezig ? 'Bezig…' : icoon ? 'Ander pictogram kiezen' : 'Pictogram kiezen'}
+              <input
+                type="file"
+                accept="image/png"
+                hidden
+                disabled={bezig}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = '';
+                  if (f) uitvoeren(() => instellingenApi.uploadIcoon(evenementId, f));
+                }}
+              />
+            </label>
+            {icoon && (
+              <button type="button" className="d-link d-link--gevaar" disabled={bezig} onClick={() => confirm('Pictogram verwijderen?') && uitvoeren(() => instellingenApi.verwijderIcoon(evenementId))}>
                 Verwijderen
               </button>
             )}

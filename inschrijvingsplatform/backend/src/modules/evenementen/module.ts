@@ -2,7 +2,7 @@ import { sha256 } from '../../crypto/versleuteling';
 import { anonimiseerEvenement, anonimiseerVerlopenEvenementen, deelnemerslijst, kenSessieToe, koppelBestaandeDeelnemers, schrijfUit, verplaatsDagdeel, zetKomtNiet } from './beheer';
 import { meldAf, voorinvulling } from './uitnodigingen';
 import { publiekEvenement } from './evenement';
-import { bewaarLogo, instellingen, isSoort, kopieerDagdeel, kopieerSessies, maak, verwijder, verwijderLogo, wijzig, zetDoelgroepMomenten, zetLokaalOpCode } from './instellingen';
+import { bewaarIcoon, bewaarLogo, instellingen, isSoort, kopieerDagdeel, kopieerSessies, maak, verwijder, verwijderIcoon, verwijderLogo, wijzig, zetDoelgroepMomenten, zetLokaalOpCode } from './instellingen';
 import { annulatieGegevens, annuleerViaToken, bevestigingOpnieuw, DubbeleInschrijving, mailGegevens, registratieViaToken, registreer, wijzigKeuzesViaToken } from './registratie';
 import { checkinUrl, leesVersie } from '../../kern/checkin';
 import { basisUrl, qrMailsTeVersturen, stuurEnLog, verstuurQrMails, verwittigNaWijzigingDoorSchool } from './checkin';
@@ -134,6 +134,22 @@ export default defineModule({
         });
       },
     },
+    {
+      methode: 'GET',
+      pad: '/icoon/:id',
+      toegang: 'publiek',
+      async handler({ env, params }) {
+        const obj = await env.STORAGE.get(`icoons/${params.id}`);
+        if (!obj) return nietGevonden();
+        return new Response(obj.body, {
+          headers: {
+            'Content-Type': obj.httpMetadata?.contentType ?? 'application/octet-stream',
+            'Cache-Control': 'public, max-age=300',
+            'Content-Security-Policy': "default-src 'none'",
+          },
+        });
+      },
+    },
     // QR-code uit de bevestigingsmail (kern/checkin.ts). Enkel voor een bestaande check-intoken: geen open QR-generator.
     // Geen rate limit: mailproxy's (Gmail, Outlook) halen afbeeldingen op vanaf gedeelde IP-adressen.
     {
@@ -236,6 +252,18 @@ export default defineModule({
       pad: '/evenementen/:id/logo',
       toegang: 'beheer',
       handler: ({ env, gebruiker, params, ip }) => verwijderLogo(env, gebruiker, params.id, ip),
+    },
+    {
+      methode: 'POST',
+      pad: '/evenementen/:id/icoon',
+      toegang: 'beheer',
+      handler: ({ env, gebruiker, params, request, ip }) => bewaarIcoon(env, gebruiker, params.id, request, ip),
+    },
+    {
+      methode: 'DELETE',
+      pad: '/evenementen/:id/icoon',
+      toegang: 'beheer',
+      handler: ({ env, gebruiker, params, ip }) => verwijderIcoon(env, gebruiker, params.id, ip),
     },
     {
       // De momenten en tijdsblokken van één doelgroep ineens zetten (tabblad Momenten, subtabblad per doelgroep).

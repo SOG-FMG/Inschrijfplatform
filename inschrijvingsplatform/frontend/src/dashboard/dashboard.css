@@ -294,6 +294,7 @@
 .iv__logo img { max-height: 44px; max-width: 160px; background: #fff; border: 1px solid var(--d-rand); border-radius: 3px; padding: 2px; }
 .iv__geenlogo { color: var(--d-zacht); font-style: italic; }
 .iv__logoknoppen { display: flex; gap: 10px; align-items: center; }
+.iv__logo--icoon img { max-height: 32px; max-width: 32px; }
 
 @media (max-width: 560px) {
   .iv--lang, .iv--logo { grid-column: auto; }

@@ -263,7 +263,7 @@ export type InstellingSoort = 'evenement' | 'doelgroep' | 'dag' | 'dagdeel' | 't
 export interface InstellingVeld {
   naam: string;
   label: string;
-  type: 'tekst' | 'lang' | 'datum' | 'uur' | 'datumtijd' | 'getal' | 'jaNee' | 'keuze' | 'slug' | 'email' | 'lijst' | 'ref' | 'kleur' | 'logo';
+  type: 'tekst' | 'lang' | 'datum' | 'uur' | 'datumtijd' | 'getal' | 'jaNee' | 'keuze' | 'slug' | 'email' | 'lijst' | 'ref' | 'kleur' | 'logo' | 'icoon';
   verplicht?: boolean;
   opties?: { waarde: string; label: string }[];
   ref?: 'doelgroep' | 'soort' | 'locatie' | 'contact';
@@ -293,6 +293,9 @@ export const instellingenApi = {
   uploadLogo: (evenementId: string, bestand: File) =>
     call<{ logo: string }>(`/api/beheer/evenementen/${encodeURIComponent(evenementId)}/logo`, { method: 'POST', ruw: { data: bestand, type: bestand.type } }),
   verwijderLogo: (evenementId: string) => call<{ ok: true }>(`/api/beheer/evenementen/${encodeURIComponent(evenementId)}/logo`, { method: 'DELETE' }),
+  uploadIcoon: (evenementId: string, bestand: File) =>
+    call<{ icoon: string }>(`/api/beheer/evenementen/${encodeURIComponent(evenementId)}/icoon`, { method: 'POST', ruw: { data: bestand, type: bestand.type } }),
+  verwijderIcoon: (evenementId: string) => call<{ ok: true }>(`/api/beheer/evenementen/${encodeURIComponent(evenementId)}/icoon`, { method: 'DELETE' }),
 };
 
 export const kopieerApi = {

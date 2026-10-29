@@ -17,3 +17,18 @@ export function zetHuisstijl(primair: string | null | undefined, accent: string 
   if (a) stijl.setProperty('--focus', a);
   else stijl.removeProperty('--focus');
 }
+
+/** Icoontje in het browsertabblad (favicon) van het evenement zetten, of terug weghalen zonder pictogram. */
+export function zetIcoon(pad: string | null | undefined) {
+  let link = document.querySelector<HTMLLinkElement>("link[rel='icon']");
+  if (!pad) {
+    link?.remove();
+    return;
+  }
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = 'icon';
+    document.head.appendChild(link);
+  }
+  link.href = pad;
+}

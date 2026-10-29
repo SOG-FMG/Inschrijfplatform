@@ -37,7 +37,7 @@ const EVENEMENT_GROEPEN: Groep[] = [
   { titel: 'Het evenement', velden: ['titel', 'slug', 'status', 'type_evenement', 'organisator', 'start_datum', 'eind_datum', 'omschrijving'] },
   { titel: 'Inschrijven', velden: ['inschrijving_vanaf', 'inschrijving_tot', 'deelnemer_type', 'max_dagdelen', 'leerjaar_opties', 'voorinschrijving'] },
   { titel: 'Contact, privacy en bewaren', velden: ['contact_email', 'privacy_tekst', 'bewaartermijn_dagen'], dicht: true },
-  { titel: 'Huisstijl op het formulier', velden: ['logo', 'logo_hoogte', 'kleur_primair', 'kleur_accent'], dicht: true },
+  { titel: 'Huisstijl op het formulier', velden: ['logo', 'logo_hoogte', 'icoon', 'kleur_primair', 'kleur_accent'], dicht: true },
   { titel: 'Interne opmerkingen', velden: ['opmerkingen'], dicht: true },
 ];
 

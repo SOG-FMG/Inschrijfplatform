@@ -70,6 +70,7 @@ export interface Evenement {
   bewaartermijnDagen: number;
   logo: string | null;
   logoHoogte?: number | null;
+  icoon?: string | null;
   afbeelding: string | null;
   kleurPrimair?: string | null;
   kleurAccent?: string | null;
@@ -125,6 +126,7 @@ export interface VoorinschrijfFormulier {
   organisator: string | null;
   logo: string | null;
   logoHoogte: number | null;
+  icoon: string | null;
   kleurPrimair: string | null;
   kleurAccent: string | null;
 }

@@ -7,7 +7,7 @@ import { Stappen } from '../components/Stappen';
 import { Turnstile, TURNSTILE_SITEKEY } from '../components/Turnstile';
 import { Keuzerondjes, Tekstveld } from '../components/Velden';
 import { api, isDemo } from '../services/api';
-import { zetHuisstijl } from '../services/huisstijl';
+import { zetHuisstijl, zetIcoon } from '../services/huisstijl';
 import { log } from '../services/logboek';
 import { ApiFout, type Evenement, type Keuze, type Moment, type RegistratieAntwoord, type Tijdsblok, type Voorinvulling } from '../types';
 
@@ -85,6 +85,7 @@ export function InschrijfPagina({ slug }: { slug: string }) {
       const ev = await api.haalEvenement(slug);
       setEvenement(ev);
       zetHuisstijl(ev.kleurPrimair, ev.kleurAccent);
+      zetIcoon(ev.icoon);
       return ev;
     } catch (e) {
       setLaadFout(e instanceof ApiFout ? e.message : 'Het formulier kon niet geladen worden.');

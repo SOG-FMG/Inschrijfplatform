@@ -3,7 +3,7 @@ import { SchoolKiezer } from '../components/SchoolKiezer';
 import { Turnstile, TURNSTILE_SITEKEY } from '../components/Turnstile';
 import { Keuzerondjes, Tekstveld } from '../components/Velden';
 import { api } from '../services/api';
-import { zetHuisstijl } from '../services/huisstijl';
+import { zetHuisstijl, zetIcoon } from '../services/huisstijl';
 import { log } from '../services/logboek';
 import { ApiFout, type VoorinschrijfFormulier } from '../types';
 
@@ -51,6 +51,7 @@ export function VoorinschrijfPagina({ slug }: { slug: string }) {
       .then((f) => {
         setFormulier(f);
         zetHuisstijl(f.kleurPrimair, f.kleurAccent);
+        zetIcoon(f.icoon);
         document.title = f.titel;
       })
       .catch((e) => setLaadFout(e instanceof ApiFout ? e.message : 'Het formulier kon niet geladen worden.'));
