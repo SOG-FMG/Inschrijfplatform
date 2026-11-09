@@ -196,13 +196,8 @@
 .md-moment { padding: 6px 0 6px 2px; border-top: 1px solid var(--d-rand); }
 .md-blokken { margin: 2px 0 0 26px; display: flex; flex-direction: column; gap: 2px; }
 
-/* Versie en commit rechtsonder. Mag nooit een knop bedekken, dus pointer-events uit. */
-.dash__versie {
-  position: fixed; right: 10px; bottom: 6px; margin: 0; z-index: 5;
-  font-size: .75em; color: var(--d-zacht); opacity: .75; pointer-events: none;
-  font-variant-numeric: tabular-nums;
-}
-@media (max-width: 700px) { .dash__versie { display: none; } }
+/* Versie en commit: links uitgelijnd onder Afmelden in de zijbalk. */
+.dash__versie { margin: 0; font-size: .7em; opacity: .6; font-variant-numeric: tabular-nums; }
 
 /* Eén dag, open te klikken op het tabblad Sessies. */
 .it-dag { background: var(--vlak); border: 1px solid var(--d-rand); border-radius: 6px; margin-bottom: 10px; }

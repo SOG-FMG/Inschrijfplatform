@@ -1619,8 +1619,10 @@ describe('mailteksten aanpassen (module mailsjablonen)', () => {
     await Promise.allSettled(wachtend.splice(0));
     const html = mails.find((x) => x.aan === 'opmaak@example.org').html as string;
     expect(html).toContain(`<img src="${o.kopBanner}"`);
-    expect(html).toContain('<strong>Stedelijk Onderwijs Gent</strong> · Voorbeeldstraat 1, 9000 Gent');
-    expect(html).toContain('Deze mail werd verstuurd door Stedelijk Onderwijs Gent via het inschrijvingsplatform');
+    // Niet de naam zelf vastspijkeren: die hoort bij de installatie en kan wijzigen (wrangler.toml, ORGANISATIE_NAAM).
+    const org = env.ORGANISATIE_NAAM;
+    expect(html).toContain(`<strong>${org}</strong> · Voorbeeldstraat 1, 9000 Gent`);
+    expect(html).toContain(`Deze mail werd verstuurd door ${org} via het inschrijvingsplatform`);
     expect(html).toMatch(/Je ontvangt ze omdat je een inschrijving deed voor [^<]+\./);
     expect(html.indexOf('Opmaak')).toBeLessThan(html.indexOf('Je ontvangt ze omdat')); // de inhoud staat boven de voet
 

@@ -176,12 +176,12 @@ Enkel het tabblad *Scholen* wordt gelezen. De structuur van de infodag (lesjes, 
 
 ## Productie
 
-**Meerdere installaties.** Elke organisatie heeft een eigen installatie (`[env.<naam>]` in `backend/wrangler.toml` en `frontend/wrangler.jsonc`); FMG is de standaard ("productie"). Beheer ze met `installaties.ps1` in de hoofdmap:
+**Meerdere installaties.** Elke organisatie heeft een eigen installatie (`[env.<naam>]` in `backend/wrangler.toml` en `frontend/wrangler.jsonc`); FMG is de standaard ("fmg"). Beheer ze met `installaties.ps1` in de hoofdmap:
 
 - `.\installaties.ps1 nieuw test`, het `database_id` invullen in `wrangler.toml`, `.\installaties.ps1 deploy test`, `.\installaties.ps1 geheimen test`
-- `.\installaties.ps1 deploy alle`: migraties en deploy van alle installaties, test eerst, productie als laatste (met bevestiging)
+- `.\installaties.ps1 deploy alle`: migraties en deploy van alle installaties, test eerst, FMG als laatste (met bevestiging)
 
-Een push naar `main` deployt productie automatisch (Workers Builds), maar voert geen migraties uit.
+Een push naar `main` deployt FMG automatisch (Workers Builds), maar voert geen migraties uit.
 
 **Migraties van modules.** Een module zet haar SQL in `backend/src/modules/<id>/migraties/`. `npm run migraties` kopieert nieuwe bestanden in volgorde naar `migrations/`; `npm test` stopt als je dat vergat.
 

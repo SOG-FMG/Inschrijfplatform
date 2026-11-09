@@ -57,7 +57,7 @@ enabled = true
 #   GRAPH_CLIENT_SECRET   stap 14
 [vars]
 # Profiel van deze installatie (src/kern/installatie.ts). Een andere organisatie krijgt een eigen installatie met eigen waarden.
-ORGANISATIE_NAAM = "Stedelijk Onderwijs Gent"
+ORGANISATIE_NAAM = "Middenschool"
 # E-maildomeinen van medewerkers (komma-gescheiden). "*" = elk adres, enkel op uitnodiging. Leeg = niemand kan aanmelden.
 AANMELD_DOMEINEN = "onderwijs.gent.be"
 # Hoe deze organisatie wie een sessie geeft noemt (op het scherm en in mails); intern heet dat 'sessiegever'.
@@ -129,6 +129,49 @@ ALLOWED_ORIGINS = "https://event-test.middenschool.workers.dev"
 PUBLIC_APP_URL = "https://event-test.middenschool.workers.dev"
 HOOFDADMIN_EMAIL = "freinetmiddenschool.automatisatie@onderwijs.gent.be"
 # Geen echte mails vanuit test: enkel loggen.
+MAIL_PROVIDER = "log"
+
+# ---- Wispelberg: eigen database, bestanden, geheimen en beheer ----
+[env.wisp]
+workers_dev = true
+preview_urls = false
+
+[[env.wisp.d1_databases]]
+binding = "DB"
+database_name = "inschrijvingen-db-wisp"
+database_id = "eeb14539-675d-4044-a9b5-0c3694da2674"
+migrations_dir = "migrations"
+
+[[env.wisp.r2_buckets]]
+binding = "STORAGE"
+bucket_name = "inschrijvingen-bestanden-wisp"
+jurisdiction = "eu"
+
+[[env.wisp.ratelimits]]
+name = "RL_REGISTRATIE"
+namespace_id = "1201"
+simple = { limit = 10, period = 60 }
+
+[[env.wisp.ratelimits]]
+name = "RL_MELDING"
+namespace_id = "1202"
+simple = { limit = 5, period = 60 }
+
+[env.wisp.triggers]
+crons = ["15 3 * * *"]
+
+[env.wisp.observability]
+enabled = true
+
+[env.wisp.vars]
+ORGANISATIE_NAAM = "Wispelberg"
+AANMELD_DOMEINEN = "onderwijs.gent.be"
+TERM_SESSIEGEVER = "lesgever"
+TERM_SESSIEGEVERS = "lesgevers"
+MODULES = "evenementen,onderwijs,rapporten,etiketten,meldingen,voorinschrijvingen,mailsjablonen,historiek"
+ALLOWED_ORIGINS = "https://event.wispelberg.workers.dev"
+PUBLIC_APP_URL = "https://event.wispelberg.workers.dev"
+HOOFDADMIN_EMAIL = "wispelberg.ict@onderwijs.gent.be"
 MAIL_PROVIDER = "log"
 
 # ---- sjabloon voor een nieuwe organisatie (kopieer, vervang <naam> en de waarden, haal de # weg) ----

@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nieuwe installatie opzetten</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --kaart: #fff; --tekst: #1d2433; --zacht: #5b6578; --lijn: #dde1e9;
+    --accent: #1f5fbf; --ok: #1a7f4b; --okbg: #e8f5ee; --code: #0f172a; --codetekst: #e2e8f0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #11151c; --kaart: #1a202b; --tekst: #e6e9ef; --zacht: #9aa4b6; --lijn: #2a3242;
+      --accent: #6aa3f0; --ok: #5fcf93; --okbg: #17281f; --code: #0a0d12; --codetekst: #dbe3f0; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--tekst); font: 15px/1.5 system-ui, "Segoe UI", sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { margin: 0 0 4px; font-size: 26px; }
+  .intro { color: var(--zacht); margin: 0 0 20px; }
+  .paneel { background: var(--kaart); border: 1px solid var(--lijn); border-radius: 10px; padding: 16px 18px; margin-bottom: 20px; }
+  .paneel h2 { margin: 0 0 12px; font-size: 16px; }
+  .velden { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px 16px; }
+  label.veld { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--zacht); }
+  label.veld input, label.veld select { font: inherit; color: var(--tekst); background: var(--bg); border: 1px solid var(--lijn); border-radius: 6px; padding: 7px 9px; }
+  label.veld input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  label.veld small { font-size: 12px; }
+  .voortgang { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .balk { flex: 1; height: 8px; background: var(--lijn); border-radius: 4px; overflow: hidden; }
+  .balk > div { height: 100%; width: 0; background: var(--ok); transition: width .25s; }
+  .voortgang button { font: inherit; font-size: 13px; background: none; border: 1px solid var(--lijn); color: var(--zacht); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  .stap { display: grid; grid-template-columns: 56px minmax(180px, 280px) 1fr; gap: 0 18px; background: var(--kaart); border: 1px solid var(--lijn); border-radius: 10px; padding: 14px 18px; margin-bottom: 10px; align-items: start; }
+  .nr { display: flex; align-items: center; gap: 8px; }
+  .nr input { width: 20px; height: 20px; accent-color: var(--ok); cursor: pointer; }
+  .nr span { font-size: 20px; font-weight: 700; color: var(--accent); }
+  .kop { font-weight: 650; font-size: 16px; cursor: pointer; }
+  .kop em { display: block; font-weight: 400; font-style: normal; color: var(--zacht); font-size: 13px; margin-top: 2px; }
+  .details { min-width: 0; }
+  .details p { margin: 0 0 10px; }
+  .details ul { margin: 0 0 10px; padding-left: 20px; }
+  .stap.klaar { background: var(--okbg); border-color: transparent; }
+  .stap.klaar .kop { text-decoration: line-through; color: var(--zacht); }
+  .stap.klaar .kop em { display: none; }
+  .stap.klaar .details { display: none; }
+  .stap.klaar .nr span { color: var(--ok); }
+  .stap.klaar .kop::after { content: "klaar"; margin-left: 8px; font-size: 12px; color: var(--ok); text-decoration: none; display: inline-block; }
+  .code { position: relative; background: var(--code); color: var(--codetekst); border-radius: 8px; margin: 0 0 10px; }
+  .code pre { margin: 0; padding: 12px 70px 12px 14px; overflow-x: auto; font: 13px/1.5 ui-monospace, Consolas, monospace; white-space: pre; }
+  .code button { position: absolute; top: 8px; right: 8px; font: inherit; font-size: 12px; background: #2b3548; color: #e2e8f0; border: 0; border-radius: 5px; padding: 3px 9px; cursor: pointer; }
+  .code .bestand { font-size: 12px; color: #93a0b8; padding: 8px 14px 0; }
+  .let-op { background: #fff7e0; color: #5b4300; border-left: 4px solid #e0a800; padding: 8px 12px; border-radius: 4px; margin: 0 0 10px; }
+  @media (prefers-color-scheme: dark) { .let-op { background: #2d2610; color: #f1dca0; } }
+  @media (max-width: 760px) {
+    .stap { grid-template-columns: 1fr; gap: 6px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Nieuwe installatie opzetten</h1>
+  <p class="intro">Eén installatie = één organisatie met eigen database, bestanden, geheimen en beheerders. Vul hieronder de gegevens in; de code in de stappen past zich aan. Vink een stap af en de uitleg klapt dicht. Je voortgang blijft in deze browser bewaard.</p>
+  <div class="let-op" style="max-width: 1100px;"><b>Zet eerst het subdomein vast</b> (stap 2, in het Cloudflare-dashboard) en vul het hierboven in. Dat subdomein bepaalt het hele adres (bv. <b>event.wispelberg.workers.dev</b>) en dus ook alle code in de stappen daarna. Wijzig je het achteraf, dan moet je de config en de deploy overdoen.</div>
+
+  <section class="paneel">
+    <h2>Gegevens van de nieuwe installatie</h2>
+    <div class="velden">
+      <label class="veld">Korte naam (kleine letters, cijfers, streepje)
+        <input data-v="naam" value="wisp"><small>Wordt het env-label, bv. <b>wisp</b>.</small></label>
+      <label class="veld">Naam van de organisatie
+        <input data-v="org" value="Wispelberg"></label>
+      <label class="veld">Subdomein van het Cloudflare-account
+        <input data-v="sub" value="wispelberg"><small>Het deel vóór .workers.dev. Zet dit eerst vast in Cloudflare (stap 2) — alle code hieronder hangt ervan af.</small></label>
+      <label class="veld">Naam van de frontend-Worker
+        <input data-v="front" value="event"><small>Het deel vóór het subdomein.</small></label>
+      <label class="veld">E-mail hoofdbeheerder
+        <input data-v="mail" value="wispelberg.ict@onderwijs.gent.be"></label>
+      <label class="veld">Toegelaten e-maildomeinen (komma)
+        <input data-v="dom" value="onderwijs.gent.be"></label>
+      <label class="veld">Database-ID (uit stap 4)
+        <input data-v="dbid" value="eeb14539-675d-4044-a9b5-0c3694da2674"></label>
+      <label class="veld">Ratelimit-nummer (uniek per installatie)
+        <input data-v="rl" value="1201" inputmode="numeric"><small>FMG 1001, test 1101, wisp 1201, volgende 1301…</small></label>
+      <label class="veld">Mailverzending
+        <select data-v="provider"><option value="log">uit (enkel loggen)</option><option value="webhook">webhook (echte mails)</option></select></label>
+    </div>
+  </section>
+
+  <div class="voortgang"><div class="balk"><div id="balk"></div></div><span id="teller"></span><button id="reset" type="button">Alles wissen</button></div>
+  <div id="stappen"></div>
+</main>
+
+<script>
+const veld = {};
+document.querySelectorAll('[data-v]').forEach(e => veld[e.dataset.v] = e);
+const w = k => (veld[k].value || '').trim();
+const url = () => `https://${w('front')}.${w('sub')}.workers.dev`;
+const naam = () => w('naam') || '<naam>';
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+function code(tekst, bestand) {
+  return `<div class="code">${bestand ? `<div class="bestand">${esc(bestand)}</div>` : ''}<pre>${esc(tekst)}</pre><button type="button" data-kopie>Kopieer</button></div>`;
+}
+
+// Elke stap: titel, ondertitel, details als functie (zodat ingevulde waarden meekomen).
+const stappen = [
+  { t: 'Eigenaarschap en toegang', o: 'Het account is van de organisatie zelf',
+    d: () => `<p>De organisatie is eigenaar van haar Cloudflare-account en haar gegevens. Deel nooit wachtwoorden of geheimen; geef enkel de nodige toegang.</p>
+      <ul><li>GitHub-account voor de code: bij voorkeur een eigen fork of repository van de organisatie.</li>
+      <li>Cloudflare: meld je aan met dat GitHub-account of met het e-mailadres van de organisatie.</li></ul>` },
+  { t: 'Cloudflare-account klaarzetten', o: 'Aanmelden, R2 activeren, subdomein kiezen',
+    d: () => `<ul><li>Ga naar <b>dash.cloudflare.com</b> en kies linksboven het juiste account (${esc(w('org'))}).</li>
+      <li>Activeer <b>R2 Object Storage</b>. Er is een bankkaart nodig; binnen de gratis limieten wordt niets aangerekend.</li>
+      <li>Kies bij <b>Workers &amp; Pages</b> het <b>workers.dev-subdomein</b>: <b>${esc(w('sub'))}</b>. Dat bepaalt het adres <b>${esc(url())}</b>.</li></ul>
+      <div class="let-op">Deze keuze is maar eenmaal te zetten en geldt voor alle Workers in dit account. Vul het hierboven in bij “Subdomein” zodra het vaststaat: de stappen hierna bouwen er allemaal op verder.</div>` },
+  { t: 'Inloggen met Wrangler en controleren', o: 'Zeker zijn dat je in het juiste account werkt',
+    d: () => `<p>Open de terminal in VS Code, in de map van de repository.</p>
+      ${code('cd inschrijvingsplatform\\backend\nnpx wrangler login\nnpx wrangler whoami', 'PowerShell')}
+      <div class="let-op">Controleer bij <b>whoami</b> dat het account van ${esc(w('org'))} getoond wordt. Deploy niets zolang je dat niet zeker weet.</div>` },
+  { t: 'Database en bestandsopslag aanmaken', o: `installaties.ps1 nieuw ${naam()}`,
+    d: () => `${code(`cd ..\\..\n.\\installaties.ps1 nieuw ${naam()}`, 'PowerShell, in de hoofdmap van de repository')}
+      <p>Dit maakt aan (EU): D1-database <b>inschrijvingen-db-${esc(naam())}</b> en R2-bucket <b>inschrijvingen-bestanden-${esc(naam())}</b>.</p>
+      <p>Noteer het <b>database_id</b> dat getoond wordt en vul het hierboven in bij “Database-ID”.</p>` },
+  { t: 'Backend-config invullen', o: 'backend\\wrangler.toml',
+    d: () => { const n = naam(), r = parseInt(w('rl'), 10) || 0; return `<p>Plak onderaan het bestand, boven het sjabloon:</p>` + code(
+`# ---- ${w('org')}: eigen database, bestanden, geheimen en beheer ----
+[env.${n}]
+workers_dev = true
+preview_urls = false
+
+[[env.${n}.d1_databases]]
+binding = "DB"
+database_name = "inschrijvingen-db-${n}"
+database_id = "${w('dbid')}"
+migrations_dir = "migrations"
+
+[[env.${n}.r2_buckets]]
+binding = "STORAGE"
+bucket_name = "inschrijvingen-bestanden-${n}"
+jurisdiction = "eu"
+
+[[env.${n}.ratelimits]]
+name = "RL_REGISTRATIE"
+namespace_id = "${r}"
+simple = { limit = 10, period = 60 }
+
+[[env.${n}.ratelimits]]
+name = "RL_MELDING"
+namespace_id = "${r + 1}"
+simple = { limit = 5, period = 60 }
+
+[env.${n}.triggers]
+crons = ["15 3 * * *"]
+
+[env.${n}.observability]
+enabled = true
+
+[env.${n}.vars]
+ORGANISATIE_NAAM = "${w('org')}"
+AANMELD_DOMEINEN = "${w('dom')}"
+TERM_SESSIEGEVER = "lesgever"
+TERM_SESSIEGEVERS = "lesgevers"
+MODULES = "evenementen,onderwijs,rapporten,etiketten,meldingen,voorinschrijvingen,mailsjablonen,historiek"
+ALLOWED_ORIGINS = "${url()}"
+PUBLIC_APP_URL = "${url()}"
+HOOFDADMIN_EMAIL = "${w('mail')}"
+MAIL_PROVIDER = "${w('provider')}"`, 'inschrijvingsplatform/backend/wrangler.toml'); } },
+  { t: 'Frontend-config invullen', o: 'frontend\\wrangler.jsonc',
+    d: () => `<p>Voeg onder <b>"env"</b> een blok toe (komma na het vorige blok niet vergeten):</p>` + code(
+`"${naam()}": {
+  "name": "${w('front')}",
+  "services": [{ "binding": "API", "service": "inschrijvingsplatform-api-${naam()}" }]
+}`, 'inschrijvingsplatform/frontend/wrangler.jsonc') +
+      `<div class="let-op">Zonder de regel <b>"name"</b> heet de Worker <b>${esc(w('front'))}-${esc(naam())}</b> en wordt het adres ${esc(w('front'))}-${esc(naam())}.${esc(w('sub'))}.workers.dev.</div>` },
+  { t: 'Optioneel: eigen frontend-instellingen', o: 'frontend\\.env.' + naam(),
+    d: () => `<p>Eigen waarden voor de frontend-build (Vite leest dit bestand met <b>--mode ${esc(naam())}</b>):</p>` + code(
+`VITE_API_URL=/
+VITE_TURNSTILE_SITEKEY=<sitekey van de eigen Turnstile-widget>
+VITE_STANDAARD_EVENEMENT=<slug van het standaardevenement>`, 'inschrijvingsplatform/frontend/.env.' + naam()) + `<p>Zonder Turnstile mag je dit bestand laten voor later.</p>` },
+  { t: 'Deployen', o: `installaties.ps1 deploy ${naam()}`,
+    d: () => `${code(`.\\installaties.ps1 deploy ${naam()}`, 'PowerShell, in de hoofdmap van de repository')}
+      <p>Dit voert de migraties uit en deployt eerst de API, daarna de frontend.</p>
+      <div class="let-op">Gebruik nooit <b>deploy alle</b> voor een enkele organisatie: dat raakt ook de andere installaties.</div>` },
+  { t: 'Geheimen zetten', o: `installaties.ps1 geheimen ${naam()}`,
+    d: () => `${code(`.\\installaties.ps1 geheimen ${naam()}`, 'PowerShell')}
+      <div class="let-op"><b>Bewaar ENCRYPTION_KEY en HOOFDADMIN_SETUP_CODE nu in een wachtwoordkluis.</b> Ze worden niet opnieuw getoond. Is de sleutel kwijt, dan zijn de persoonsgegevens onleesbaar.</div>` },
+  { t: 'Adres controleren', o: 'ALLOWED_ORIGINS en PUBLIC_APP_URL',
+    d: () => `<p>Open <b>${esc(url())}</b>. Werkt het adres, dan klopt de config. Zo niet, dan verschilt het adres van wat in <b>ALLOWED_ORIGINS</b> en <b>PUBLIC_APP_URL</b> staat: pas beide aan en deploy opnieuw.</p>
+      ${code(`.\\installaties.ps1 deploy ${naam()}`, 'PowerShell')}` },
+  { t: 'Eerste beheerder activeren', o: 'Hoofdbeheerder aanmelden',
+    d: () => `<ul><li>Ga naar <b>${esc(url())}/dashboard/activeren</b>.</li>
+      <li>Log in met <b>${esc(w('mail'))}</b> en de HOOFDADMIN_SETUP_CODE uit stap 9.</li>
+      <li>Nodig daarna medewerkers uit (enkel adressen met ${esc(w('dom'))}).</li></ul>` },
+  { t: 'Mail en botbescherming (later)', o: 'Eigen accounts en geheimen',
+    d: () => `<p>Begin gerust met mail uit (<b>MAIL_PROVIDER = "log"</b>). Richt mail en Turnstile pas in met de eigen accounts van de organisatie:</p>
+      ${code(`cd inschrijvingsplatform\\backend\nnpx wrangler secret put TURNSTILE_SECRET --env ${naam()}\nnpx wrangler secret put MAIL_WEBHOOK_URL --env ${naam()}\nnpx wrangler secret put MAIL_WEBHOOK_SLEUTEL --env ${naam()}`, 'PowerShell')}
+      <p>Zet voor mail ook <b>MAIL_PROVIDER = "webhook"</b> in de config en deploy opnieuw. Voeg bij Turnstile het domein <b>${esc(w('front'))}.${esc(w('sub'))}.workers.dev</b> toe.</p>` },
+  { t: 'Testen vóór echt gebruik', o: 'Inschrijven, links, rollen, rapporten',
+    d: () => `<ul><li>Inschrijven, bevestigings- en beheerlinks.</li><li>Rollen en rechten.</li><li>Rapporten en anonimisering.</li>
+      <li>E-maildomeinbeperking (${esc(w('dom'))}).</li>
+      <li>Privacytekst, bewaartermijn en verwerkersafspraken afstemmen met de verantwoordelijken.</li></ul>` },
+];
+
+const bewaarSleutel = 'nieuwe-installatie-v1';
+let staat = { klaar: {}, velden: {} };
+try { staat = Object.assign(staat, JSON.parse(localStorage.getItem(bewaarSleutel)) || {}); } catch (e) {}
+const bewaar = () => { try { localStorage.setItem(bewaarSleutel, JSON.stringify(staat)); } catch (e) {} };
+for (const k in staat.velden) if (veld[k]) veld[k].value = staat.velden[k];
+
+const lijst = document.getElementById('stappen');
+function teken() {
+  lijst.innerHTML = stappen.map((s, i) => `
+    <section class="stap ${staat.klaar[i] ? 'klaar' : ''}" data-i="${i}">
+      <div class="nr"><input type="checkbox" ${staat.klaar[i] ? 'checked' : ''} aria-label="Stap ${i + 1} afgevinkt"><span>${i + 1}</span></div>
+      <div class="kop">${esc(s.t)}<em>${esc(s.o)}</em></div>
+      <div class="details">${s.d()}</div>
+    </section>`).join('');
+  const aantal = stappen.filter((_, i) => staat.klaar[i]).length;
+  document.getElementById('balk').style.width = (aantal / stappen.length * 100) + '%';
+  document.getElementById('teller').textContent = `${aantal} van ${stappen.length} klaar`;
+}
+
+lijst.addEventListener('change', e => {
+  if (e.target.type !== 'checkbox') return;
+  staat.klaar[e.target.closest('.stap').dataset.i] = e.target.checked;
+  bewaar(); teken();
+});
+lijst.addEventListener('click', e => {
+  if (e.target.matches('[data-kopie]')) {
+    const tekst = e.target.parentElement.querySelector('pre').textContent;
+    navigator.clipboard.writeText(tekst).then(() => { e.target.textContent = 'Gekopieerd'; setTimeout(() => e.target.textContent = 'Kopieer', 1200); });
+  } else if (e.target.closest('.kop')) {
+    const s = e.target.closest('.stap'); // klik op de titel: afvinken of terugopenen
+    s.querySelector('input').click();
+  }
+});
+document.querySelectorAll('[data-v]').forEach(e => e.addEventListener('input', () => {
+  staat.velden[e.dataset.v] = e.value; bewaar(); teken();
+}));
+document.getElementById('reset').addEventListener('click', () => { staat.klaar = {}; bewaar(); teken(); });
+teken();
+</script>
+</body>
+</html>

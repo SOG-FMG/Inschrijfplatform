@@ -18,6 +18,11 @@
   "env": {
     "test": {
       "services": [{ "binding": "API", "service": "inschrijvingsplatform-api-test" }]
+    },
+    "wisp": {
+      // Eigen account met subdomein "wispelberg": zo wordt het adres event.wispelberg.workers.dev (zonder deze regel: event-wisp.wispelberg.workers.dev).
+      "name": "event",
+      "services": [{ "binding": "API", "service": "inschrijvingsplatform-api-wisp" }]
     }
   }
 }

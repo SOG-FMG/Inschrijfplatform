@@ -4,12 +4,16 @@
 #     .\installaties.ps1 lijst                 toont de installaties uit backend\wrangler.toml
 #     .\installaties.ps1 nieuw <naam>          maakt D1 en R2 aan voor een nieuwe installatie
 #     .\installaties.ps1 geheimen <naam>       zet ENCRYPTION_KEY en HOOFDADMIN_SETUP_CODE (eenmalig, na de eerste deploy)
-#     .\installaties.ps1 deploy <naam>         migreert en deployt een installatie (productie: enkel migraties en API)
-#     .\installaties.ps1 deploy alle           eerst test, dan de andere, productie (FMG) als laatste
+#     .\installaties.ps1 deploy <naam>         migreert en deployt een installatie (fmg: enkel migraties en API)
+#     .\installaties.ps1 deploy alle           eerst test, dan de andere, fmg als laatste
 #
-# "productie" is de installatie van FMG (de waarden bovenaan wrangler.toml, zonder --env).
-# Een push naar main deployt productie ook automatisch (Workers Builds), maar voert GEEN migraties uit.
+# "fmg" is de installatie van FMG (de waarden bovenaan wrangler.toml, zonder --env).
+# Een push naar main deployt fmg ook automatisch (Workers Builds), maar voert GEEN migraties uit.
 # Bevat een versie een migratie? Gebruik dan dit script, of voer de migratie uit voor je pusht.
+#
+# Bij deploy/geheimen wordt gecontroleerd of je met het juiste Cloudflare-account aangemeld bent
+# (HOOFDADMIN_EMAIL van de installatie vs. npx wrangler whoami). Klopt dat niet: eerst
+# npx wrangler login met het juiste account, anders vraagt het script een bevestiging.
 #
 # Opmerking: dit bestand bevat bewust geen accenten, zodat het in elke PowerShell werkt.
 
@@ -33,11 +37,11 @@ function Vraag-JaNee($vraag) {
     return $a -in @('j', 'ja', 'y', 'yes')
 }
 
-# Installaties = productie + elke [env.<naam>] in backend\wrangler.toml.
+# Installaties = fmg + elke [env.<naam>] in backend\wrangler.toml.
 function Installaties {
     $toml = Get-Content -LiteralPath (Join-Path $Backend 'wrangler.toml')
     $envs = @($toml | ForEach-Object { if ($_ -match '^\[env\.([a-z0-9-]+)\]\s*$') { $Matches[1] } })
-    return @('productie') + $envs
+    return @('fmg') + $envs
 }
 
 # Voert een commando uit in een map; stopt bij een fout.
@@ -51,28 +55,60 @@ function Voer-Uit($map, $commando) {
     finally { Pop-Location }
 }
 
-function EnvVlag($naam) { if ($naam -eq 'productie') { return '' } else { return " --env $naam" } }
+function EnvVlag($naam) { if ($naam -eq 'fmg') { return '' } else { return " --env $naam" } }
+
+# Het stuk van wrangler.toml van deze installatie: voor 'fmg' alles bovenaan (voor de eerste [env.]),
+# anders van [env.<naam>] tot de volgende installatie. Commentaarregels (bv. het sjabloon onderaan) tellen niet mee.
+function Installatie-Blok($naam) {
+    $toml = (Get-Content -LiteralPath (Join-Path $Backend 'wrangler.toml') | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
+    if ($naam -eq 'fmg') { return ($toml -split "\n\[env\.", 2)[0] }
+    return (($toml -split "\[env\.$naam\]", 2)[1] -split "\n\[env\.(?!$naam[.\]])", 2)[0]
+}
 
 function Controleer-Naam($naam) {
     if (-not $naam) { Stop-Hier 'Geef een naam op, bv.: .\installaties.ps1 deploy test' }
     if ($naam -notin (Installaties)) { Stop-Hier "Onbekende installatie '$naam'. Bekend: $((Installaties) -join ', '). Voeg ze eerst toe in backend\wrangler.toml (sjabloon onderaan)." }
-    if ($naam -eq 'productie') { return }
-    # Het blok van deze installatie: van [env.<naam>] tot de volgende andere installatie.
-    # Commentaarregels (bv. het sjabloon onderaan) tellen niet mee.
-    $toml = (Get-Content -LiteralPath (Join-Path $Backend 'wrangler.toml') | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
-    $blok = (($toml -split "\[env\.$naam\]", 2)[1] -split "\n\[env\.(?!$naam[.\]])", 2)[0]
-    if ($blok -match 'VUL-IN-NA-AANMAKEN') { Stop-Hier "In wrangler.toml staat voor '$naam' nog geen database_id. Voer eerst uit: .\installaties.ps1 nieuw $naam" }
+    if ($naam -eq 'fmg') { return }
+    if ((Installatie-Blok $naam) -match 'VUL-IN-NA-AANMAKEN') { Stop-Hier "In wrangler.toml staat voor '$naam' nog geen database_id. Voer eerst uit: .\installaties.ps1 nieuw $naam" }
+}
+
+# E-mailadres waarmee Wrangler nu is aangemeld. Werkt met een OAuth-login (npx wrangler login); met een
+# API-token (CLOUDFLARE_API_TOKEN) toont whoami geen e-mailadres en geeft dit $null.
+function Aangemeld-Email {
+    $uitvoer = & cmd.exe /c "npx wrangler whoami 2>&1" | Out-String
+    if ($uitvoer -match 'associated with the email (\S+)') { return $Matches[1].TrimEnd('.') }
+    return $null
+}
+
+# Voorkomt dat een deploy, migratie of secret in het verkeerde Cloudflare-account belandt: vergelijkt het
+# aangemelde e-mailadres met HOOFDADMIN_EMAIL van deze installatie in wrangler.toml (elke installatie
+# hoort bij het Cloudflare-account van haar eigen hoofdbeheerder). Geen HOOFDADMIN_EMAIL gevonden, of
+# whoami geeft geen e-mailadres: niets om tegen te vergelijken, dus stilletjes verdergaan.
+function Controleer-Account($naam) {
+    if ((Installatie-Blok $naam) -notmatch 'HOOFDADMIN_EMAIL\s*=\s*"([^"]+)"') { return }
+    $verwacht = $Matches[1]
+    $huidig = Aangemeld-Email
+    if (-not $huidig) { return }
+    if ($huidig.ToLower() -ne $verwacht.ToLower()) {
+        Toon-Let-Op "Aangemeld als '$huidig', maar '$naam' hoort bij het Cloudflare-account van '$verwacht'."
+        Write-Host '  Meld je aan met het juiste account: cd inschrijvingsplatform\backend ; npx wrangler login'
+        if (-not (Vraag-JaNee 'Toch doorgaan?')) { exit 0 }
+    }
+    else {
+        Toon-Ok "Aangemeld als $huidig (juiste account voor '$naam')."
+    }
 }
 
 function Deploy($naam) {
     Toon-Kop "Deploy: $naam"
+    Controleer-Account $naam
     $vlag = EnvVlag $naam
     Voer-Uit $Backend 'node tools/migraties.mjs --controleer'
     Voer-Uit $Backend "npx wrangler d1 migrations apply DB --remote$vlag"
     Voer-Uit $Backend "npx wrangler deploy$vlag"
-    if ($naam -eq 'productie') {
-        # De build-variabelen van productie (o.a. de Turnstile-sitekey) staan in het Cloudflare-dashboard; een lokale bouw zou ze missen.
-        Toon-Let-Op 'Frontend van productie: wordt door Cloudflare gebouwd bij een push naar main (of Deployments > Retry).'
+    if ($naam -eq 'fmg') {
+        # De build-variabelen van fmg (o.a. de Turnstile-sitekey) staan in het Cloudflare-dashboard; een lokale bouw zou ze missen.
+        Toon-Let-Op 'Frontend van fmg: wordt door Cloudflare gebouwd bij een push naar main (of Deployments > Retry).'
     }
     else {
         # Lokaal bouwen met de API achter dezelfde hostnaam. Eigen waarden per installatie (bv. VITE_STANDAARD_EVENEMENT,
@@ -92,7 +128,7 @@ switch ($Opdracht) {
     }
 
     'nieuw' {
-        if (-not $Naam -or $Naam -eq 'productie' -or $Naam -notmatch '^[a-z0-9-]+$') { Stop-Hier 'Geef een naam in kleine letters, bv.: .\installaties.ps1 nieuw meulestede' }
+        if (-not $Naam -or $Naam -eq 'fmg' -or $Naam -notmatch '^[a-z0-9-]+$') { Stop-Hier 'Geef een naam in kleine letters, bv.: .\installaties.ps1 nieuw meulestede' }
         Toon-Kop "Nieuwe installatie: $Naam"
         Write-Host "Dit maakt in je Cloudflare-account aan: D1-database inschrijvingen-db-$Naam (jurisdictie EU) en R2-bucket inschrijvingen-bestanden-$Naam (EU)."
         if (-not (Vraag-JaNee 'Doorgaan?')) { exit 0 }
@@ -109,6 +145,7 @@ switch ($Opdracht) {
 
     'geheimen' {
         Controleer-Naam $Naam
+        Controleer-Account $Naam
         Toon-Kop "Geheimen: $Naam"
         Toon-Let-Op 'ENCRYPTION_KEY versleutelt alle persoonsgegevens. Kwijt = gegevens onleesbaar. Overschrijven maakt bestaande gegevens onleesbaar.'
         if (-not (Vraag-JaNee "Nieuwe ENCRYPTION_KEY en HOOFDADMIN_SETUP_CODE zetten voor '$Naam'?")) { exit 0 }
@@ -139,17 +176,17 @@ switch ($Opdracht) {
 
     'deploy' {
         if ($Naam -eq 'alle') {
-            $lijst = @(Installaties | Where-Object { $_ -eq 'test' }) + @(Installaties | Where-Object { $_ -notin @('test', 'productie') }) + @('productie')
+            $lijst = @(Installaties | Where-Object { $_ -eq 'test' }) + @(Installaties | Where-Object { $_ -notin @('test', 'fmg') }) + @('fmg')
             Write-Host "Volgorde: $($lijst -join ' -> ')"
             foreach ($i in $lijst) {
                 Controleer-Naam $i
-                if ($i -eq 'productie' -and -not (Vraag-JaNee 'Alles hierboven gelukt. Nu productie (FMG) bijwerken?')) { exit 0 }
+                if ($i -eq 'fmg' -and -not (Vraag-JaNee 'Alles hierboven gelukt. Nu FMG bijwerken?')) { exit 0 }
                 Deploy $i
             }
         }
         else {
             Controleer-Naam $Naam
-            if ($Naam -eq 'productie' -and -not (Vraag-JaNee 'Productie (FMG) bijwerken?')) { exit 0 }
+            if ($Naam -eq 'fmg' -and -not (Vraag-JaNee 'FMG bijwerken?')) { exit 0 }
             Deploy $Naam
         }
     }

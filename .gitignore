@@ -9,3 +9,10 @@ Bronnen instructie/
 *.xls
 *.csv
 *.docx
+
+# Omgevingsbestanden: VITE_*-waarden per installatie, en .dev.vars met de geheimen voor wrangler dev.
+# Nooit in de repository: commit.ps1 houdt ze al tegen, maar een gewone `git add -A` niet.
+.env
+.env.*
+.dev.vars
+!.env.example

@@ -99,13 +99,13 @@ export function Dashboard() {
           <span>{ROLNAAM[profiel.rol]}</span>
           {!profiel.passkeys.length && !profiel.heeftAuthenticator && <Link href="/dashboard/account" className="dash__waarschuwing">Beveiliging instellen</Link>}
           <button type="button" className="d-link" onClick={afmelden}>Afmelden</button>
+          {/* Versie en commit van deze build: handig als iemand een probleem meldt ("welke versie zie je?"). */}
+          <p className="dash__versie" title="Versie van het platform, de commit waaruit het gebouwd is, en de builddatum">
+            v{__APP_VERSIE__}
+          </p>
         </div>
       </aside>
       <main className="dash__inhoud">{inhoud}</main>
-      {/* Versie en commit van deze build: handig als iemand een probleem meldt ("welke versie zie je?"). */}
-      <p className="dash__versie" title="Versie van het platform, de commit waaruit het gebouwd is, en de builddatum">
-        v{__APP_VERSIE__}
-      </p>
     </div>
   );
 }
