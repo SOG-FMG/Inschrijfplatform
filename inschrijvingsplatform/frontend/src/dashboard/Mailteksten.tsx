@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { beheerApi, type Mailopmaak, type Mailsjabloon } from '../services/beheerApi';
+import { ApiFout } from '../types';
 import { datumTijd, foutTekst, Melding } from './ui';
 
 /**
@@ -8,16 +9,24 @@ import { datumTijd, foutTekst, Melding } from './ui';
  * {{#veld}}…{{/veld}} = enkel als ingevuld (zie backend/src/kern/sjablonen.ts).
  */
 const OPMAAK = '__opmaak';
+// Een link van elders (bv. "Uitnodiging versturen" bij Voorinschrijvingen) kan rechtstreeks naar een sjabloon
+// wijzen via het adres, bv. /dashboard/mailteksten#uitnodiging. Blijft ook staan na herladen.
+const beginGekozen = () => location.hash.replace('#', '') || null;
 
 export function Mailteksten() {
   const [lijst, setLijst] = useState<Mailsjabloon[] | null>(null);
-  const [gekozen, setGekozen] = useState<string | null>(null);
+  const [gekozen, setGekozenRuw] = useState<string | null>(beginGekozen);
   const [fout, setFout] = useState<string | null>(null);
+
+  const kies = (s: string | null) => {
+    setGekozenRuw(s);
+    history.replaceState(null, '', s ? `${location.pathname}#${s}` : location.pathname);
+  };
 
   const laad = useCallback(() => {
     beheerApi.mailsjablonen().then((l) => {
       setLijst(l);
-      setGekozen((g) => g ?? l[0]?.sleutel ?? null);
+      setGekozenRuw((g) => (g === OPMAAK || l.some((s) => s.sleutel === g) ? g : l[0]?.sleutel ?? null));
     }).catch((e) => setFout(foutTekst(e)));
   }, []);
   useEffect(laad, [laad]);
@@ -35,13 +44,13 @@ export function Mailteksten() {
       {!lijst ? <p>Laden…</p> : (
         <div className="mt-raster">
           <nav className="d-kaart mt-lijst" aria-label="Mails">
-            <button type="button" className={`mt-keuze${gekozen === OPMAAK ? ' actief' : ''}`} aria-current={gekozen === OPMAAK} onClick={() => setGekozen(OPMAAK)}>
+            <button type="button" className={`mt-keuze${gekozen === OPMAAK ? ' actief' : ''}`} aria-current={gekozen === OPMAAK} onClick={() => kies(OPMAAK)}>
               <strong>Opmaak van alle mails</strong>
               <span className="d-klein">Banners bovenaan en onderaan, voettekst</span>
             </button>
             {lijst.map((s) => (
               <button key={s.sleutel} type="button" className={`mt-keuze${s.sleutel === gekozen ? ' actief' : ''}`} aria-current={s.sleutel === gekozen}
-                onClick={() => setGekozen(s.sleutel)}>
+                onClick={() => kies(s.sleutel)}>
                 <strong>{s.naam}</strong>
                 <span className="d-klein">{s.aangepast ? 'Aangepast' : 'Standaardtekst'} · {s.module}</span>
               </button>
@@ -53,6 +62,23 @@ export function Mailteksten() {
       )}
     </>
   );
+}
+
+/** Een regel "  - tekst": elke twee voorloopspaties is één niveau dieper (zie backend/src/kern/sjablonen.ts). */
+export const LIJSTREGEL = /^( *)-\s*(.*)$/;
+
+export function zetLijst(regel: string, aan: boolean): string {
+  const m = LIJSTREGEL.exec(regel);
+  if (aan) return m ? regel : `- ${regel}`;
+  return m ? m[1] + m[2] : regel;
+}
+
+/** Werkt enkel op een lijstregel; een gewone regel blijft ongewijzigd. */
+export function zetInspring(regel: string, delta: number): string {
+  const m = LIJSTREGEL.exec(regel);
+  if (!m) return regel;
+  const niveau = Math.max(0, m[1].length / 2 + delta);
+  return `${'  '.repeat(niveau)}- ${m[2]}`;
 }
 
 function Editor({ sjabloon, naVerandering }: { sjabloon: Mailsjabloon; naVerandering: () => void }) {
@@ -87,6 +113,46 @@ function Editor({ sjabloon, naVerandering }: { sjabloon: Mailsjabloon; naVerande
       el?.focus();
       el?.setSelectionRange(van + invoer.length, van + invoer.length);
     });
+  }
+
+  /** Vet om de selectie in de tekst (**...**); zonder selectie komt de cursor tussen de sterretjes. */
+  function vet() {
+    const el = tekstRef.current;
+    const [van, tot] = el ? [el.selectionStart ?? tekst.length, el.selectionEnd ?? tekst.length] : [tekst.length, tekst.length];
+    const nieuw = `${tekst.slice(0, van)}**${tekst.slice(van, tot)}**${tekst.slice(tot)}`;
+    setTekst(nieuw);
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(van + 2, tot + 2);
+    });
+  }
+
+  /** Past fn toe op de volledige regels die de selectie raakt, en herstelt nadien ongeveer dezelfde selectie. */
+  function regelsBewerken(fn: (regels: string[]) => string[]) {
+    const el = tekstRef.current;
+    const [van0, tot0] = el ? [el.selectionStart ?? tekst.length, el.selectionEnd ?? tekst.length] : [tekst.length, tekst.length];
+    const start = tekst.lastIndexOf('\n', van0 - 1) + 1;
+    const eindIdx = tekst.indexOf('\n', Math.max(tot0 - 1, van0));
+    const eind = eindIdx === -1 ? tekst.length : eindIdx;
+    const nieuwStuk = fn(tekst.slice(start, eind).split('\n')).join('\n');
+    const nieuw = tekst.slice(0, start) + nieuwStuk + tekst.slice(eind);
+    setTekst(nieuw);
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(start, start + nieuwStuk.length);
+    });
+  }
+
+  /** Lijst aan- of uitzetten voor elke geraakte regel; staan ze al allemaal in een lijst, dan gaat ze er net af. */
+  function lijst() {
+    regelsBewerken((regels) => {
+      const aan = !regels.every((r) => !r.trim() || LIJSTREGEL.test(r));
+      return regels.map((r) => (r.trim() ? zetLijst(r, aan) : r));
+    });
+  }
+
+  function inspring(delta: number) {
+    regelsBewerken((regels) => regels.map((r) => zetInspring(r, delta)));
   }
 
   const actie = async (werk: () => Promise<string>) => {
@@ -128,10 +194,16 @@ function Editor({ sjabloon, naVerandering }: { sjabloon: Mailsjabloon; naVerande
 
       <div className="d-veld">
         <label htmlFor="mt-tekst">Tekst</label>
+        <div className="mt-velden" role="group" aria-label="Opmaak">
+          <button type="button" className="mt-veldknop" title="Vet (**tekst**)" onClick={vet}><strong>Vet</strong></button>
+          <button type="button" className="mt-veldknop" title="Lijst (- tekst)" onClick={lijst}>Lijst</button>
+          <button type="button" className="mt-veldknop" title="Inspringen: lijst een niveau dieper" onClick={() => inspring(1)}>Inspringen →</button>
+          <button type="button" className="mt-veldknop" title="Inspringen ongedaan maken" onClick={() => inspring(-1)}>← Inspringen</button>
+        </div>
         <textarea id="mt-tekst" ref={tekstRef} value={tekst} rows={16} className="mt-tekst"
           onFocus={() => (laatsteVeld.current = 'tekst')} onChange={(e) => setTekst(e.target.value)} />
         <span className="d-veld__hulp">
-          Lege regel = nieuwe alinea · **vet** · {'{{#veld}}…{{/veld}}'} enkel als het veld ingevuld is · {'{{^veld}}…{{/veld}}'} enkel als het leeg is
+          Lege regel = nieuwe alinea · **vet** · - lijst (twee spaties inspringen per niveau) · {'{{#veld}}…{{/veld}}'} enkel als het veld ingevuld is · {'{{^veld}}…{{/veld}}'} enkel als het leeg is
         </span>
       </div>
       {fouten.length > 0 && <Melding soort="fout">{fouten.join(' ')}</Melding>}
@@ -152,10 +224,19 @@ function Editor({ sjabloon, naVerandering }: { sjabloon: Mailsjabloon; naVerande
         <button type="button" className="d-knop d-knop--secundair" disabled={bezig || fouten.length > 0}
           onClick={() => actie(async () => {
             const r = await beheerApi.testSjabloon(sjabloon.sleutel, onderwerp, tekst);
-            if (!r.ok) throw new Error(r.fout);
+            if (!r.ok) throw new ApiFout('MAILFOUT', `Versturen mislukt (${r.provider}): ${r.fout}`);
             return `Testmail verstuurd naar ${r.aan}, met verzonnen gegevens.`;
           }).catch(() => undefined)}>
           Testmail naar mezelf
+        </button>
+        <button type="button" className="d-knop d-knop--secundair" disabled={bezig || fouten.length > 0 || !sjabloon.heeftSteekproef}
+          title={sjabloon.heeftSteekproef ? 'Tot 10 willekeurige, echte inschrijvingen, allemaal naar jezelf' : 'Voor dit sjabloon is geen steekproef van echte gegevens beschikbaar'}
+          onClick={() => actie(async () => {
+            const r = await beheerApi.ruimTestSjabloon(sjabloon.sleutel, onderwerp, tekst);
+            if (!r.ok) throw new ApiFout('MAILFOUT', r.verzonden ? `${r.verzonden}/${r.totaal} verstuurd, de rest mislukt (${r.provider}): ${r.fout}` : (r.fout ?? 'Versturen mislukt.'));
+            return `${r.verzonden} testmail(s) met echte gegevens verstuurd naar ${r.aan}.`;
+          }).catch(() => undefined)}>
+          Ruime test ({sjabloon.heeftSteekproef ? '10 echte gegevens' : 'niet beschikbaar'})
         </button>
         {gewijzigd && <button type="button" className="d-knop d-knop--secundair" onClick={() => { setOnderwerp(huidig.onderwerp); setTekst(huidig.tekst); }}>Wijzigingen ongedaan maken</button>}
         {sjabloon.aangepast && (

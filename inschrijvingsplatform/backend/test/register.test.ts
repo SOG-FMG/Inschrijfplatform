@@ -24,8 +24,8 @@ describe('de modules in deze code', () => {
   });
 
   test('de dagelijkse taken komen van de actieve modules, die van de kern als laatste', () => {
-    expect(maakRegister(ALLE_MODULES).taken.map((t) => t.module.id)).toEqual(['evenementen', 'evenementen', 'meldingen', 'voorinschrijvingen', 'kern', 'kern']);
-    expect(maakRegister(ALLE_MODULES, 'evenementen').taken.map((t) => t.module.id)).toEqual(['evenementen', 'evenementen', 'kern', 'kern']);
+    expect(maakRegister(ALLE_MODULES).taken.map((t) => t.module.id)).toEqual(['evenementen', 'evenementen', 'evenementen', 'meldingen', 'voorinschrijvingen', 'kern', 'kern']);
+    expect(maakRegister(ALLE_MODULES, 'evenementen').taken.map((t) => t.module.id)).toEqual(['evenementen', 'evenementen', 'evenementen', 'kern', 'kern']);
   });
 
   test('een module zonder haar afhankelijkheid wordt geweigerd', () => {
@@ -68,7 +68,7 @@ describe('rechten', () => {
 
   test('rechtenVan geeft enkel rechten van actieve modules', () => {
     expect(r.rechtenVan(gebruiker('platformbeheerder'))).toEqual([
-      'kern.mail.testen', 'kern.gebruikers.beheren', 'kern.contacten.bekijken', 'kern.contacten.toevoegen', 'evenementen.aanmaken', 'evenementen.sessiegevers.beheren', 'evenementen.inchecken',
+      'kern.mail.testen', 'kern.gebruikers.beheren', 'kern.contacten.bekijken', 'kern.contacten.toevoegen', 'evenementen.aanmaken', 'evenementen.sessiegevers.beheren', 'evenementen.locaties.beheren', 'evenementen.inchecken',
       'evenementen.sessie_inzien', 'evenementen.lesje_wijzigen', 'evenementen.overboeken', 'evenementen.overzicht_aanwezigen',
       'meldingen.beheren', 'voorinschrijvingen.beheren', 'mailsjablonen.beheren', 'historiek.bekijken', 'historiek.importeren',
     ]);

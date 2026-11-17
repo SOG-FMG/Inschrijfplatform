@@ -116,6 +116,7 @@ export default defineModule({
             velden: s.velden.map(({ naam, omschrijving }) => ({ naam, omschrijving })),
             standaard: s.standaard,
             aangepast: aangepast.get(s.sleutel) ?? null,
+            heeftSteekproef: !!s.steekproef,
           })),
         );
       },
@@ -193,8 +194,36 @@ export default defineModule({
           });
           return json({ ok: true, aan: ctx.gebruiker.email });
         } catch (e) {
-          return json({ ok: false, fout: String(e instanceof Error ? e.message : e).slice(0, 200) });
+          return json({ ok: false, provider: ctx.env.MAIL_PROVIDER ?? 'log', fout: String(e instanceof Error ? e.message : e).slice(0, 200) });
         }
+      },
+    },
+    {
+      // Ruime test: tot 10 echte inschrijvingen, allemaal naar jezelf (nooit naar de echte ouder).
+      methode: 'POST',
+      pad: '/mailsjablonen/:sleutel:woord/ruimetest',
+      toegang: 'beheer',
+      recht: 'mailsjablonen.beheren',
+      async handler(ctx) {
+        const { def } = zoek(ctx.modules, ctx.params.sleutel);
+        if (!def.steekproef) return json({ ok: false, fout: 'Voor dit sjabloon is geen steekproef van echte gegevens beschikbaar.' });
+        const { onderwerp, tekst } = leesSjabloon(await ctx.leesJson(32 * 1024), def);
+        const steekproef = await def.steekproef(ctx.env, 10);
+        if (!steekproef.length) return json({ ok: false, fout: 'Geen gegevens gevonden om een steekproef uit te trekken.' });
+        const uitslagen = await Promise.allSettled(
+          steekproef.map((velden) =>
+            verstuur(ctx.env, {
+              aan: ctx.gebruiker.email, type: 'test', reden: maakOnderwerp(def.reden, velden),
+              onderwerp: `[Ruime test] ${maakOnderwerp(onderwerp, velden)}`, html: maakHtml(tekst, velden),
+            }),
+          ),
+        );
+        const mislukt = uitslagen.find((u) => u.status === 'rejected') as PromiseRejectedResult | undefined;
+        return json({
+          ok: !mislukt, verzonden: uitslagen.filter((u) => u.status === 'fulfilled').length, totaal: steekproef.length,
+          aan: ctx.gebruiker.email, provider: ctx.env.MAIL_PROVIDER ?? 'log',
+          fout: mislukt ? String(mislukt.reason instanceof Error ? mislukt.reason.message : mislukt.reason).slice(0, 200) : undefined,
+        });
       },
     },
   ],

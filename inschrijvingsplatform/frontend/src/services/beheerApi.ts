@@ -183,6 +183,8 @@ export interface Mailsjabloon {
   velden: { naam: string; omschrijving: string }[];
   standaard: { onderwerp: string; tekst: string };
   aangepast: { onderwerp: string; tekst: string; gewijzigdOp: string; gewijzigdDoor: string | null } | null;
+  /** Of "Ruime test" (echte gegevens, enkel naar jezelf) beschikbaar is voor dit sjabloon. */
+  heeftSteekproef: boolean;
 }
 
 export const post = <T>(pad: string, body: unknown = {}) => call<T>(pad, { method: 'POST', body });
@@ -245,7 +247,9 @@ export const beheerApi = {
   voorbeeldSjabloon: (sleutel: string, onderwerp: string, tekst: string) =>
     post<{ onderwerp: string; html: string; fouten: { onderwerp: string[]; tekst: string[] } }>(`/api/beheer/mailsjablonen/${sleutel}/voorbeeld`, { onderwerp, tekst }),
   testSjabloon: (sleutel: string, onderwerp: string, tekst: string) =>
-    post<{ ok: boolean; aan?: string; fout?: string }>(`/api/beheer/mailsjablonen/${sleutel}/test`, { onderwerp, tekst }),
+    post<{ ok: boolean; aan?: string; provider?: string; fout?: string }>(`/api/beheer/mailsjablonen/${sleutel}/test`, { onderwerp, tekst }),
+  ruimTestSjabloon: (sleutel: string, onderwerp: string, tekst: string) =>
+    post<{ ok: boolean; verzonden?: number; totaal?: number; aan?: string; provider?: string; fout?: string }>(`/api/beheer/mailsjablonen/${sleutel}/ruimetest`, { onderwerp, tekst }),
 
   mailopmaak: () => call<Mailopmaak>('/api/beheer/mailsjablonen/opmaak'),
   bewaarVoettekst: (voettekst: string) => call<{ ok: true }>('/api/beheer/mailsjablonen/opmaak', { method: 'PATCH', body: { voettekst } }),

@@ -5,8 +5,10 @@ import { execSync } from 'node:child_process';
 import { rmSync } from 'node:fs';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { getPlatformProxy } from 'wrangler';
+import { versleutel } from '../src/crypto/versleuteling';
 import worker from '../src/index';
 import { verstuurHerinneringen } from '../src/modules/evenementen/herinneringen';
+import { steekproefBevestiging } from '../src/modules/evenementen/mails';
 import type { Env } from '../src/types';
 
 const SLUG = 'fmg-infodagen-2027';
@@ -2086,5 +2088,37 @@ describe('contactenlijst', () => {
     await sql(`update gebruikers set rol_id = (select rol_id from rollen where code = 'organisator') where email = ?`, PLATFORM);
     expect((await api('GET', '/api/beheer/contacten')).status).toBe(403);
     await sql(`update gebruikers set rol_id = (select rol_id from rollen where code = 'platformbeheerder') where email = ?`, PLATFORM);
+  });
+});
+
+describe('"Ruime test": steekproef van echte inschrijvingen voor de bevestigingsmail', () => {
+  test('geeft echte naam, evenement en momenten terug, nooit een werkende beheerlink', async () => {
+    const evenementId = crypto.randomUUID();
+    const dagId = crypto.randomUUID();
+    const dagdeelId = crypto.randomUUID();
+    const deelnemerId = crypto.randomUUID();
+    await sql(
+      `insert into evenementen (evenement_id, slug, titel, type_evenement, start_datum, eind_datum) values (?, ?, ?, 'Infodag', '2027-01-01', '2027-01-01')`,
+      evenementId, `proef-steekproef-${evenementId.slice(0, 8)}`, 'Proef Steekproef',
+    );
+    await sql(`insert into evenement_dagen (dag_id, evenement_id, naam, datum, start_uur, eind_uur) values (?, ?, 'Zaterdag', '2027-01-01', '09:00', '12:00')`, dagId, evenementId);
+    await sql(`insert into dagdelen (dagdeel_id, dag_id, naam, start_uur, eind_uur) values (?, ?, 'Voormiddag', '09:00', '12:00')`, dagdeelId, dagId);
+    await sql(
+      `insert into deelnemers (deelnemer_id, evenement_id, voornaam_enc, privacy_akkoord_op) values (?, ?, ?, ?)`,
+      deelnemerId, evenementId, await versleutel(env, 'Steekproefkind'), new Date().toISOString(),
+    );
+    await sql(
+      `insert into inschrijvingen (inschrijving_id, deelnemer_id, evenement_id, dag_id, dagdeel_id) values (?, ?, ?, ?, ?)`,
+      crypto.randomUUID(), deelnemerId, evenementId, dagId, dagdeelId,
+    );
+
+    const steekproef = await steekproefBevestiging(env, 500); // ruim genoeg om zeker ons eigen deelnemer op te vissen
+    const velden = steekproef.find((v) => v.referentie === deelnemerId.replace(/-/g, '').slice(0, 8).toUpperCase());
+    expect(velden).toBeTruthy();
+    expect(velden!.voornaam).toBe('Steekproefkind'); // echt, niet verzonnen
+    expect(velden!.evenement).toBe('Proef Steekproef');
+    expect(velden!.momenten).toMatchObject({ html: expect.stringContaining('Zaterdag') });
+    // Nooit een werkende link naar deze (of een andere) echte inschrijving.
+    expect((velden!.beheerlink as { html: string }).html).not.toContain('/beheer/');
   });
 });

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { beheerApi, historiekApi, type EvenementKort, type ImportRij, type ImportStatistiek, type Profiel, type UitnodigingOverzicht } from '../services/beheerApi';
 import { decodeer, herkenDatumvorm, leesCsv, leesDatum, splitsNaam, stelKoppelingVoor, VELDEN, type Datumvorm, type Koppeling } from './import/importlogica';
 import { KinderenNakijken, maakSchoolKeuzes, ScholenKoppelen, schoolVan, useScholen, type PersoonNakijk, type SchoolKeuze } from './import/Koppelen';
-import { datumTijd, foutTekst, Invoer, Melding } from './ui';
+import { datumTijd, foutTekst, Invoer, Link, Melding } from './ui';
 import { VoorinschrijfFormulieren } from './VoorinschrijfFormulieren';
 
 /**
@@ -169,7 +169,9 @@ function Uitnodigen({ importId, evenementen }: { importId: string; evenementen: 
           {open.map((e) => <option key={e.id} value={e.id}>{e.titel}</option>)}
         </select>
         <button type="button" className="d-knop" disabled={!!bezig || !overzicht?.nogNietIngeschreven} onClick={() => verstuur('uitnodiging')}>Uitnodiging versturen</button>
+        <Link href="/dashboard/mailteksten#uitnodiging" className="d-klein">Bekijk deze mail</Link>
         <button type="button" className="d-knop d-knop--secundair" disabled={!!bezig || !overzicht?.verstuurd} onClick={() => verstuur('herinnering')}>Herinnering versturen</button>
+        <Link href="/dashboard/mailteksten#herinnering" className="d-klein">Bekijk deze mail</Link>
         {bezig && <span className="d-klein" role="status">{bezig}</span>}
       </div>
       {melding && <Melding soort={melding.soort}>{melding.tekst}</Melding>}

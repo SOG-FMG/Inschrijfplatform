@@ -1,0 +1,125 @@
+https://onderwijsstadgent.sharepoint.com/:u:/s/CelICT/EeaFiUx5lWpIubbgWBaQ8qgBQNd40Gn_qBg2D9eOfudofw?e=UiKwXq&download=1
+
+VITE_API_URL=/
+VITE_TURNSTILE_SITEKEY=0x4AAAAAAFeQZXyTz9JuM7sY
+VITE_STANDAARD_EVENEMENT=fmg-infodagen-2027
+
+
+
+✅ Wat je in VS Code moet doen
+3. Wrangler config aanpassen
+Open je projectmap in VS Code. Je hebt waarschijnlijk aparte wrangler.jsonc bestanden per Worker (of één met environments). Pas deze aan:
+
+Frontend (prod) — name wordt event, service binding wijst naar nieuwe API-naam:
+
+{
+  "name": "event",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-09-30",
+  "workers_dev": true,
+  "services": [
+    { "binding": "API", "service": "event-api" }
+  ]
+}
+Frontend (test) — name wordt event-test:
+
+{
+  "name": "event-test",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-09-30",
+  "workers_dev": true,
+  "services": [
+    { "binding": "API", "service": "event-api-test" }
+  ]
+}
+API (prod) — name wordt event-api, twee vars veranderen:
+
+{
+  "name": "event-api",
+  "main": "./src/index.ts",
+  "compatibility_date": "2026-09-30",
+  "vars": {
+    "ALLOWED_ORIGINS": "https://event.middenschool.workers.dev",
+    "PUBLIC_APP_URL": "https://event.middenschool.workers.dev",
+    "AANMELD_DOMEINEN": "onderwijs.gent.be",
+    "HOOFDADMIN_EMAIL": "freinetmiddenschool.automatisatie@onderwijs.gent.be",
+    "MAIL_PROVIDER": "webhook",
+    "MODULES": "evenementen,onderwijs,rapporten,etiketten,meldingen,voorinschrijvingen,mailsjablonen,historiek",
+    "ORGANISATIE_NAAM": "Stedelijk Onderwijs Gent",
+    "TERM_SESSIEGEVER": "lesgever",
+    "TERM_SESSIEGEVERS": "lesgevers"
+  },
+  "d1_databases": [{ "binding": "DB", "database_id": "969a47be-e8d6-4705-807a-c34b205f90cd" }],
+  "r2_buckets": [{ "binding": "STORAGE", "bucket_name": "inschrijvingen-bestanden" }],
+  "ratelimits": [
+    { "binding": "RL_MELDING", "namespace_id": "1002", "limit": 5, "period": 60 },
+    { "binding": "RL_REGISTRATIE", "namespace_id": "1001", "limit": 10, "period": 60 }
+  ]
+}
+API (test) — name wordt event-api-test, twee vars veranderen:
+
+{
+  "name": "event-api-test",
+  "main": "./src/index.ts",
+  "compatibility_date": "2026-09-30",
+  "vars": {
+    "ALLOWED_ORIGINS": "https://event-test.middenschool.workers.dev",
+    "PUBLIC_APP_URL": "https://event-test.middenschool.workers.dev",
+    "AANMELD_DOMEINEN": "onderwijs.gent.be",
+    "HOOFDADMIN_EMAIL": "freinetmiddenschool.automatisatie@onderwijs.gent.be",
+    "MAIL_PROVIDER": "log",
+    "MODULES": "evenementen,onderwijs,rapporten,etiketten,meldingen,voorinschrijvingen,mailsjablonen,historiek",
+    "ORGANISATIE_NAAM": "Testinstallatie",
+    "TERM_SESSIEGEVER": "lesgever",
+    "TERM_SESSIEGEVERS": "lesgevers"
+  },
+  "d1_databases": [{ "binding": "DB", "database_id": "203fb0ec-2009-49ab-90be-22c8f4788baf" }],
+  "r2_buckets": [{ "binding": "STORAGE", "bucket_name": "inschrijvingen-bestanden-test" }],
+  "ratelimits": [
+    { "binding": "RL_MELDING", "namespace_id": "1102", "limit": 5, "period": 60 },
+    { "binding": "RL_REGISTRATIE", "namespace_id": "1101", "limit": 10, "period": 60 }
+  ]
+}
+4. Deployen (VS Code terminal — Ctrl+`)
+# Stap 1: API Workers eerst (zodat service bindings bestaan)
+npx wrangler deploy --config wrangler.event-api.jsonc
+npx wrangler deploy --config wrangler.event-api-test.jsonc
+
+# Stap 2: Secrets overzetten naar nieuwe API Workers
+npx wrangler secret put TURNSTILE_SECRET --config wrangler.event-api.jsonc
+npx wrangler secret put ENCRYPTION_KEY --config wrangler.event-api.jsonc
+npx wrangler secret put HOOFDADMIN_SETUP_CODE --config wrangler.event-api.jsonc
+npx wrangler secret put MAIL_WEBHOOK_SLEUTEL --config wrangler.event-api.jsonc
+npx wrangler secret put MAIL_WEBHOOK_URL --config wrangler.event-api.jsonc
+
+npx wrangler secret put ENCRYPTION_KEY --config wrangler.event-api-test.jsonc
+npx wrangler secret put HOOFDADMIN_SETUP_CODE --config wrangler.event-api-test.jsonc
+
+# Stap 3: Frontend Workers deployen
+npx wrangler deploy --config wrangler.event.jsonc
+npx wrangler deploy --config wrangler.event-test.jsonc
+5. Passkeys — code controle
+In je API code, zoek waar de rpId voor passkeys bepaald wordt. Als het hardcoded staat:
+
+rpID: "fmg-inschrijfplatform.freinetmiddenschool-automatisatie.workers.dev"
+verander dit naar:
+
+rpID: "event.middenschool.workers.dev"
+Als het dynamisch is (bijv. new URL(env.PUBLIC_APP_URL).hostname), dan gebeurt dit automatisch mee met de PUBLIC_APP_URL wijziging`
+
+⚠️ Bestaande passkeys werken niet meer op het nieuwe domein. Gebruikers moeten opnieuw registreren.
+
+6. Oude Workers verwijderen (na controle!)
+npx wrangler delete --name fmg-inschrijfplatform
+npx wrangler delete --name fmg-inschrijfplatform-test
+npx wrangler delete --name inschrijvingsplatform-api
+npx wrangler delete --name inschrijvingsplatform-api-test
+Volgorde samengeva`
+Dashboard: subdomein → fmg
+Dashboard: Turnstile widget domeinen → event.middenschool.workers.dev + event-test.middenschool.workers.dev
+VS Code: wrangler configs aanpassen (namen + ALLOWED_ORIGINS + PUBLIC_APP_URL)
+VS Code: API Workers deployen → secrets instellen → frontend Workers deployen
+VS Code: passkey rpId in code controleren
+Testen op event.middenschool.workers.dev en event-test.middenschool.workers.dev
+Oude Workers verwijderen
+Wil je dat ik je help met een specifieke stap, of heb je vragen over het aanpassen van de wrangler config?

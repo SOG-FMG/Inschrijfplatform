@@ -8,6 +8,7 @@ import type { Env } from '../types';
  * Opmaak van een sjabloon (gewone tekst, geen HTML):
  *   lege regel            nieuwe alinea
  *   **vet**               vet
+ *   - item                lijst (elke regel van de alinea moet met "- " beginnen); twee spaties ervoor = één niveau dieper
  *   {{veld}}              waarde van het veld (tekst wordt veilig gemaakt; blokken zoals een lijst met links blijven)
  *   {{#veld}}…{{/veld}}   enkel als het veld ingevuld is      {{^veld}}…{{/veld}}  enkel als het leeg is
  */
@@ -34,6 +35,13 @@ export interface SjabloonDefinitie {
    * bevatten, bv. "je een inschrijving deed voor {{evenement}}". Niet aan te passen door beheerders.
    */
   reden: string;
+  /**
+   * Tot 10 steekproeven met echte gegevens (i.p.v. verzonnen) voor de knop "Ruime test" bij Mailteksten. Enkel
+   * de inhoud (naam, momenten, keuzes, …) is echt; actielinks en de QR-code blijven een voorbeeldwaarde, zodat
+   * een testmail nooit een werkende persoonlijke link naar iemand anders' inschrijving bevat. Geen functie: de
+   * knop staat uit voor dit sjabloon.
+   */
+  steekproef?: (env: Env, aantal: number) => Promise<Velden[]>;
 }
 
 export const esc = (s: unknown) =>
@@ -55,6 +63,29 @@ function secties(tekst: string, velden: Velden): string {
 
 const waarde = (v: Veldwaarde) => (typeof v === 'object' && v ? v.html : esc(v));
 
+/** Tekst binnen een regel: velden invullen, dan vet. In die volgorde, zodat **{{veld}}** ook werkt. */
+const inlineHtml = (tekst: string, velden: Velden) =>
+  esc(tekst)
+    .replace(/\{\{(\w+)\}\}/g, (_, naam: string) => waarde(velden[naam]))
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+/** Een regel "  - tekst": elke twee voorloopspaties is één niveau dieper. */
+const LIJSTREGEL = /^( *)-\s+(.*)$/;
+
+/** Geneste <ul>: de eerste regel staat altijd op het bovenste niveau, elke volgende maximaal één niveau dieper dan de vorige. */
+function lijstHtml(regels: string[], velden: Velden): string {
+  let html = '';
+  let vorige = -1;
+  for (const regel of regels) {
+    const [, inspringen, inhoud] = LIJSTREGEL.exec(regel)!;
+    const diepte = Math.max(0, Math.min(Math.floor(inspringen.length / 2), vorige + 1));
+    html += diepte > vorige ? '<ul>'.repeat(diepte - vorige) : '</li>' + '</ul></li>'.repeat(vorige - diepte);
+    html += `<li>${inlineHtml(inhoud, velden)}`;
+    vorige = diepte;
+  }
+  return html + '</li>' + '</ul>'.repeat(vorige + 1);
+}
+
 /** Sjabloontekst → HTML voor de mail. */
 export function maakHtml(tekst: string, velden: Velden): string {
   return secties(tekst.replace(/\r\n/g, '\n'), velden)
@@ -65,11 +96,9 @@ export function maakHtml(tekst: string, velden: Velden): string {
       // Een alinea die enkel uit één blokveld bestaat (lijst, tabel): zonder <p> eromheen.
       const alleen = /^\{\{(\w+)\}\}$/.exec(alinea);
       if (alleen && typeof velden[alleen[1]] === 'object') return waarde(velden[alleen[1]]);
-      const html = esc(alinea)
-        .replace(/\{\{(\w+)\}\}/g, (_, naam: string) => waarde(velden[naam]))
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\n/g, '<br>');
-      return `<p>${html}</p>`;
+      const regels = alinea.split('\n');
+      if (regels.every((r) => LIJSTREGEL.test(r))) return lijstHtml(regels, velden);
+      return `<p>${regels.map((r) => inlineHtml(r, velden)).join('<br>')}</p>`;
     })
     .join('\n');
 }

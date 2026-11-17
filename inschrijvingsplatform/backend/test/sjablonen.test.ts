@@ -18,6 +18,16 @@ describe('opmaak', () => {
     expect(maakHtml('Dag **{{naam}}**,\nwelkom.\n\nTot dan!', { naam: 'Lotte' })).toBe('<p>Dag <strong>Lotte</strong>,<br>welkom.</p>\n<p>Tot dan!</p>');
   });
 
+  test('lijst: "- " per regel, twee spaties inspringen is één niveau dieper', () => {
+    expect(maakHtml('- een\n- twee', {})).toBe('<ul><li>een</li><li>twee</li></ul>');
+    expect(maakHtml('- een\n  - diep\n- twee', {})).toBe('<ul><li>een<ul><li>diep</li></ul></li><li>twee</li></ul>');
+    // De eerste regel staat altijd op niveau 0, ook al begint ze ingesprongen (anders geen geldige HTML).
+    expect(maakHtml('  - een', {})).toBe('<ul><li>een</li></ul>');
+    // Velden en vet werken ook in een lijst; een regel zonder "- " is geen lijst maar een gewone alinea.
+    expect(maakHtml('- **{{naam}}**\n- gewoon', { naam: 'Lotte' })).toBe('<ul><li><strong>Lotte</strong></li><li>gewoon</li></ul>');
+    expect(maakHtml('- een\ntwee', {})).toBe('<p>- een<br>twee</p>');
+  });
+
   test('tekst wordt veilig gemaakt, ook in velden; blokken blijven HTML', () => {
     const html = maakHtml('<b>{{naam}}</b>\n\n{{lijst}}\n\nKlik {{link}}.', { naam: '<script>', lijst: { html: '<ul><li>a</li></ul>' }, link: { html: '<a href="x">hier</a>' } });
     expect(html).toBe('<p>&lt;b&gt;&lt;script&gt;&lt;/b&gt;</p>\n<ul><li>a</li></ul>\n<p>Klik <a href="x">hier</a>.</p>');
@@ -58,7 +68,7 @@ describe('de sjablonen van alle modules', () => {
   const alle = ALLE_MODULES.flatMap((m) => m.mailsjablonen ?? []);
 
   test('er zijn sjablonen, met unieke sleutels', () => {
-    expect(alle.map((s) => s.sleutel).sort()).toEqual(['aanmeldcode', 'annulatie', 'bevestiging', 'herinnering', 'klaslijst', 'qrcode', 'schoolwijziging', 'sessiegever', 'uitnodiging', 'voorinschrijving', 'wijziging']);
+    expect(alle.map((s) => s.sleutel).sort()).toEqual(['aanmeldcode', 'annulatie', 'bevestiging', 'herinnering', 'herinnering_deelnemer', 'klaslijst', 'qrcode', 'schoolwijziging', 'sessiegever', 'uitnodiging', 'voorinschrijving', 'wijziging']);
   });
 
   test.each(alle.map((s) => [s.sleutel, s] as const))('%s: standaardtekst gebruikt enkel bestaande velden en geeft een volledige mail', (_, s) => {

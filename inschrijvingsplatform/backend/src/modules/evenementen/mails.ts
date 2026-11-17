@@ -1,7 +1,9 @@
+import { ontsleutel } from '../../crypto/versleuteling';
 import { checkinSectieHtml, type Checkin } from '../../kern/checkin';
 import { esc, type SjabloonDefinitie, type Velden } from '../../kern/sjablonen';
 import { mailVolgensSjabloon, type Mail } from '../../mail';
-import type { Keuze, Moment } from '../../types';
+import type { Env, Keuze, Moment } from '../../types';
+import { referentie } from './capaciteit';
 
 /**
  * De mails van de module evenementen, als sjablonen (zie kern/sjablonen.ts). Beheerders passen de tekst aan in
@@ -46,6 +48,7 @@ export const SJABLONEN: SjabloonDefinitie[] = [
       { naam: 'beheerlink', omschrijving: 'Persoonlijke link om te bekijken, wijzigen of annuleren', voorbeeld: link('https://inschrijven.example/beheer/…', 'deze persoonlijke link') },
       V.contactEmail,
     ],
+    steekproef: steekproefBevestiging,
     standaard: {
       onderwerp: 'Bevestiging inschrijving {{evenement}} ({{referentie}})',
       tekst: `Beste,
@@ -301,6 +304,49 @@ export function bevestigingsmail(
     beheerlink: link(beheerUrl, 'deze persoonlijke link'), contactEmail: mailto(r.contactEmail),
   };
   return metQr(mailVolgensSjabloon(sjabloon('bevestiging'), velden, { aan, type: 'bevestiging', referentie: r.referentie }), checkin);
+}
+
+/**
+ * Tot `aantal` willekeurige, echte inschrijvingen (naam, evenement, momenten, keuzes) voor de knop "Ruime test"
+ * bij Mailteksten. Beheerlink en contactadres blijven een voorbeeldwaarde: een testmail bevat nooit een werkende
+ * persoonlijke link naar iemand anders' inschrijving.
+ */
+export async function steekproefBevestiging(env: Env, aantal: number): Promise<Velden[]> {
+  const { results: deelnemers } = await env.DB.prepare(
+    `select dn.deelnemer_id as deelnemerId, dn.voornaam_enc as voornaamEnc, e.titel as evenement
+     from deelnemers dn join evenementen e on e.evenement_id = dn.evenement_id
+     where dn.geanonimiseerd_op is null and dn.status = 'actief'
+     order by random() limit ?`,
+  )
+    .bind(aantal)
+    .all<{ deelnemerId: string; voornaamEnc: string | null; evenement: string }>();
+
+  return Promise.all(
+    deelnemers.map(async (dn): Promise<Velden> => {
+      const [momenten, keuzes] = await env.DB.batch<any>([
+        env.DB.prepare(
+          `select d.naam as dag, dd.naam as dagdeel, dd.start_uur as startUur, dd.eind_uur as eindUur
+           from inschrijvingen i join dagdelen dd on dd.dagdeel_id = i.dagdeel_id join evenement_dagen d on d.dag_id = i.dag_id
+           where i.deelnemer_id = ? and i.sessie_id is null and i.status <> 'geannuleerd' order by d.datum, dd.start_uur`,
+        ).bind(dn.deelnemerId),
+        env.DB.prepare(
+          `select s.titel, t.naam as tijdsblok, t.start_uur as startUur, l.naam as locatie, i.status
+           from inschrijvingen i join sessies s on s.sessie_id = i.sessie_id join tijdsblokken t on t.tijdsblok_id = i.tijdsblok_id
+           left join locaties l on l.locatie_id = s.locatie_id
+           where i.deelnemer_id = ? and i.status <> 'geannuleerd' order by t.start_uur`,
+        ).bind(dn.deelnemerId),
+      ]);
+      return {
+        voornaam: dn.voornaamEnc ? await ontsleutel(env, dn.voornaamEnc) : '(naamloos)',
+        evenement: dn.evenement,
+        referentie: referentie(dn.deelnemerId),
+        momenten: momentenHtml(momenten.results as Moment[]),
+        keuzes: keuzesHtml(keuzes.results as Keuze[]),
+        beheerlink: link('#', '(voorbeeldlink, niet echt)'),
+        contactEmail: V.contactEmail.voorbeeld,
+      };
+    }),
+  );
 }
 
 /**
